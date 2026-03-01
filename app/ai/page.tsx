@@ -1,19 +1,53 @@
-// Restored content of app/ai/page.tsx
+"use client";
 
-import React from 'react';
+import { useEffect, useState } from "react";
 
-// Proper loadVersions function implementation
-const loadVersions = () => {
-    // Implementation of loadVersions
-};
+export default function Page() {
+  const [versions, setVersions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-const Page = () => {
-    // Page component implementation
-    return (
-        <div>
-            <h1>Welcome to ZIVO-AI</h1>
-        </div>
-    );
-};
+  async function loadVersions() {
+    try {
+      setLoading(true);
+      setError("");
 
-export default Page;
+      const res = await fetch("/api/backup-list");
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to load versions");
+      }
+
+      setVersions(data?.items || []);
+    } catch (e: any) {
+      setError(e?.message || "Error loading versions");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadVersions();
+  }, []);
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h1>ZIVO-AI</h1>
+
+      <button onClick={loadVersions} disabled={loading}>
+        {loading ? "Loading..." : "Refresh Versions"}
+      </button>
+
+      {error && <p style={{ color: "red" }}>{error}</p>}
+
+      <ul>
+        {versions.map((v: any, i: number) => (
+          <li key={v.id || i}>
+            {v.title || "Untitled"} - {v.created_at || ""}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
