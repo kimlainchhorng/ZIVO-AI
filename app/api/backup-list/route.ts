@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server";
+import { getVersions } from "../save-site/route";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // TODO: Fetch from Supabase
-    // For now, return empty list
-
-    return NextResponse.json({ items: [] });
+    const allVersions = getVersions();
+    return NextResponse.json({ items: allVersions });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Failed to fetch versions" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Failed to fetch versions" }, { status: 500 });
   }
 }
