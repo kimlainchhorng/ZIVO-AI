@@ -1,4 +1,12 @@
 import { NextResponse } from "next/server";
+interface Version {
+  id: string;
+  title: string;
+  html: string;
+  created_at: string;
+}
+
+let versions: Version[] = [];
 
 export const dynamic = "force-dynamic";
 
@@ -12,21 +20,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing html" }, { status: 400 });
     }
 
-    // TODO: Save to Supabase
-    // For now, return success
+    const version: Version = {
+      id: Math.random().toString(36).slice(2, 11),
+      title,
+      html,
+      created_at: new Date().toISOString(),
+    };
 
-    return NextResponse.json({ 
-      ok: true, 
-      item: { 
-        id: Math.random().toString(36).slice(2), 
-        title, 
-        created_at: new Date().toISOString() 
-      } 
-    });
+    versions.unshift(version);
+    return NextResponse.json({ ok: true, item: version });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Save failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Save failed" }, { status: 500 });
   }
+}
+
+export function getVersions() {
+  return versions;
+}
+
+export function deleteVersion(id: string) {
+  versions = versions.filter((v) => v.id !== id);
 }
