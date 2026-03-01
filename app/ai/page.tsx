@@ -1,4 +1,4 @@
-use client;
+"use client";
 
 import { useEffect, useState } from "react";
 
@@ -41,32 +41,13 @@ export default function Page() {
 
       {error && <p style={{ color: "red" }}>{error}</p>}
 
-      <div style={{ marginTop: 16 }}>
-        <h2>Versions</h2>
-        {versions.length === 0 ? (
-          <p style={{ opacity: 0.6 }}>No versions saved yet</p>
-        ) : (
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {versions.map((v: any, i: number) => (
-              <li
-                key={v.id || i}
-                style={{
-                  padding: 8,
-                  margin: "4px 0",
-                  backgroundColor: "#f5f5f5",
-                  borderRadius: 4,
-                }}
-              >
-                <strong>{v.title || "Untitled"}</strong>
-                <br />
-                <small style={{ opacity: 0.7 }}>
-                  {v.created_at ? new Date(v.created_at).toLocaleString() : ""}
-                </small>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <ul>
+        {versions.map((v: any, i: number) => (
+          <li key={v.id || i}>
+            {v.title || "Untitled"} - {v.created_at || ""}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
