@@ -1,0 +1,20 @@
+{
+  "name": "ZIVO AI",
+  "short_name": "ZIVO AI",
+  "description": "Ultimate AI Application Generation Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/next.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "utilities"],
+  "lang": "en"
+}
