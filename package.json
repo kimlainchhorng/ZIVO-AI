@@ -11,13 +11,6 @@
     "start": "next start",
     "lint": "eslint"
   },
-}
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
   "dependencies": {
     "next": "16.1.6",
     "openai": "^4.25.0",
