@@ -9,6 +9,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const prompt = body?.prompt;
+    const existingHtml = body?.existingHtml;
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
@@ -16,6 +17,11 @@ export async function POST(req: Request) {
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
     }
+
+    const userMessage =
+      existingHtml && typeof existingHtml === "string"
+        ? `Here is the existing HTML:\n\`\`\`html\n${existingHtml}\n\`\`\`\n\nUpdate it based on: ${prompt}`
+        : prompt;
 
     const r = await client.responses.create({
       model: "gpt-4.1-mini",
@@ -25,7 +31,7 @@ export async function POST(req: Request) {
           content:
             "You generate clean website code. Return ONLY the code output, no explanations.",
         },
-        { role: "user", content: prompt },
+        { role: "user", content: userMessage },
       ],
     });
 
