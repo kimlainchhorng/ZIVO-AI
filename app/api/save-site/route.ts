@@ -1,43 +1,52 @@
 import { NextResponse } from "next/server";
-interface Version {
+import { promises as fs } from "fs";
+import path from "path";
+
+// Define the shape of our project data
+interface Project {
   id: string;
-  title: string;
+  name: string;
   html: string;
   created_at: string;
 }
 
-let versions: Version[] = [];
-
-export const dynamic = "force-dynamic";
+// Memory storage (optional, as we are also saving to files)
+let projects: Project[] = [];
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const title = (body?.title || "Untitled") as string;
-    const html = body?.html as string;
+    const body = await req.json().catch(() => null);
+    
+    // 1. Destructure html and projectName from the request body
+    const { html, projectName } = body || {};
 
+    // 2. Validation: Ensure both are provided
     if (!html || typeof html !== "string") {
-      return NextResponse.json({ error: "Missing html" }, { status: 400 });
+      return NextResponse.json({ error: "HTML content is required" }, { status: 400 });
+    }
+    if (!projectName || typeof projectName !== "string") {
+      return NextResponse.json({ error: "Project name is required" }, { status: 400 });
     }
 
-    const version: Version = {
-      id: Math.random().toString(36).slice(2, 11),
-      title,
-      html,
-      created_at: new Date().toISOString(),
-    };
+    // 3. Setup dynamic paths and sanitize filename
+    const safeName = projectName.replace(/[^a-z0-9-_]/gi, "-").toLowerCase();
+    const folderPath = path.join(process.cwd(), "public", "generated");
+    const filePath = path.join(folderPath, `${safeName}.html`);
 
-    versions.unshift(version);
-    return NextResponse.json({ ok: true, item: version });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Save failed" }, { status: 500 });
+    // 4. Create folder if it doesn't exist
+    await fs.mkdir(folderPath, { recursive: true });
+
+    // 5. Write the file to the project-specific path
+    await fs.writeFile(filePath, html, "utf8");
+
+    // 6. Return the success JSON with the dynamic project URL
+    return NextResponse.json({ 
+      ok: true, 
+      url: `/generated/${safeName}.html` 
+    }, { status: 200 });
+
+  } catch (err: any) {
+    const msg = typeof err?.message === "string" ? err.message : "Failed to save project";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
-
-export function getVersions() {
-  return versions;
-}
-
-export function deleteVersion(id: string) {
-  versions = versions.filter((v) => v.id !== id);
 }
