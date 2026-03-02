@@ -1,3 +1,14 @@
-use client;
+// Updated use client directive
+'use client';
 
-// Your updated code should go here. Make sure it doesn't have any special characters and is properly formatted.
+import React from 'react';
+
+const handleSave = async (projectId, htmlContent) => {
+    // API call logic using projectId and htmlContent
+};
+
+const Page = () => {
+    // Page component logic
+};
+
+export default Page;
