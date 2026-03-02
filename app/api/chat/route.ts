@@ -1,9 +1,27 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { FEATURES } from "@/lib/features";
+import { INTEGRATIONS } from "@/lib/integrations";
 
 export const runtime = "nodejs";
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const featureSummary = FEATURES.map(
+  (f) => `Feature ${f.id} – ${f.name}: ${f.description}`
+).join("\n");
+
+const integrationCategories = [...new Set(INTEGRATIONS.map((i) => i.category))].join(", ");
+
+const SYSTEM_PROMPT = `You are ZIVO AI, an expert AI assistant for building web and mobile applications.
+You help users understand and implement platform features and integrations.
+
+ZIVO AI supports 20 platform features (IDs 21-40):
+${featureSummary}
+
+ZIVO AI integrates with 100+ services across these categories: ${integrationCategories}.
+
+Answer questions concisely and guide users on how to use these features and integrations effectively.`;
 
 export async function POST(req: Request) {
   try {
@@ -19,7 +37,10 @@ export async function POST(req: Request) {
 
     const r = await client.responses.create({
       model: "gpt-4.1-mini",
-      input: prompt,
+      input: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
     });
 
     const text = (r as any).output_text ?? "";
