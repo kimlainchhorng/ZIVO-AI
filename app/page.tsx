@@ -1,65 +1,188 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
 
 export default function Home() {
+  const [prompt, setPrompt] = useState("");
+  const [result, setResult] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
+
+  async function handleGenerate() {
+    setLoading(true);
+    setError("");
+    setResult("");
+    setSaveSuccess("");
+    try {
+      const res = await fetch("/api/generate-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(data.error || "Failed to generate site.");
+      } else {
+        setResult(data.result);
+      }
+    } catch {
+      setError("An unexpected error occurred.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSave() {
+    if (!result) {
+      setError("Nothing to save. Generate a site first.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    setSaveSuccess("");
+    try {
+      const res = await fetch("/api/save-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: "default", htmlContent: result }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(data.error || "Failed to save site.");
+      } else {
+        setSaveSuccess(data.message || "Site saved successfully!");
+      }
+    } catch {
+      setError("An unexpected error occurred.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main
+      style={{
+        fontFamily: "system-ui, sans-serif",
+        maxWidth: 720,
+        margin: "0 auto",
+        padding: "48px 24px",
+      }}
+    >
+      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>
+        ZIVO AI Builder
+      </h1>
+      <p style={{ color: "#555", marginBottom: 24 }}>
+        Describe what you want to build and let AI generate the code for you.
+      </p>
+
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder="Describe what you want to build…"
+        rows={5}
+        style={{
+          width: "100%",
+          padding: "12px 14px",
+          fontSize: 15,
+          border: "1px solid #d1d5db",
+          borderRadius: 8,
+          resize: "vertical",
+          boxSizing: "border-box",
+          outline: "none",
+        }}
+      />
+
+      <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+        <button
+          onClick={handleGenerate}
+          disabled={loading || !prompt.trim()}
+          style={{
+            padding: "10px 22px",
+            fontSize: 15,
+            fontWeight: 600,
+            backgroundColor: "#111",
+            color: "#fff",
+            border: "none",
+            borderRadius: 8,
+            cursor: loading || !prompt.trim() ? "not-allowed" : "pointer",
+            opacity: loading || !prompt.trim() ? 0.6 : 1,
+          }}
+        >
+          {loading ? "Generating…" : "Generate"}
+        </button>
+
+        <button
+          onClick={handleSave}
+          disabled={loading || !result}
+          style={{
+            padding: "10px 22px",
+            fontSize: 15,
+            fontWeight: 600,
+            backgroundColor: "#fff",
+            color: "#111",
+            border: "1px solid #d1d5db",
+            borderRadius: 8,
+            cursor: loading || !result ? "not-allowed" : "pointer",
+            opacity: loading || !result ? 0.6 : 1,
+          }}
+        >
+          Save
+        </button>
+      </div>
+
+      {error && (
+        <p
+          style={{
+            marginTop: 16,
+            padding: "10px 14px",
+            backgroundColor: "#fef2f2",
+            color: "#b91c1c",
+            borderRadius: 8,
+            fontSize: 14,
+          }}
+        >
+          {error}
+        </p>
+      )}
+
+      {saveSuccess && (
+        <p
+          style={{
+            marginTop: 16,
+            padding: "10px 14px",
+            backgroundColor: "#f0fdf4",
+            color: "#15803d",
+            borderRadius: 8,
+            fontSize: 14,
+          }}
+        >
+          {saveSuccess}
+        </p>
+      )}
+
+      {result && (
+        <div style={{ marginTop: 32 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
+            Generated Output
+          </h2>
+          <pre
+            style={{
+              backgroundColor: "#f9fafb",
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              padding: "16px",
+              overflowX: "auto",
+              fontSize: 13,
+              lineHeight: 1.6,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            {result}
+          </pre>
         </div>
-      </main>
-    </div>
+      )}
+    </main>
   );
 }
