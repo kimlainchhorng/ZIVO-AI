@@ -8,8 +8,6 @@ import {
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 export async function GET() {
   return NextResponse.json({
     platforms: ENTERPRISE_PLATFORMS,
@@ -26,6 +24,8 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const body = await req.json().catch(() => ({}));
     const platformId = body?.platformId as string | undefined;

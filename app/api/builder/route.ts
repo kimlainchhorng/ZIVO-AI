@@ -3,8 +3,6 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 export type FileAction = "create" | "update" | "delete";
 
 export interface GeneratedFile {
@@ -51,6 +49,8 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const body = await req.json().catch(() => ({}));
     const prompt = body?.prompt;
