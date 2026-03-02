@@ -114,27 +114,40 @@ export const diffCodeTool: ToolDefinition = {
     };
     const A = original.split(/\r?\n/);
     const B = modified.split(/\r?\n/);
-    const diff: { type: "same" | "add" | "del"; line: string }[] = [];
-    let i = 0,
-      j = 0;
-    while (i < A.length || j < B.length) {
-      if (i < A.length && j < B.length) {
-        if (A[i] === B[j]) {
-          diff.push({ type: "same", line: A[i] });
-          i++;
-          j++;
-        } else {
-          diff.push({ type: "del", line: A[i] });
-          diff.push({ type: "add", line: B[j] });
-          i++;
-          j++;
-        }
-      } else if (i < A.length) {
-        diff.push({ type: "del", line: A[i++] });
-      } else {
-        diff.push({ type: "add", line: B[j++] });
+
+    // Build LCS length table
+    const m = A.length;
+    const n = B.length;
+    const dp: number[][] = Array.from({ length: m + 1 }, () =>
+      new Array(n + 1).fill(0)
+    );
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] =
+          A[i - 1] === B[j - 1]
+            ? dp[i - 1][j - 1] + 1
+            : Math.max(dp[i - 1][j], dp[i][j - 1]);
       }
     }
+
+    // Back-track to produce diff
+    const diff: { type: "same" | "add" | "del"; line: string }[] = [];
+    let i = m;
+    let j = n;
+    while (i > 0 || j > 0) {
+      if (i > 0 && j > 0 && A[i - 1] === B[j - 1]) {
+        diff.unshift({ type: "same", line: A[i - 1] });
+        i--;
+        j--;
+      } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+        diff.unshift({ type: "add", line: B[j - 1] });
+        j--;
+      } else {
+        diff.unshift({ type: "del", line: A[i - 1] });
+        i--;
+      }
+    }
+
     return { diff };
   },
 };

@@ -141,7 +141,7 @@ export class MultiAgentOrchestrator {
     if (/(architect|system design|service|microservice|adr|stack selection)/.test(lower)) {
       return "architect";
     }
-    if (/(ui|component|layout|css|tailwind|frontend|react|next\.?js page|html|design)/.test(lower)) {
+    if (/(ui|component|layout|css|tailwind|frontend|react|next(\.js)?\s+page|html|design)/.test(lower)) {
       return "ui";
     }
     if (/(api|endpoint|route|server|auth|backend|middleware|controller|service layer)/.test(lower)) {
