@@ -1,3 +1,6 @@
+import fs from "fs";
+import path from "path";
+
 // Custom error classes
 class AppError extends Error {
     statusCode: number;
@@ -24,9 +27,6 @@ class ValidationError extends AppError {
 }
 
 // Error Logger
-const fs = require('fs');
-const path = require('path');
-
 const logError = (err: AppError) => {
     const errorLog = `
 [${new Date().toISOString()}] ${err.statusCode || 500} - ${err.message}\n${err.stack}\n`;

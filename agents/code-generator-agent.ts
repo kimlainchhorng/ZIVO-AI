@@ -3,11 +3,11 @@
 // This module provides a code generation functionality.
 
 export class CodeGenerator {
-    static generateCode(template: string, data: Record<string, any>): string {
+    static generateCode(template: string, data: Record<string, string | number | boolean>): string {
         let code = template;
         for (const key in data) {
             const placeholder = `{{${key}}}`;
-            code = code.replace(new RegExp(placeholder, 'g'), data[key]);
+            code = code.replace(new RegExp(placeholder, 'g'), String(data[key]));
         }
         return code;
     }

@@ -14,7 +14,8 @@ export async function POST(req: Request) {
 
     deleteVersion(id);
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Delete failed" }, { status: 500 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Delete failed";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

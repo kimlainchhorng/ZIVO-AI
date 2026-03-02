@@ -67,9 +67,10 @@ export async function POST(req: Request) {
     const diff = diffLines(htmlA, htmlB);
 
     return NextResponse.json({ ok: true, diff }, { status: 200 });
-  } catch (e: any) {
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Compare failed";
     return NextResponse.json(
-      { error: e?.message || "Compare failed" },
+      { error: msg },
       { status: 400 }
     );
   }

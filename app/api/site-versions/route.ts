@@ -33,9 +33,10 @@ export async function GET() {
     items.sort((a, b) => b.mtime - a.mtime);
 
     return NextResponse.json({ ok: true, versions: items }, { status: 200 });
-  } catch (error: any) {
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Failed to load versions.";
     return NextResponse.json(
-      { error: error?.message || "Failed to load versions." },
+      { error: msg },
       { status: 500 }
     );
   }
