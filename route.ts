@@ -1,9 +1,11 @@
-﻿import OpenAI from "openai";
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function POST(req: Request) {
   try {
@@ -17,21 +19,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
     }
 
-    const r = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
+    const completion = await getClient().chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
         {
           role: "system",
-          content:
-            "You generate clean website code. Return ONLY the code output, no explanations.",
+          content: "You generate clean website code. Return ONLY the code output, no explanations.",
         },
         { role: "user", content: prompt },
       ],
     });
 
-    const text = (r as any).output_text ?? "";
+    const text = completion.choices[0]?.message?.content ?? "";
     return NextResponse.json({ result: text });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

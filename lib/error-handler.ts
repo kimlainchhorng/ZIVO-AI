@@ -1,6 +1,8 @@
 // Custom error classes
 class AppError extends Error {
-    constructor(message, statusCode) {
+    statusCode: number;
+    isOperational: boolean;
+    constructor(message: string, statusCode: number) {
         super(message);
         this.statusCode = statusCode;
         this.isOperational = true;
@@ -21,17 +23,22 @@ class ValidationError extends AppError {
 }
 
 // Error Logger
-const fs = require('fs');
-const path = require('path');
+import { appendFileSync } from 'fs';
+import { join } from 'path';
 
-const logError = (err) => {
+const logError = (err: AppError) => {
     const errorLog = `
 [${new Date().toISOString()}] ${err.statusCode || 500} - ${err.message}\n${err.stack}\n`;
-    fs.appendFileSync(path.join(__dirname, 'error.log'), errorLog);
+    appendFileSync(join(process.cwd(), 'error.log'), errorLog);
 };
 
-// Error Middleware
-const errorMiddleware = (err, req, res, next) => {
+// Error Middleware (Express-compatible)
+const errorMiddleware = (
+    err: AppError,
+    _req: unknown,
+    res: { status: (c: number) => { json: (b: unknown) => void } },
+    _next: unknown
+) => {
     if (!err.isOperational) {
         logError(err);
     }
@@ -41,4 +48,4 @@ const errorMiddleware = (err, req, res, next) => {
     });
 };
 
-module.exports = { AppError, NotFoundError, ValidationError, errorMiddleware };
+export { AppError, NotFoundError, ValidationError, errorMiddleware };

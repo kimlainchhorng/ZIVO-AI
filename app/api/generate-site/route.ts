@@ -1,14 +1,21 @@
-﻿import OpenAI from "openai";
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { GENERATE_SITE_SYSTEM_PROMPT } from "@/lib/system-prompts";
+import { recordGeneratedFile } from "@/lib/memory";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const prompt = body?.prompt;
+    const { prompt, projectId = "default" } = body as {
+      prompt?: string;
+      projectId?: string;
+    };
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
@@ -17,21 +24,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
     }
 
-    const r = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
-        {
-          role: "system",
-          content:
-            "You generate clean website code. Return ONLY the code output, no explanations.",
-        },
+    const completion = await getClient().chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: GENERATE_SITE_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
     });
 
-    const text = (r as any).output_text ?? "";
-    return NextResponse.json({ result: text });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+    const raw = completion.choices[0]?.message?.content ?? "{}";
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      parsed = { code: raw, reasoning: "" };
+    }
+
+    const code = String(parsed.code ?? "");
+
+    // Record in project memory
+    if (code) {
+      recordGeneratedFile(projectId, "generated.html", "html", `Generated for: ${prompt.slice(0, 80)}`);
+    }
+
+    return NextResponse.json({
+      result: code,
+      reasoning: parsed.reasoning ?? "",
+      components: parsed.components ?? [],
+      seoMetadata: parsed.seoMetadata ?? {},
+      techUsed: parsed.techUsed ?? [],
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

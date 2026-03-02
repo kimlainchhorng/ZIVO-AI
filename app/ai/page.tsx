@@ -8,20 +8,20 @@ const AIBuilder = () => {
     const [input, setInput] = useState('');
     const [output, setOutput] = useState('');
 
-    const handleInputChange = (e) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setInput(e.target.value);
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         // Assuming there's an API to call that processes the input
-        const response = await fetch('/api/process', {
+        const response = await fetch('/api/generate-site', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ input }),
+            body: JSON.stringify({ prompt: input }),
         });
-        const data = await response.json();
-        setOutput(data.output);
+        const data = await response.json() as { result?: string; error?: string };
+        setOutput(data.result ?? data.error ?? '');
     };
 
     return (
