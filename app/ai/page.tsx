@@ -8,11 +8,11 @@ const AIBuilder = () => {
     const [input, setInput] = useState('');
     const [output, setOutput] = useState('');
 
-    const handleInputChange = (e) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setInput(e.target.value);
     };
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         // Assuming there's an API to call that processes the input
         const response = await fetch('/api/process', {
