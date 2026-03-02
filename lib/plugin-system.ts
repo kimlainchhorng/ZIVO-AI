@@ -26,13 +26,19 @@ export function getPlugins(): Plugin[] {
 
 export function enablePlugin(id: string): boolean {
   const plugin = plugins.get(id);
-  if (plugin) { plugin.enabled = true; return true; }
+  if (plugin) {
+    plugin.enabled = true;
+    return true;
+  }
   return false;
 }
 
 export function disablePlugin(id: string): boolean {
   const plugin = plugins.get(id);
-  if (plugin) { plugin.enabled = false; return true; }
+  if (plugin) {
+    plugin.enabled = false;
+    return true;
+  }
   return false;
 }
 
