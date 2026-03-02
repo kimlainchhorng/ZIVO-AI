@@ -1,11 +1,11 @@
 class WebScraperAgent {
-    async scrape(url) {
+    async scrape(url: string) {
         // Implement web scraping logic here
         // This is a placeholder
         return `Scraped data from ${url}`;
     }
 
-    async extractMetadata(url) {
+    async extractMetadata(url: string) {
         // Implement metadata extraction logic here
         // This is a placeholder
         return { title: `Metadata for ${url}`, description: 'Description here' };
