@@ -1,125 +1,159 @@
 "use client";
 import { useEffect, useState } from "react";
 
-interface Version {
-  id: string;
-  title: string;
-  html: string;
-  created_at: string;
+interface ProjectHistory {
+  name: string;
+  url: string;
+  prompt: string;
+  html: string; // Store HTML for quick preview/copying
 }
 
-export default function Page() {
-  const [versions, setVersions] = useState<Version[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [title, setTitle] = useState("");
+export default function AIBuilder() {
+  const [prompt, setPrompt] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [html, setHtml] = useState("");
-  const [saveMsg, setSaveMsg] = useState("");
-  const [viewingId, setViewingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [history, setHistory] = useState<ProjectHistory[]>([]);
+  const [saveUrl, setSaveUrl] = useState("");
 
-  async function loadVersions() {
+  // Load history on mount
+  useEffect(() => {
+    const saved = localStorage.getItem("ai_builder_history");
+    if (saved) setHistory(JSON.parse(saved));
+  }, []);
+
+  const handleGenerate = async () => {
+    if (!prompt.trim()) return alert("Enter a prompt first");
+    setLoading(true);
     try {
-      setLoading(true);
-      setError("");
-      const res = await fetch("/api/backup-list");
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.error || "Failed to load versions");
-      }
-      setVersions(data?.items || []);
-    } catch (e: any) {
-      setError(e?.message || "Error loading versions");
+      const res = await fetch("/api/generate-site", {
+        method: "POST",
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (data.result) setHtml(data.result);
+    } catch (err) {
+      alert("Generation failed");
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  async function saveVersion() {
-    setSaveMsg("");
+  const handleSave = async () => {
+    if (!projectName.trim() || !html) return alert("Project name and content required");
+    setLoading(true);
+
     try {
       const res = await fetch("/api/save-site", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ title, html }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ html, projectName: projectName.trim() }),
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || "Save failed");
-      setSaveMsg("Saved ✅");
-      setTitle("");
-      setHtml("");
-      await loadVersions();
-    } catch (e: any) {
-      setSaveMsg(e?.message || "Save error");
+      const data = await res.json();
+
+      if (data.ok) {
+        setSaveUrl(data.url);
+        // Add to history and remove duplicates
+        const newEntry = { name: projectName.trim(), url: data.url, prompt, html };
+        const updatedHistory = [newEntry, ...history.filter((p) => p.name !== projectName.trim())];
+        
+        setHistory(updatedHistory);
+        localStorage.setItem("ai_builder_history", JSON.stringify(updatedHistory));
+      }
+    } catch (err) {
+      alert("Save failed");
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
-  async function deleteVersionItem(id: string) {
-    try {
-      const res = await fetch("/api/delete-version", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ id }),
-      });
-      if (!res.ok) throw new Error("Delete failed");
-      await loadVersions();
-    } catch (e: any) {
-      alert(e?.message || "Delete failed");
-    }
-  }
-
-  useEffect(() => {
-    loadVersions();
-  }, []);
-
-  const viewing = versions.find((v) => v.id === viewingId);
+  // Helper for Copying
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(html);
+    alert("HTML Copied to Clipboard!");
+  };
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>ZIVO-AI</h1>
-      <button onClick={loadVersions} disabled={loading}>
-        {loading ? "Loading..." : "Refresh Versions"}
-      </button>
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      <div style={{ marginTop: 16, padding: 12, border: "1px solid #e5e7eb", borderRadius: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Save Version</h3>
-        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" style={{ width: "100%", padding: 10, marginBottom: 8, boxSizing: "border-box" }} />
-        <textarea value={html} onChange={(e) => setHtml(e.target.value)} placeholder="Paste HTML here..." rows={6} style={{ width: "100%", padding: 10, boxSizing: "border-box" }} />
-        <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={saveVersion} disabled={!html.trim()}> Save </button>
-          <span style={{ opacity: 0.8 }}>{saveMsg}</span>
+    <div className="max-w-4xl mx-auto p-6 font-sans">
+      <h1 className="text-2xl font-bold mb-6">AI Project Dashboard</h1>
+
+      {/* Project Configuration */}
+      <div className="space-y-4 mb-8">
+        <input
+          type="text"
+          placeholder="Project name (e.g., my-portfolio)"
+          value={projectName}
+          onChange={(e) => setProjectName(e.target.value)}
+          className="w-full p-3 border rounded shadow-sm"
+        />
+        <textarea
+          placeholder="What kind of site should I build?"
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          className="w-full h-32 p-3 border rounded shadow-sm"
+        />
+        <div className="flex gap-4">
+          <button 
+            onClick={handleGenerate} 
+            disabled={loading}
+            className="bg-black text-white px-6 py-2 rounded hover:opacity-80 disabled:bg-gray-400"
+          >
+            {loading ? "Building..." : "Generate Site"}
+          </button>
+          <button 
+            onClick={handleSave} 
+            disabled={loading || !html}
+            className="bg-green-600 text-white px-6 py-2 rounded hover:opacity-80 disabled:bg-gray-400"
+          >
+            Save Project
+          </button>
+          {saveUrl && (
+            <a href={saveUrl} target="_blank" className="flex items-center text-blue-600 underline">
+              View Live Site
+            </a>
+          )}
         </div>
       </div>
-      {viewing && (
-        <div style={{ marginTop: 16, padding: 12, border: "1px solid #3b82f6", borderRadius: 12 }}>
-          <h3>Preview: {viewing.title}</h3>
-          <button onClick={() => setViewingId(null)}>Close Preview</button>
-          <div style={{ marginTop: 12, padding: 12, backgroundColor: "#f9fafb", borderRadius: 8, maxHeight: 400, overflow: "auto", }} dangerouslySetInnerHTML={{ __html: viewing.html }} />
+
+      {/* Live Preview Pane */}
+      {html && (
+        <div className="border rounded-lg overflow-hidden shadow-lg mb-10">
+          <div className="bg-gray-100 p-2 flex justify-between items-center border-b">
+            <span className="text-sm font-medium">Desktop Preview</span>
+            <button onClick={copyToClipboard} className="text-xs bg-white border px-2 py-1 rounded">
+              Copy HTML
+            </button>
+          </div>
+          <iframe srcDoc={html} className="w-full h-[500px] bg-white" title="preview" />
         </div>
       )}
-      <div style={{ marginTop: 16 }}>
-        <h2>Versions</h2>
-        {versions.length === 0 ? (
-          <p style={{ opacity: 0.6 }}>No versions saved yet</p>
+
+      {/* Persistent History List */}
+      <div className="border-t pt-6">
+        <h3 className="text-lg font-semibold mb-4">Your Projects</h3>
+        {history.length === 0 ? (
+          <p className="text-gray-400 italic">No saved projects found.</p>
         ) : (
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {versions.map((v) => (
-              <li key={v.id} style={{ padding: 8, margin: "4px 0", backgroundColor: "#f5f5f5", borderRadius: 4, display: "flex", justifyContent: "space-between", alignItems: "center", }}>
-                <div>
-                  <strong>{v.title || "Untitled"}</strong>
-                  <br />
-                  <small style={{ opacity: 0.7 }}> {v.created_at ? new Date(v.created_at).toLocaleString() : ""} </small>
+          <div className="grid gap-2">
+            {history.map((proj, i) => (
+              <div key={i} className="flex justify-between items-center p-3 bg-gray-50 rounded border border-gray-100">
+                <span className="font-medium text-gray-700">{proj.name}</span>
+                <div className="flex gap-4 text-sm">
+                  <a href={proj.url} target="_blank" className="text-blue-500 hover:underline">Open Link</a>
+                  <button 
+                    onClick={() => { 
+                      setProjectName(proj.name); 
+                      setPrompt(proj.prompt); 
+                      setHtml(proj.html);
+                    }}
+                    className="text-gray-500 hover:text-black"
+                  >
+                    Edit/Regenerate
+                  </button>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => setViewingId(v.id)}>View</button>
-                  <button onClick={() => deleteVersionItem(v.id)}>Delete</button>
-                </div>
-              </li>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </div>
     </div>
