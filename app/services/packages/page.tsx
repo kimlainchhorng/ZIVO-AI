@@ -21,6 +21,13 @@ const trackingSteps: { status: DeliveryStatus; label: string }[] = [
   { status: "delivered", label: "Delivered" },
 ];
 
+const shippingFormFields: { label: string; placeholder: string }[] = [
+  { label: "Pickup Address", placeholder: "123 Oak Street, Austin, TX" },
+  { label: "Delivery Address", placeholder: "456 Pine Ave, Houston, TX" },
+  { label: "Recipient Name", placeholder: "John Smith" },
+  { label: "Recipient Phone", placeholder: "+1 (512) 555-0100" },
+];
+
 export default function PackagesPage() {
   const [activeTab, setActiveTab] = useState<"send" | "track" | "partner">("send");
   const [packageSize, setPackageSize] = useState<PackageSize>("small");
@@ -94,7 +101,7 @@ export default function PackagesPage() {
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                {[["Pickup Address", "123 Oak Street, Austin, TX"], ["Delivery Address", "456 Pine Ave, Houston, TX"], ["Recipient Name", "John Smith"], ["Recipient Phone", "+1 (512) 555-0100"]].map(([label, placeholder]) => (
+                {shippingFormFields.map(({ label, placeholder }) => (
                   <div key={label}>
                     <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">{label}</label>
                     <input className="mt-1 w-full px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-sm text-zinc-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-zinc-900" placeholder={placeholder} />
