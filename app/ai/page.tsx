@@ -67,6 +67,18 @@ export default function AIBuilder() {
     }
   };
 
+  const downloadProject = (name: string, content: string) => {
+    const blob = new Blob([content], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${name}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Helper for Copying
   const copyToClipboard = () => {
     navigator.clipboard.writeText(html);
@@ -140,6 +152,12 @@ export default function AIBuilder() {
                 <span className="font-medium text-gray-700">{proj.name}</span>
                 <div className="flex gap-4 text-sm">
                   <a href={proj.url} target="_blank" className="text-blue-500 hover:underline">Open Link</a>
+                  <button
+                    onClick={() => downloadProject(proj.name, proj.html)}
+                    className="text-gray-500 hover:text-green-600"
+                  >
+                    Download
+                  </button>
                   <button 
                     onClick={() => { 
                       setProjectName(proj.name); 
