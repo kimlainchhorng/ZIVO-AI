@@ -33,7 +33,7 @@ const logError = (err: AppError) => {
 };
 
 // Error Middleware
-const errorMiddleware = (err: AppError, req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }, _next: () => void) => {
+const errorMiddleware = (err: AppError, _req: unknown, res: { status: (code: number) => { json: (body: unknown) => void } }) => {
     if (!err.isOperational) {
         logError(err);
     }
