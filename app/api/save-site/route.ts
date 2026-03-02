@@ -1,18 +1,9 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import { addVersion, getVersions, deleteVersion } from "@/lib/versions";
 
-// Define the shape of our project data
-interface ProjectVersion {
-  id: string;
-  projectId: string;
-  htmlContent: string;
-  metadata?: Record<string, any>;
-  createdAt: string;
-}
-
-// Memory storage for versions (in production, use a database)
-let versions: ProjectVersion[] = [];
+export type { ProjectVersion } from "@/lib/versions";
 
 const PROJECTS_DIR = path.join(process.cwd(), "projects");
 
@@ -20,27 +11,13 @@ const PROJECTS_DIR = path.join(process.cwd(), "projects");
 async function ensureProjectsDir() {
   try {
     await fs.mkdir(PROJECTS_DIR, { recursive: true });
-  } catch (err: any) {
-    if (err.code !== "EEXIST") throw err;
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
   }
 }
 
-// Get all versions
-export function getVersions(): ProjectVersion[] {
-  return [...versions].sort((a, b) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
-}
-
-// Delete a version
-export function deleteVersion(id: string): boolean {
-  const index = versions.findIndex(v => v.id === id);
-  if (index !== -1) {
-    versions.splice(index, 1);
-    return true;
-  }
-  return false;
-}
+// Re-export for backward compatibility with existing routes
+export { getVersions, deleteVersion };
 
 export async function POST(req: Request) {
   try {
@@ -69,7 +46,7 @@ export async function POST(req: Request) {
 
     // Create version entry
     const versionId = `${projectId}-${Date.now()}`;
-    const version: ProjectVersion = {
+    const version = {
       id: versionId,
       projectId,
       htmlContent,
@@ -77,8 +54,8 @@ export async function POST(req: Request) {
       createdAt: new Date().toISOString(),
     };
 
-    // Add to versions array
-    versions.push(version);
+    // Add to shared version store
+    addVersion(version);
 
     // Save HTML file
     const filePath = path.join(PROJECTS_DIR, `${versionId}.html`);
@@ -92,11 +69,9 @@ export async function POST(req: Request) {
       },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     const msg =
-      typeof err?.message === "string"
-        ? err.message
-        : "Failed to save project";
+      err instanceof Error ? err.message : "Failed to save project";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

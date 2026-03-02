@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getVersions } from "../../save-site/route";
+import { getVersions } from "@/lib/versions";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

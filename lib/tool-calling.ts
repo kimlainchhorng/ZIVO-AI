@@ -111,16 +111,16 @@ export const toolDefinitions: ToolDefinition[] = [
     name: "analyze_security",
     description: "Perform a security scan on provided code",
     parameters: [
-      { name: "code", type: "string", description: "Code to analyse", required: true },
+      { name: "code", type: "string", description: "Code to analyze", required: true },
       { name: "language", type: "string", description: "Programming language", required: false },
     ],
     permissions: ["security_scan"],
   },
   {
     name: "optimize_performance",
-    description: "Analyse code and return performance optimisation suggestions",
+    description: "Analyze code and return performance optimization suggestions",
     parameters: [
-      { name: "code", type: "string", description: "Code to optimise", required: true },
+      { name: "code", type: "string", description: "Code to optimize", required: true },
     ],
     permissions: [],
   },
@@ -151,7 +151,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     name: "debug",
-    description: "Analyse an error and generate a fix",
+    description: "Analyze an error and generate a fix",
     parameters: [
       { name: "error", type: "string", description: "Error message or stack trace", required: true },
       { name: "code", type: "string", description: "Relevant code context", required: false },

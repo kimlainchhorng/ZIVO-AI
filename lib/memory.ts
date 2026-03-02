@@ -127,7 +127,7 @@ export function getAllProjectMemory(projectId: string): {
   };
 }
 
-// ── Context window optimisation ──────────────────────────────────────────────
+// ── Context window optimization ───────────────────────────────────────────────
 
 /**
  * Returns the most relevant memory entries for a given query.

@@ -1,5 +1,5 @@
-// Performance Optimizer Agent – code and query optimisation, bundle analysis,
-// caching strategies, lazy loading, and API response optimisation.
+// Performance Optimizer Agent – code and query optimization, bundle analysis,
+// caching strategies, lazy loading, and API response optimization.
 
 import OpenAI from "openai";
 import { systemPrompts, SystemPromptOptions } from "@/lib/system-prompts";
@@ -29,7 +29,7 @@ export class PerformanceAgent {
     const { code, context, options } = request;
 
     const userMessage = [
-      `Analyse the following code for performance issues:`,
+      `Analyze the following code for performance issues:`,
       context ? `\nContext: ${context}` : "",
       `\n\nCode:\n\`\`\`\n${code}\n\`\`\``,
     ].join("");
