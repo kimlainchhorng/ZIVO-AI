@@ -37,7 +37,9 @@ export default function TenantsPage() {
     const data = await res.json();
     if (data.ok) {
       setTenants((prev) => [data.tenant, ...prev]);
-      setName(""); setSubdomain(""); setAdminEmail("");
+      setName("");
+      setSubdomain("");
+      setAdminEmail("");
       setStatus("Tenant created ✓");
     } else {
       setStatus(`Error: ${data.error}`);
