@@ -18,6 +18,9 @@ export interface ParsedCommand {
   response: string;
 }
 
+const MIN_INTENT_CONFIDENCE = 0.82;
+const INTENT_CONFIDENCE_RANGE = 0.17;
+
 const INTENT_MAP: Record<string, { intent: string; response: string }> = {
   search: { intent: "navigate.search", response: "Opening search for you." },
   analytics: { intent: "navigate.analytics", response: "Taking you to analytics." },
@@ -65,7 +68,7 @@ export class VoiceAgent {
         return {
           intent: data.intent,
           entities: { keyword },
-          confidence: parseFloat((0.82 + Math.random() * 0.17).toFixed(2)),
+          confidence: parseFloat((MIN_INTENT_CONFIDENCE + Math.random() * INTENT_CONFIDENCE_RANGE).toFixed(2)),
           response: data.response,
         };
       }

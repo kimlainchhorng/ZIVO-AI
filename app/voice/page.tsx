@@ -62,10 +62,11 @@ export default function VoicePage() {
     setActive((prev) => !prev);
     if (!active) {
       // Simulate voice capture stopping after 3s
+      const DEMO_COMMAND = "Show me the analytics dashboard";
       setTimeout(() => {
         setActive(false);
-        setTranscript("Show me the analytics dashboard");
-        processCommand("Show me the analytics dashboard");
+        setTranscript(DEMO_COMMAND);
+        processCommand(DEMO_COMMAND);
       }, 3000);
     }
   };

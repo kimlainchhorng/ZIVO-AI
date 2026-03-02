@@ -129,7 +129,7 @@ export default function IntegrationsPage() {
         <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent mb-2">
           Integrations
         </h1>
-        <p className="text-gray-400 mb-8">Connect ZIVO AI with your favourite tools ({allIntegrations.length}+ available)</p>
+        <p className="text-gray-400 mb-8">Connect ZIVO AI with your favorite tools ({allIntegrations.length}+ available)</p>
 
         {/* Search */}
         <input

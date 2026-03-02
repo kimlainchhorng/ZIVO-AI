@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const MIN_CONFIDENCE = 0.85;
+const CONFIDENCE_RANGE = 0.14;
+
 const INTENTS: Record<string, { intent: string; response: string }> = {
   analytics: { intent: "navigate.analytics", response: "Opening the analytics dashboard for you." },
   search: { intent: "navigate.search", response: "Launching the search interface." },
@@ -13,7 +16,7 @@ function detectIntent(text: string): { intent: string; response: string; confide
   const lower = text.toLowerCase();
   for (const [keyword, data] of Object.entries(INTENTS)) {
     if (lower.includes(keyword)) {
-      return { ...data, confidence: 0.85 + Math.random() * 0.14 };
+      return { ...data, confidence: MIN_CONFIDENCE + Math.random() * CONFIDENCE_RANGE };
     }
   }
   return {
