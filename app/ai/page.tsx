@@ -1,29 +1,42 @@
-// Use the 'use client' directive to indicate that this component should be rendered on the client side.
+// AI Builder Component
+
 'use client';
 
 import React, { useState } from 'react';
-import { AIBuilder } from './AIBuilder';
 
-const Page = () => {
-    const [projectId, setProjectId] = useState('');
-    const [htmlContent, setHtmlContent] = useState('');
+const AIBuilder = () => {
+    const [input, setInput] = useState('');
+    const [output, setOutput] = useState('');
 
-    const handleSave = () => {
-        // Save logic goes here
-        console.log('Saving project with ID:', projectId);
-        console.log('HTML Content:', htmlContent);
+    const handleInputChange = (e) => {
+        setInput(e.target.value);
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        // Assuming there's an API to call that processes the input
+        const response = await fetch('/api/process', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ input }),
+        });
+        const data = await response.json();
+        setOutput(data.output);
     };
 
     return (
         <div>
             <h1>AI Builder</h1>
-            <AIBuilder 
-                onProjectIdChange={(id) => setProjectId(id)} 
-                onHtmlChange={(content) => setHtmlContent(content)}
-            />
-            <button onClick={handleSave}>Save</button>
+            <form onSubmit={handleSubmit}>
+                <textarea value={input} onChange={handleInputChange} placeholder="Enter your input here..." />
+                <button type="submit">Submit</button>
+            </form>
+            <div>
+                <h2>Output</h2>
+                <p>{output}</p>
+            </div>
         </div>
     );
 };
 
-export default Page;
+export default AIBuilder;
