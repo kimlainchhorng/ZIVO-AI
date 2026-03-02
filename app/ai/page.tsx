@@ -1,4 +1,4 @@
-use client;
+"use client";
 import { useEffect, useState } from "react";
 
 interface ProjectHistory {
@@ -59,7 +59,7 @@ export default function AIBuilder() {
       const res = await fetch("/api/save-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ html, projectName: projectName.trim() }),
+        body: JSON.stringify({ htmlContent: html, projectId: projectName.trim() }),
       });
       const data = await res.json();
 
