@@ -67,6 +67,19 @@ export default function AIBuilder() {
     }
   };
 
+  const deleteProject = (name: string) => {
+    if (!confirm(`Delete project "${name}"?`)) return;
+    const updatedHistory = history.filter((p) => p.name !== name);
+    setHistory(updatedHistory);
+    localStorage.setItem("ai_builder_history", JSON.stringify(updatedHistory));
+    if (projectName === name) {
+      setProjectName("");
+      setPrompt("");
+      setHtml("");
+      setSaveUrl("");
+    }
+  };
+
   // Helper for Copying
   const copyToClipboard = () => {
     navigator.clipboard.writeText(html);
@@ -149,6 +162,13 @@ export default function AIBuilder() {
                     className="text-gray-500 hover:text-black"
                   >
                     Edit/Regenerate
+                  </button>
+                  <button
+                    onClick={() => deleteProject(proj.name)}
+                    className="text-red-500 hover:text-red-700"
+                    aria-label={`Delete project ${proj.name}`}
+                  >
+                    ✕
                   </button>
                 </div>
               </div>
