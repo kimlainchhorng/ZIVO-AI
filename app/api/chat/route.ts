@@ -1,9 +1,8 @@
-import OpenAI from "openai";
+import { getOpenAIClient } from "@/lib/openai-client";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export async function POST(req: Request) {
   try {
@@ -17,7 +16,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
     }
 
-    const r = await client.responses.create({
+    const r = await getOpenAIClient().responses.create({
       model: "gpt-4.1-mini",
       input: prompt,
     });
