@@ -22,7 +22,8 @@ export async function POST(req: Request) {
       inviteId: `invite-${Date.now()}`,
       message: `Invitation sent to ${email}`,
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Server error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

@@ -44,7 +44,7 @@ const s = {
 };
 
 export default function TeamPage() {
-  const [members, setMembers] = useState<Member[]>(MOCK_MEMBERS);
+  const [members] = useState<Member[]>(MOCK_MEMBERS);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"admin" | "developer" | "viewer">("developer");
   const [status, setStatus] = useState("");
@@ -105,7 +105,7 @@ export default function TeamPage() {
             </div>
             <div>
               <div style={{ color: "#888", fontSize: 13, marginBottom: 6 }}>Role</div>
-              <select style={s.select} value={role} onChange={(e) => setRole(e.target.value as any)}>
+              <select style={s.select} value={role} onChange={(e) => setRole(e.target.value as "admin" | "developer" | "viewer")}>
                 <option value="admin">Admin</option>
                 <option value="developer">Developer</option>
                 <option value="viewer">Viewer</option>

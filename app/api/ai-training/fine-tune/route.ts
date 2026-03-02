@@ -16,7 +16,8 @@ export async function POST(req: Request) {
       jobId: `ft-job-${Date.now()}`,
       message: "Fine-tune job submitted. Training will complete in 10–30 minutes.",
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Server error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

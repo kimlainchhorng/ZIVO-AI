@@ -51,7 +51,7 @@ export default function AiTrainingPage() {
         <div style={s.card}>
           <div style={s.sectionTitle}>Brand Voice</div>
           <div style={s.fieldGroup}>
-            <label style={s.label}>Describe your brand's tone and communication style</label>
+            <label style={s.label}>Describe your brand&apos;s tone and communication style</label>
             <textarea
               style={{ ...s.textarea, minHeight: 120 }}
               placeholder="e.g. Professional but approachable. We use clear, concise language. Avoid jargon. Focus on user benefits..."

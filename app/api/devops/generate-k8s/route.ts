@@ -3,8 +3,6 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -20,6 +18,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing appName" }, { status: 400 });
     }
 
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const replicaCount = typeof replicas === "number" ? replicas : 2;
 
     const r = await client.responses.create({
@@ -37,9 +36,10 @@ export async function POST(req: Request) {
       ],
     });
 
-    const text = (r as any).output_text ?? "";
+    const text = (r as { output_text?: string }).output_text ?? "";
     return NextResponse.json({ result: text });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Server error";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

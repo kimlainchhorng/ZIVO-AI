@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 const TEMPLATES = [
   { id: "t1",  name: "Landing Page",       category: "Marketing",   desc: "Beautiful hero, features, pricing, and CTA sections." },
   { id: "t2",  name: "E-commerce Store",   category: "Commerce",    desc: "Product grid, cart, checkout flow with Stripe." },
@@ -46,8 +47,9 @@ const s = {
 };
 
 export default function TemplatesPage() {
+  const router = useRouter();
   function handleUse(name: string) {
-    window.location.href = `/ai?template=${encodeURIComponent(name)}`;
+    router.push(`/ai?template=${encodeURIComponent(name)}`);
   }
 
   return (
