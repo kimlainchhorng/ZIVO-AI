@@ -3,7 +3,7 @@
 // This module provides a code generation functionality.
 
 export class CodeGenerator {
-    static generateCode(template: string, data: Record<string, any>): string {
+    static generateCode(template: string, data: Record<string, string>): string {
         let code = template;
         for (const key in data) {
             const placeholder = `{{${key}}}`;
