@@ -1,10 +1,9 @@
 import os
-from typing import Any, Dict, List
+from typing import Dict, List, Optional
 
 import streamlit as st
 
 from engine.zivo_brain import ZivoBrain
-
 
 ChatMessage = Dict[str, str]
 
@@ -69,7 +68,6 @@ def main() -> None:
         _render_messages([st.session_state.messages[-1]])
 
     _render_debug_panel()
-
 
 if __name__ == "__main__":
     main()
