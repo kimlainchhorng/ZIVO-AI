@@ -10,8 +10,6 @@ ChatMessage = Dict[str, str]
 def _init_session_state() -> None:
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    if "last_raw_response" not in st.session_state:
-        st.session_state.last_raw_response = None
     if "brain" not in st.session_state:
         st.session_state.brain = ZivoBrain()
 
@@ -27,7 +25,6 @@ def _render_sidebar() -> None:
     st.sidebar.title("ZIVO-AI")
     if st.sidebar.button("Clear Chat"):
         st.session_state.messages = []
-        st.session_state.last_raw_response = None
         st.rerun()
 
 def _render_messages() -> None:
@@ -38,17 +35,6 @@ def _render_messages() -> None:
 def _append_message(role: str, content: str) -> None:
     st.session_state.messages.append({"role": role, "content": content})
 
-def _get_response(messages: List[ChatMessage]) -> str:
-    brain: ZivoBrain = st.session_state.brain
-    with st.status("AI Thinking...", expanded=False):
-        reply = brain.get_response(messages)
-    return reply
-
-def _render_debug_panel() -> None:
-    if _debug_enabled() and st.session_state.last_raw_response:
-        with st.expander("Debug: Raw OpenAI Response", expanded=False):
-            st.json(st.session_state.last_raw_response)
-
 def main() -> None:
     st.set_page_config(page_title="ZIVO-AI", page_icon=":material/smart_toy:")
     _init_session_state()
@@ -57,15 +43,18 @@ def main() -> None:
     st.title("ZIVO-AI Chat")
     _render_messages()
 
-    user_input = st.chat_input("Ask ZIVO-AI...")
-    if user_input:
-        _append_message("user", user_input)
+    if prompt := st.chat_input("Ask ZIVO anything..."):
+        _append_message("user", prompt)
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-        reply = _get_response(st.session_state.messages)
-        _append_message("assistant", reply)
-        st.rerun()
+        brain: ZivoBrain = st.session_state.brain
+        with st.chat_message("assistant"):
+            response = st.write_stream(
+                brain.get_streaming_response(st.session_state.messages)
+            )
 
-    _render_debug_panel()
+        _append_message("assistant", response)
 
 if __name__ == "__main__":
     main()
