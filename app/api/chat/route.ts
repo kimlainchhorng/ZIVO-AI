@@ -1,7 +1,9 @@
 import OpenAI from "openai";
 
 export const runtime = "nodejs";
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function POST(req: Request) {
   try {
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
       chatMessages.push({ role: "user", content: prompt });
     }
 
-    const stream = await client.chat.completions.create({
+    const stream = await getClient().chat.completions.create({
       model: "gpt-4o",
       stream: true,
       messages: chatMessages,

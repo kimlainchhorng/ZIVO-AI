@@ -2,7 +2,9 @@ import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export type WorkflowStepType = "Generate Code" | "Ask AI" | "Transform" | "Summarize" | "Scrape URL" | "Deploy";
 
@@ -58,7 +60,7 @@ async function runStep(step: WorkflowStep, previousOutput: string): Promise<Work
     const systemPrompt = systemPrompts[step.type] ?? "You are ZIVO AI — a helpful assistant.";
     const userContent = step.input + contextNote;
 
-    const response = await client.chat.completions.create({
+    const response = await getClient().chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.4,
       max_tokens: 2000,

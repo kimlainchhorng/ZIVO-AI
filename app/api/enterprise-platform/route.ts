@@ -8,7 +8,9 @@ import {
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export async function GET() {
   return NextResponse.json({
@@ -76,7 +78,7 @@ export async function POST(req: Request) {
       userPrompt = customPrompt!;
     }
 
-    const r = await client.responses.create({
+    const r = await getClient().responses.create({
       model: "gpt-4.1-mini",
       input: [
         { role: "system", content: systemPrompt },
