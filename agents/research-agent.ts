@@ -10,19 +10,19 @@ class ResearchAgent {
         // Initialization code
     }
 
-    gatherInformation(topic: string): Promise<any> {
-        return new Promise((resolve, reject) => {
+    gatherInformation(topic: string): Promise<string> {
+        return new Promise((resolve) => {
             // Info gathering logic (e.g., API calls, web scraping)
             resolve(`Information about ${topic}`);
         });
     }
 
-    analyzeData(data: any): any {
+    analyzeData(data: unknown): string {
         // Data analysis logic
         return `Analyzed data: ${JSON.stringify(data)}`;
     }
 
-    reportFindings(findings: any): void {
+    reportFindings(findings: unknown): void {
         console.log(`Findings: ${findings}`);
     }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import NavBar from '../components/NavBar';
 
@@ -54,12 +54,8 @@ export function addHistoryEntry(entry: Omit<BuildHistoryEntry, "id">): void {
 
 export default function HistoryPage() {
   const router = useRouter();
-  const [entries, setEntries] = useState<BuildHistoryEntry[]>([]);
+  const [entries, setEntries] = useState<BuildHistoryEntry[]>(() => loadHistory());
   const [selected, setSelected] = useState<BuildHistoryEntry | null>(null);
-
-  useEffect(() => {
-    setEntries(loadHistory());
-  }, []);
 
   function clearHistory() {
     if (confirm("Clear all build history?")) {

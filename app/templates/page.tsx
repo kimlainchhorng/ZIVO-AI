@@ -52,7 +52,7 @@ export default function TemplatesPage() {
 
   const filtered = activeCategory === "All" ? TEMPLATES : TEMPLATES.filter((t) => t.category === activeCategory);
 
-  function useTemplate(template: Template) {
+  function applyTemplate(template: Template) {
     router.push(`/ai?prompt=${encodeURIComponent(template.prompt)}`);
   }
 
@@ -114,7 +114,7 @@ export default function TemplatesPage() {
                   boxShadow: hovered === template.name ? '0 8px 24px rgba(0,0,0,0.3)' : 'none',
                   cursor: 'pointer',
                 }}
-                onClick={() => useTemplate(template)}
+                onClick={() => applyTemplate(template)}
               >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: '2rem' }}>{template.icon}</span>
@@ -145,7 +145,7 @@ export default function TemplatesPage() {
                     fontWeight: 500,
                     transition: 'all 0.2s',
                   }}
-                  onClick={(e) => { e.stopPropagation(); useTemplate(template); }}
+                  onClick={(e) => { e.stopPropagation(); applyTemplate(template); }}
                 >
                   Use Template →
                 </button>

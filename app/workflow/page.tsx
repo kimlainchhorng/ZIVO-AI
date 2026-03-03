@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import NavBar from '../components/NavBar';
 
 const COLORS = {
@@ -68,13 +68,9 @@ export default function WorkflowPage() {
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
   const [running, setRunning] = useState(false);
   const [workflowName, setWorkflowName] = useState("My Workflow");
-  const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflow[]>([]);
+  const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflow[]>(() => loadWorkflows());
   const [showSaved, setShowSaved] = useState(false);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
-
-  useEffect(() => {
-    setSavedWorkflows(loadWorkflows());
-  }, []);
 
   function addStep(type: StepType = "Ask AI") {
     setSteps((prev) => [...prev, { id: genId(), type, input: "", status: "pending" }]);
