@@ -34,16 +34,17 @@ if debug_mode:
 # Swarm Mode toggle
 # ──────────────────────────────────────────────
 st.sidebar.markdown("### :material/settings: Mode")
-use_swarm: bool = st.sidebar.toggle(
+st.sidebar.toggle(
     "🕸️ Swarm Mode",
     value=st.session_state.get("use_swarm", False),
+    key="use_swarm",
     help="Enable multi-agent swarm with Planner + specialist agents.",
 )
 
 # Reinitialise ZivoBrain when swarm mode changes
-if "use_swarm" not in st.session_state or st.session_state.use_swarm != use_swarm:
-    st.session_state.use_swarm = use_swarm
-    st.session_state.brain = ZivoBrain(use_swarm=use_swarm)
+if "brain" not in st.session_state or st.session_state.get("_prev_use_swarm") != st.session_state.use_swarm:
+    st.session_state.brain = ZivoBrain(use_swarm=st.session_state.use_swarm)
+    st.session_state._prev_use_swarm = st.session_state.use_swarm
 
 # ──────────────────────────────────────────────
 # MCP Servers panel
