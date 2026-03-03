@@ -2,9 +2,11 @@ import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getClient() {
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 const SYSTEM_PROMPT = `You are ZIVO AI — an expert full-stack developer that generates complete, working web applications.
 
@@ -46,7 +48,7 @@ export async function POST(req: Request) {
     });
   }
 
-  const stream = await client.chat.completions.create({
+  const stream = await getClient().chat.completions.create({
     model: "gpt-4o",
     temperature: Number(process.env.OPENAI_TEMPERATURE ?? "0.4"),
     max_tokens: 4000,

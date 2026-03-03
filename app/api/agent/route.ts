@@ -3,7 +3,9 @@ import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export type FileAction = "create" | "update" | "delete";
 
@@ -80,7 +82,7 @@ export async function POST(req: Request) {
 
     const userMessage = `${prompt.trim()}${existingFilesContext}`;
 
-    const response = await client.chat.completions.create({
+    const response = await getClient().chat.completions.create({
       model: "gpt-4o",
       temperature: 0.2,
       max_tokens: 4096,

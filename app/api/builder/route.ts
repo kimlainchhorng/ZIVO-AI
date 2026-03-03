@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
 
 export type FileAction = "create" | "update" | "delete";
 
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing or invalid prompt" }, { status: 400 });
     }
 
-    const r = await client.chat.completions.create({
+    const r = await getClient().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },

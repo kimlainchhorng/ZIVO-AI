@@ -3,9 +3,11 @@ import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getClient() {
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+}
 
 export type FileAction = "create" | "update" | "delete";
 
@@ -119,7 +121,7 @@ async function generateFiles(
 
   messages.push({ role: "user", content: prompt });
 
-  const response = await client.chat.completions.create({
+  const response = await getClient().chat.completions.create({
     model: "gpt-4o",
     temperature: Number(process.env.OPENAI_TEMPERATURE ?? "0.4"),
     max_tokens: mode === "advanced" ? 8000 : 4000,
@@ -148,7 +150,7 @@ async function selfCorrect(
   let retries = 0;
 
   while (retries < maxRetries) {
-    const checkResponse = await client.chat.completions.create({
+    const checkResponse = await getClient().chat.completions.create({
       model: "gpt-4o",
       temperature: 0,
       max_tokens: 4000,
