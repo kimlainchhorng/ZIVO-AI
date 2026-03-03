@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 interface GeneratedFile {
   path: string;
@@ -21,6 +21,14 @@ interface DeployResult {
   deploymentId: string;
 }
 
+function SvgIcon({ paths, size = 16 }: { paths: React.ReactNode; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", verticalAlign: "middle", flexShrink: 0 }}>
+      {paths}
+    </svg>
+  );
+}
+
 const COLORS = {
   bg: "#0a0b14",
   bgPanel: "#0f1120",
@@ -38,11 +46,11 @@ const COLORS = {
 };
 
 const QUICK_PROMPTS = [
-  { emoji: "🚀", label: "Landing Page", prompt: "Build a modern SaaS landing page with hero, features, pricing, and CTA sections" },
-  { emoji: "📋", label: "Todo App", prompt: "Build a todo app with categories, due dates, and local storage persistence" },
-  { emoji: "🛒", label: "E-commerce", prompt: "Build an e-commerce product listing page with cart and checkout flow" },
-  { emoji: "🔐", label: "Auth Flow", prompt: "Build a complete authentication flow with login, signup, and password reset pages" },
-  { emoji: "📊", label: "Dashboard", prompt: "Build an analytics dashboard with charts, stats cards, and data tables" },
+  { icon: <SvgIcon paths={<><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></>} />, label: "Landing Page", prompt: "Build a modern SaaS landing page with hero, features, pricing, and CTA sections" },
+  { icon: <SvgIcon paths={<><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></>} />, label: "Todo App", prompt: "Build a todo app with categories, due dates, and local storage persistence" },
+  { icon: <SvgIcon paths={<><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></>} />, label: "E-commerce", prompt: "Build an e-commerce product listing page with cart and checkout flow" },
+  { icon: <SvgIcon paths={<><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>} />, label: "Auth Flow", prompt: "Build a complete authentication flow with login, signup, and password reset pages" },
+  { icon: <SvgIcon paths={<><line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/></>} />, label: "Dashboard", prompt: "Build an analytics dashboard with charts, stats cards, and data tables" },
 ];
 
 const MODELS = [
@@ -63,16 +71,19 @@ function getSpeechRecognitionAPI(): typeof SpeechRecognition | null {
   );
 }
 
-function getFileIcon(path: string): string {
+function getFileIcon(path: string): React.ReactNode {
   const ext = path.split(".").pop()?.toLowerCase();
-  if (ext === "tsx" || ext === "ts") return "📄";
-  if (ext === "jsx" || ext === "js") return "📙";
-  if (ext === "css") return "🎨";
-  if (ext === "json") return "📦";
-  if (ext === "html") return "🌐";
-  if (ext === "md") return "📝";
-  return "📄";
+  if (ext === "tsx" || ext === "ts" || ext === "jsx" || ext === "js" || ext === "md") {
+    return <SvgIcon paths={<><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></>} />;
+  }
+  return <SvgIcon paths={<><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></>} />;
 }
+
+const DEVICE_MODES: Array<{ mode: "desktop" | "tablet" | "mobile"; icon: React.ReactNode }> = [
+  { mode: "desktop", icon: <SvgIcon paths={<><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></>} /> },
+  { mode: "tablet", icon: <SvgIcon paths={<><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="12" x2="12.01" y1="18" y2="18"/></>} /> },
+  { mode: "mobile", icon: <SvgIcon paths={<><rect width="14" height="20" x="5" y="2" rx="2"/><line x1="12" x2="12.01" y1="18" y2="18"/></>} /> },
+];
 
 function getActionStyle(action: string): React.CSSProperties {
   if (action === "create") return { background: "rgba(16,185,129,0.15)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)" };
@@ -97,10 +108,9 @@ export default function AIPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [buildTime, setBuildTime] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [copyLabel, setCopyLabel] = useState("💾 Save");
-  const [copyFileLabel, setCopyFileLabel] = useState("📋 Copy");
+  const [copyLabel, setCopyLabel] = useState<React.ReactNode>(<><SvgIcon paths={<><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></>} /> Save</>);
+  const [copyFileLabel, setCopyFileLabel] = useState<React.ReactNode>(<><SvgIcon paths={<><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></>} /> Copy</>);
   const [loadingStep, setLoadingStep] = useState(0);
-  const [activeNav, setActiveNav] = useState<"builder" | "dashboard" | "connectors">("builder");
   const [consoleLogs, setConsoleLogs] = useState<Array<{ text: string; type: "info" | "success" | "error" }>>([]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
@@ -290,15 +300,15 @@ export default function AIPage() {
             <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>ZIVO AI</span>
             <div style={{ width: "1px", height: "20px", background: COLORS.border, margin: "0 0.25rem" }} />
             <nav style={{ display: "flex", gap: "0.25rem" }}>
-              {(["builder", "dashboard", "connectors"] as const).map((nav) => (
-                <button
+              {([["builder", "/ai"], ["dashboard", "/dashboard"], ["connectors", "/connectors"]] as const).map(([nav, href]) => (
+                <a
                   key={nav}
+                  href={href}
                   className="zivo-nav"
-                  onClick={() => setActiveNav(nav)}
-                  style={{ padding: "0.25rem 0.75rem", background: activeNav === nav ? "rgba(99,102,241,0.15)" : "transparent", color: activeNav === nav ? COLORS.accent : COLORS.textSecondary, borderRadius: "6px", border: activeNav === nav ? `1px solid rgba(99,102,241,0.3)` : "1px solid transparent", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s" }}
+                  style={{ padding: "0.25rem 0.75rem", background: nav === "builder" ? "rgba(99,102,241,0.15)" : "transparent", color: nav === "builder" ? COLORS.accent : COLORS.textSecondary, borderRadius: "6px", border: nav === "builder" ? `1px solid rgba(99,102,241,0.3)` : "1px solid transparent", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s", textDecoration: "none" }}
                 >
                   {nav.charAt(0).toUpperCase() + nav.slice(1)}
-                </button>
+                </a>
               ))}
             </nav>
           </div>
@@ -353,7 +363,7 @@ export default function AIPage() {
                     onClick={() => setPrompt(qp.prompt)}
                     style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.3rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", transition: "background 0.15s, border-color 0.15s" }}
                   >
-                    <span>{qp.emoji}</span>
+                    <span>{qp.icon}</span>
                     <span>{qp.label}</span>
                   </button>
                 ))}
@@ -378,7 +388,7 @@ export default function AIPage() {
                   title={isRecording ? "Stop recording" : "Voice input"}
                   style={{ width: "36px", height: "36px", borderRadius: "8px", background: isRecording ? "rgba(239,68,68,0.15)" : COLORS.bgCard, border: `1px solid ${isRecording ? "rgba(239,68,68,0.4)" : COLORS.border}`, color: isRecording ? "#ef4444" : COLORS.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", animation: isRecording ? "recordPulse 1.5s infinite" : "none", flexShrink: 0 }}
                 >
-                  🎙
+                  <SvgIcon paths={<><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></>} />
                 </button>
 
                 <button
@@ -403,14 +413,14 @@ export default function AIPage() {
                     Building…
                   </>
                 ) : (
-                  <>⚡ Build</>
+                  <><SvgIcon paths={<polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>} /> Build</>
                 )}
               </button>
 
               {/* Notifications */}
               {deployResult && (
                 <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", animation: "fadeIn 0.3s ease", fontSize: "0.875rem" }}>
-                  ✅ Deployed:{" "}
+                  <><SvgIcon paths={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>} /> Deployed:{" "}</>
                   <a href={deployResult.url} target="_blank" rel="noreferrer" style={{ color: COLORS.success }}>
                     {deployResult.url}
                   </a>
@@ -418,17 +428,17 @@ export default function AIPage() {
               )}
               {deployError && (
                 <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
-                  ⚠️ {deployError}
+                  <SvgIcon paths={<><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></>} /> {deployError}
                 </div>
               )}
               {downloadError && (
                 <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
-                  ⚠️ {downloadError}
+                  <SvgIcon paths={<><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></>} /> {downloadError}
                 </div>
               )}
               {output?.error && (
                 <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
-                  ⚠️ {output.error}
+                  <SvgIcon paths={<><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></>} /> {output.error}
                 </div>
               )}
               {output?.summary && (
@@ -452,7 +462,7 @@ export default function AIPage() {
                         onClick={() => { setActiveFile(f); setActiveTab("code"); }}
                         style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.5rem", borderRadius: "6px", cursor: "pointer", background: activeFile?.path === f.path ? "rgba(99,102,241,0.12)" : "transparent", border: activeFile?.path === f.path ? "1px solid rgba(99,102,241,0.25)" : "1px solid transparent", transition: "background 0.15s" }}
                       >
-                        <span style={{ fontSize: "0.875rem" }}>{getFileIcon(f.path)}</span>
+                        <span style={{ display: "flex", alignItems: "center" }}>{getFileIcon(f.path)}</span>
                         <span style={{ flex: 1, fontSize: "0.8125rem", color: activeFile?.path === f.path ? COLORS.textPrimary : COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.path}</span>
                         <span style={{ fontSize: "0.65rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", textTransform: "uppercase", flexShrink: 0, ...getActionStyle(f.action) }}>{f.action}</span>
                       </div>
@@ -470,7 +480,7 @@ export default function AIPage() {
                   onClick={handleDownload}
                   style={{ flex: 1, padding: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
                 >
-                  ⬇ ZIP
+                  <><SvgIcon paths={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></>} /> ZIP</>
                 </button>
                 <button
                   className="zivo-btn"
@@ -478,15 +488,15 @@ export default function AIPage() {
                   disabled={deploying}
                   style={{ flex: 1, padding: "0.5rem", background: deploying ? "rgba(16,185,129,0.1)" : "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "8px", color: COLORS.success, cursor: deploying ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
                 >
-                  🚀 {deploying ? "…" : "Deploy"}
+                  <><SvgIcon paths={<><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></>} /> {deploying ? "…" : "Deploy"}</>
                 </button>
                 <button
                   className="zivo-btn"
                   onClick={() => {
                     const all = output?.files?.map((f) => `// ${f.path}\n${f.content}`).join("\n\n---\n\n") ?? "";
                     navigator.clipboard.writeText(all).then(() => {
-                      setCopyLabel("✅ Saved!");
-                      setTimeout(() => setCopyLabel("💾 Save"), 2000);
+                      setCopyLabel(<><SvgIcon paths={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>} /> Saved!</>);
+                      setTimeout(() => setCopyLabel(<><SvgIcon paths={<><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></>} /> Save</>), 2000);
                     }).catch(() => {});
                   }}
                   style={{ flex: 1, padding: "0.5rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
@@ -518,7 +528,7 @@ export default function AIPage() {
 
               {/* URL bar */}
               <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
-                <span style={{ fontSize: "0.7rem", color: COLORS.textMuted }}>🔒</span>
+                <span style={{ display: "flex", alignItems: "center", color: COLORS.textMuted }}><SvgIcon paths={<><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></>} size={12} /></span>
                 <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace" }}>localhost:3000</span>
               </div>
 
@@ -526,7 +536,7 @@ export default function AIPage() {
 
               {/* Device switcher */}
               <div style={{ display: "flex", gap: "2px" }}>
-                {([["desktop", "🖥"], ["tablet", "📟"], ["mobile", "📱"]] as const).map(([mode, icon]) => (
+                {DEVICE_MODES.map(({ mode, icon }) => (
                   <button
                     key={mode}
                     className="zivo-btn"
@@ -546,7 +556,7 @@ export default function AIPage() {
                 title="Visual Edit"
                 style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1px solid ${visualEdit ? "rgba(99,102,241,0.4)" : COLORS.border}`, background: visualEdit ? "rgba(99,102,241,0.15)" : "transparent", color: visualEdit ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
               >
-                ✏️ <span>{visualEdit ? "Editing" : "Edit"}</span>
+                <SvgIcon paths={<><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></>} /> <span>{visualEdit ? "Editing" : "Edit"}</span>
               </button>
 
               {/* Refresh */}
@@ -575,14 +585,20 @@ export default function AIPage() {
               {/* Empty State */}
               {!loading && !output && (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", animation: "fadeIn 0.5s ease", padding: "2rem", textAlign: "center" }}>
-                  <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "2rem" }}>🖥️</div>
+                  <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.accent }}>
+                    <SvgIcon paths={<><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></>} size={36} />
+                  </div>
                   <div>
                     <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.5rem", color: COLORS.textPrimary }}>Your app will appear here</h2>
                     <p style={{ fontSize: "0.875rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app on the left and click Build to get started</p>
                   </div>
                   <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", justifyContent: "center" }}>
-                    {["⚡ Instant Preview", "🤖 AI-Powered", "🔧 Fully Editable"].map((chip) => (
-                      <span key={chip} style={{ padding: "0.35rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", fontSize: "0.8125rem", color: COLORS.textSecondary }}>{chip}</span>
+                    {[
+                      { key: "preview", icon: <SvgIcon paths={<polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>} />, label: "Instant Preview" },
+                      { key: "ai", icon: <SvgIcon paths={<><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/><path d="M12 8v8"/><path d="M8 12h8"/></>} />, label: "AI-Powered" },
+                      { key: "edit", icon: <SvgIcon paths={<><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></>} />, label: "Fully Editable" },
+                    ].map((chip) => (
+                      <span key={chip.key} style={{ padding: "0.35rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", fontSize: "0.8125rem", color: COLORS.textSecondary, display: "flex", alignItems: "center", gap: "0.35rem" }}>{chip.icon}{chip.label}</span>
                     ))}
                   </div>
                 </div>
@@ -598,7 +614,11 @@ export default function AIPage() {
                       "Starting preview...",
                     ].map((step, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", animation: i <= loadingStep ? "fadeIn 0.4s ease" : "none", opacity: i <= loadingStep ? 1 : 0.3 }}>
-                        <span style={{ fontSize: "1.1rem" }}>{i < loadingStep ? "✅" : i === loadingStep ? "⏳" : "⏳"}</span>
+                        <span style={{ display: "flex", alignItems: "center" }}>
+                          {i < loadingStep
+                            ? <SvgIcon paths={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>} size={18} />
+                            : <SvgIcon paths={<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>} size={18} />}
+                        </span>
                         <span style={{ fontSize: "0.875rem", color: i <= loadingStep ? COLORS.textPrimary : COLORS.textMuted }}>{step}</span>
                       </div>
                     ))}
@@ -675,15 +695,15 @@ export default function AIPage() {
                   {activeFile ? (
                     <>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 1rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
-                        <span style={{ fontSize: "0.875rem" }}>{getFileIcon(activeFile.path)}</span>
+                        <span style={{ display: "flex", alignItems: "center" }}>{getFileIcon(activeFile.path)}</span>
                         <code style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, fontFamily: "monospace" }}>{activeFile.path}</code>
                         <span style={{ fontSize: "0.7rem", padding: "1px 6px", borderRadius: "4px", textTransform: "uppercase", fontWeight: 600, ...getActionStyle(activeFile.action) }}>{activeFile.action}</span>
                         <div style={{ flex: 1 }} />
                         <button
                           className="zivo-btn"
                           onClick={() => navigator.clipboard.writeText(activeFile.content).then(() => {
-                            setCopyFileLabel("✅ Copied!");
-                            setTimeout(() => setCopyFileLabel("📋 Copy"), 2000);
+                            setCopyFileLabel(<><SvgIcon paths={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>} /> Copied!</>);
+                            setTimeout(() => setCopyFileLabel(<><SvgIcon paths={<><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></>} /> Copy</>), 2000);
                           }).catch(() => {})}
                           style={{ padding: "0.3rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem" }}
                         >
