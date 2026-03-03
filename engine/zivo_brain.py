@@ -1,22 +1,35 @@
 import os
-from typing import List, Dict, Generator
-from openai import OpenAI
+from typing import List, Dict
 from dotenv import load_dotenv
+from agents import Agent, Runner, ModelSettings
+from engine.tools import get_current_datetime, read_local_file, list_directory
+
 load_dotenv()
+
 
 class ZivoBrain:
     def __init__(self, prompt_path: str = "prompts/system_v1.txt"):
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         with open(prompt_path, "r") as f:
-            self.system_prompt = f.read()
+            system_prompt = f.read()
 
-    def get_streaming_response(self, messages: List[Dict[str, str]]) -> Generator[str, None, None]:
-        full_messages = [{"role": "system", "content": self.system_prompt}] + messages
-        stream = self.client.chat.completions.create(
+        self.agent = Agent(
+            name="ZIVO-AI",
+            instructions=system_prompt,
             model="gpt-4o",
-            messages=full_messages,
-            stream=True
+            model_settings=ModelSettings(temperature=0.7),
+            tools=[
+                get_current_datetime,
+                read_local_file,
+                list_directory,
+            ],
         )
-        for chunk in stream:
-            if chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+
+    def run(self, messages: List[Dict[str, str]]):
+        """
+        Run the agent with full conversation history.
+        Returns a Runner result object with .final_output and .new_messages.
+        """
+        conversation = "\n".join(
+            f"{m['role'].upper()}: {m['content']}" for m in messages
+        )
+        return Runner.run_sync(self.agent, conversation)
