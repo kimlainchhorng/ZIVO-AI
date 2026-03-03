@@ -7,6 +7,7 @@ from engine.zivo_brain import ZivoBrain
 
 ChatMessage = Dict[str, str]
 
+
 def _init_session_state() -> None:
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -15,12 +16,14 @@ def _init_session_state() -> None:
     if "last_run_result" not in st.session_state:
         st.session_state.last_run_result = None
 
+
 def _debug_enabled() -> bool:
     params = st.query_params
     debug_value = params.get("debug", "false")
     if isinstance(debug_value, list):
         debug_value = debug_value[0] if debug_value else "false"
     return str(debug_value).lower() == "true"
+
 
 def _render_sidebar() -> None:
     st.logo(":material/smart_toy:", icon_image=":material/bolt:")
@@ -30,13 +33,16 @@ def _render_sidebar() -> None:
         st.session_state.last_run_result = None
         st.rerun()
 
+
 def _render_messages() -> None:
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
+
 def _append_message(role: str, content: str) -> None:
     st.session_state.messages.append({"role": role, "content": content})
+
 
 def _render_debug_panel() -> None:
     if _debug_enabled() and st.session_state.last_run_result:
@@ -46,13 +52,11 @@ def _render_debug_panel() -> None:
                 "final_output": result.final_output,
                 "new_messages_count": len(result.new_messages),
                 "messages": [
-                    {
-                        "role": getattr(m, "role", "unknown"),
-                        "content": str(getattr(m, "content", ""))
-                    }
+                    {"role": getattr(m, "role", "unknown"), "content": str(getattr(m, "content", ""))}
                     for m in result.new_messages
                 ]
             })
+
 
 def main() -> None:
     st.set_page_config(page_title="ZIVO-AI", page_icon=":material/smart_toy:")
