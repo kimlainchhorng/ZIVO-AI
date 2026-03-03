@@ -49,7 +49,6 @@ def _render_debug_panel() -> None:
         with st.expander("Debug: Raw OpenAI Response", expanded=False):
             st.json(st.session_state.last_raw_response)
 
-
 def main() -> None:
     st.set_page_config(page_title="ZIVO-AI", page_icon=":material/smart_toy:")
     _init_session_state()
