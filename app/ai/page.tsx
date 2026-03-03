@@ -2,26 +2,26 @@
 
 import { useMemo, useState } from "react";
 
-type BuilderFile = {
-  action: "create" | "update" | "delete";
+type GeneratedFile = {
   path: string;
   content?: string;
+  language?: string;
 };
 
 type BuilderRes = {
-  files: BuilderFile[];
-  notes?: string;
-  meta?: any;
+  files: GeneratedFile[];
+  preview_html?: string;
+  summary?: string;
 };
 
 export default function AIPage() {
   const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState<"text" | "json">("text");
-  const [output, setOutput] = useState("");
+  const [previewHtml, setPreviewHtml] = useState("");
   const [builder, setBuilder] = useState<BuilderRes | null>(null);
   const [activePath, setActivePath] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [rightTab, setRightTab] = useState<"preview" | "code">("preview");
 
   const canSubmit = useMemo(
     () => prompt.trim().length >= 5 && !loading,
@@ -36,7 +36,7 @@ export default function AIPage() {
   async function onSubmit() {
     setLoading(true);
     setError("");
-    setOutput("");
+    setPreviewHtml("");
     setBuilder(null);
     setActivePath("");
 
@@ -44,25 +44,17 @@ export default function AIPage() {
       const res = await fetch("/api/generate-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          mode, // "text" or "json"
-          projectName: "ZIVO AI",
-          stack: "Next.js App Router + TypeScript",
-          style: "premium",
-        }),
+        body: JSON.stringify({ prompt }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
 
-      if (mode === "json") {
-        setBuilder(data);
-        const first = data?.files?.[0]?.path || "";
-        setActivePath(first);
-      } else {
-        setOutput(data?.result ?? "");
-      }
+      setBuilder(data);
+      setPreviewHtml(data?.preview_html ?? "");
+      const first = data?.files?.[0]?.path || "";
+      setActivePath(first);
+      setRightTab("preview");
     } catch (e: any) {
       setError(e?.message || "Something went wrong");
     } finally {
@@ -70,355 +62,403 @@ export default function AIPage() {
     }
   }
 
-  async function copyText(text: string) {
-    if (!text) return;
-    await navigator.clipboard.writeText(text);
-    alert("Copied ✅");
-  }
-
   function clearAll() {
     setPrompt("");
-    setOutput("");
+    setPreviewHtml("");
     setBuilder(null);
     setActivePath("");
     setError("");
   }
 
-  async function applyToGitHub() {
-    const files = builder?.files || [];
-    if (!files.length) {
-      alert("No files to apply yet. Use Builder mode and Build first.");
-      return;
-    }
-
-    const res = await fetch("/api/apply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ files, message: "Applied from ZIVO AI Builder" }),
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) {
-      alert(data?.error || "Apply failed");
-      return;
-    }
-
-    alert("Applied ✅ (If GitHub push is enabled, Vercel will deploy.)");
-  }
+  const styles = {
+    root: {
+      display: "flex" as const,
+      height: "100vh",
+      overflow: "hidden",
+      background: "#0f0f11",
+      color: "#f0f0f5",
+      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
+    },
+    leftPanel: {
+      width: "40%",
+      minWidth: 320,
+      maxWidth: 520,
+      display: "flex" as const,
+      flexDirection: "column" as const,
+      borderRight: "1px solid #2a2a35",
+      background: "#1a1a1f",
+      overflow: "hidden",
+    },
+    leftHeader: {
+      padding: "20px 20px 16px",
+      borderBottom: "1px solid #2a2a35",
+    },
+    logoRow: {
+      display: "flex" as const,
+      alignItems: "center",
+      gap: 10,
+      marginBottom: 4,
+    },
+    logoIcon: {
+      width: 28,
+      height: 28,
+      borderRadius: 8,
+      background: "linear-gradient(135deg, #22c55e, #16a34a)",
+      display: "flex" as const,
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 14,
+      fontWeight: 800,
+      color: "#fff",
+    },
+    title: {
+      margin: 0,
+      fontSize: 18,
+      fontWeight: 700,
+      color: "#f0f0f5",
+    },
+    subtitle: {
+      margin: 0,
+      fontSize: 12,
+      color: "#888899",
+    },
+    leftBody: {
+      flex: 1,
+      display: "flex" as const,
+      flexDirection: "column" as const,
+      padding: 16,
+      gap: 12,
+      overflow: "hidden",
+    },
+    textarea: (hasError: boolean) => ({
+      width: "100%",
+      flex: 1,
+      minHeight: 120,
+      maxHeight: 200,
+      resize: "none" as const,
+      borderRadius: 12,
+      border: hasError ? "1px solid rgba(239,68,68,0.7)" : "1px solid #2a2a35",
+      background: "#0f0f11",
+      color: "#f0f0f5",
+      padding: "12px 14px",
+      outline: "none",
+      fontSize: 14,
+      lineHeight: 1.55,
+      boxSizing: "border-box" as const,
+    }),
+    errorMsg: {
+      fontSize: 12,
+      color: "#f87171",
+      padding: "8px 12px",
+      borderRadius: 8,
+      background: "rgba(239,68,68,0.1)",
+      border: "1px solid rgba(239,68,68,0.25)",
+    },
+    buttonRow: {
+      display: "flex" as const,
+      gap: 8,
+    },
+    buildBtn: (enabled: boolean) => ({
+      flex: 1,
+      padding: "11px 0",
+      borderRadius: 10,
+      border: "none",
+      background: enabled ? "#22c55e" : "#1a3d27",
+      color: enabled ? "#fff" : "#4a7a5a",
+      fontWeight: 700,
+      fontSize: 14,
+      cursor: enabled ? "pointer" : "not-allowed",
+      transition: "background 0.15s",
+    }),
+    clearBtn: {
+      padding: "11px 16px",
+      borderRadius: 10,
+      border: "1px solid #2a2a35",
+      background: "transparent",
+      color: "#888899",
+      fontWeight: 600,
+      fontSize: 14,
+      cursor: "pointer",
+    },
+    fileTreeHeader: {
+      fontSize: 11,
+      fontWeight: 700,
+      color: "#888899",
+      textTransform: "uppercase" as const,
+      letterSpacing: 0.8,
+      marginBottom: 6,
+    },
+    fileTree: {
+      flex: 1,
+      overflow: "auto" as const,
+      display: "flex" as const,
+      flexDirection: "column" as const,
+      gap: 2,
+    },
+    fileItem: (isActive: boolean) => ({
+      display: "flex" as const,
+      alignItems: "center",
+      gap: 8,
+      padding: "8px 10px",
+      borderRadius: 8,
+      border: "none",
+      background: isActive ? "rgba(34,197,94,0.12)" : "transparent",
+      color: isActive ? "#22c55e" : "#c0c0cc",
+      cursor: "pointer" as const,
+      fontSize: 12,
+      fontWeight: isActive ? 600 : 400,
+      textAlign: "left" as const,
+      width: "100%",
+      transition: "background 0.1s",
+    }),
+    skeleton: (opacity: number) => ({
+      borderRadius: 8,
+      background: "linear-gradient(90deg, #1a1a1f 25%, #2a2a35 50%, #1a1a1f 75%)",
+      backgroundSize: "200% 100%",
+      animation: "skeletonPulse 1.5s infinite",
+      height: 32,
+      marginBottom: 4,
+      opacity,
+    }),
+    rightPanel: {
+      flex: 1,
+      display: "flex" as const,
+      flexDirection: "column" as const,
+      background: "#0f0f11",
+      overflow: "hidden",
+    },
+    rightHeader: {
+      display: "flex" as const,
+      alignItems: "center",
+      padding: "0 20px",
+      borderBottom: "1px solid #2a2a35",
+      background: "#1a1a1f",
+      height: 48,
+      flexShrink: 0,
+    },
+    tab: (isActive: boolean) => ({
+      padding: "0 18px",
+      height: "100%",
+      display: "flex" as const,
+      alignItems: "center",
+      fontSize: 13,
+      fontWeight: isActive ? 600 : 400,
+      color: isActive ? "#f0f0f5" : "#888899",
+      cursor: "pointer" as const,
+      background: "transparent",
+      border: "none",
+      borderBottom: isActive ? "2px solid #22c55e" : "2px solid transparent",
+    }),
+    rightBody: {
+      flex: 1,
+      overflow: "hidden",
+      position: "relative" as const,
+    },
+    iframe: {
+      width: "100%",
+      height: "100%",
+      border: "none",
+      background: "#fff",
+    },
+    placeholder: {
+      position: "absolute" as const,
+      inset: 0,
+      display: "flex" as const,
+      flexDirection: "column" as const,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 12,
+      color: "#888899",
+    },
+    placeholderText: {
+      fontSize: 14,
+      opacity: 0.6,
+    },
+    codeBlock: {
+      position: "absolute" as const,
+      inset: 0,
+      overflow: "auto" as const,
+      padding: 20,
+    },
+    pre: {
+      margin: 0,
+      padding: 20,
+      borderRadius: 12,
+      background: "#0a0a0c",
+      border: "1px solid #2a2a35",
+      fontSize: 12,
+      lineHeight: 1.6,
+      color: "#c9d1d9",
+      whiteSpace: "pre" as const,
+      overflow: "auto" as const,
+      fontFamily: "'Fira Code', 'Cascadia Code', Consolas, monospace",
+    },
+  };
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: 24,
-        background: "linear-gradient(180deg, #0b0f1a 0%, #070a12 100%)",
-        color: "#eaeefb",
-        fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial",
-      }}
-    >
-      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 18,
-          }}
-        >
-          <div>
-            <h1 style={{ margin: 0, fontSize: 28, letterSpacing: 0.3 }}>
-              ZIVO AI Builder
-            </h1>
-            <p style={{ margin: "6px 0 0", opacity: 0.75 }}>
-              Text mode (simple) or Builder mode (files → GitHub).
-            </p>
+    <>
+      <style>{`
+        @keyframes skeletonPulse {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+        @keyframes dotPulse {
+          0% { opacity: 0.3; transform: scale(0.8); }
+          100% { opacity: 1; transform: scale(1.2); }
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; }
+        textarea::placeholder { color: #555566; }
+      `}</style>
+      <div style={styles.root}>
+        {/* LEFT PANEL */}
+        <div style={styles.leftPanel}>
+          <div style={styles.leftHeader}>
+            <div style={styles.logoRow}>
+              <div style={styles.logoIcon}>Z</div>
+              <h1 style={styles.title}>ZIVO AI Builder</h1>
+            </div>
+            <p style={styles.subtitle}>Describe your app and watch it come to life</p>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                display: "flex",
-                gap: 6,
-                padding: 6,
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.10)",
-                fontSize: 12,
+          <div style={styles.leftBody}>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Describe what you want to build..."
+              style={styles.textarea(!!error)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && canSubmit) {
+                  onSubmit();
+                }
               }}
-            >
-              <button
-                type="button"
-                onClick={() => setMode("text")}
-                style={{
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  background: mode === "text" ? "#ffffff" : "transparent",
-                  color: mode === "text" ? "#0b0f1a" : "#eaeefb",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                }}
-              >
-                Text
+            />
+
+            {error && <div style={styles.errorMsg}>{error}</div>}
+
+            <div style={styles.buttonRow}>
+              <button onClick={onSubmit} disabled={!canSubmit} style={styles.buildBtn(canSubmit)}>
+                {loading ? "Building..." : "Build"}
               </button>
-              <button
-                type="button"
-                onClick={() => setMode("json")}
-                style={{
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  background: mode === "json" ? "#ffffff" : "transparent",
-                  color: mode === "json" ? "#0b0f1a" : "#eaeefb",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                }}
-              >
-                Builder
-              </button>
+              <button onClick={clearAll} style={styles.clearBtn}>Clear</button>
             </div>
 
-            <div
-              style={{
-                padding: "10px 12px",
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.10)",
-                fontSize: 12,
-                opacity: 0.9,
-              }}
-            >
-              Local mode
-            </div>
+            {loading && (
+              <div>
+                <div style={styles.fileTreeHeader}>Generating files…</div>
+                {[1, 0.7, 0.4].map((op, i) => (
+                  <div key={i} style={styles.skeleton(op)} />
+                ))}
+              </div>
+            )}
+
+            {!loading && builder?.files?.length ? (
+              <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
+                <div style={styles.fileTreeHeader}>
+                  Files ({builder.files.length})
+                </div>
+                <div style={styles.fileTree}>
+                  {builder.files.map((f, idx) => {
+                    const isActive = activeFile?.path === f.path;
+                    const ext = f.path.split(".").pop() || "";
+                    const icon =
+                      ext === "html" ? "🌐"
+                      : ext === "tsx" || ext === "ts" ? "⚛️"
+                      : ext === "css" ? "🎨"
+                      : ext === "json" ? "📋"
+                      : "📄";
+                    return (
+                      <button
+                        key={f.path + idx}
+                        onClick={() => {
+                          setActivePath(f.path);
+                          setRightTab("code");
+                        }}
+                        style={styles.fileItem(isActive)}
+                      >
+                        <span>{icon}</span>
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {f.path}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {builder.summary && (
+                  <div style={{ fontSize: 11, color: "#888899", padding: "8px 0", borderTop: "1px solid #2a2a35", marginTop: 8 }}>
+                    {builder.summary}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
 
-        <section
-          style={{
-            borderRadius: 18,
-            padding: 16,
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.10)",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
-          }}
-        >
-          <label
-            style={{
-              display: "block",
-              fontSize: 13,
-              opacity: 0.8,
-              marginBottom: 8,
-            }}
-          >
-            Prompt
-          </label>
-
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder='Example: Build a Next.js landing page for "Zivo Driver" with hero, features, pricing, FAQ.'
-            style={{
-              width: "100%",
-              minHeight: 120,
-              resize: "vertical",
-              borderRadius: 14,
-              border: "1px solid rgba(255,255,255,0.10)",
-              background: "rgba(0,0,0,0.25)",
-              color: "#eaeefb",
-              padding: 12,
-              outline: "none",
-              fontSize: 14,
-            }}
-          />
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              marginTop: 10,
-            }}
-          >
+        {/* RIGHT PANEL */}
+        <div style={styles.rightPanel}>
+          <div style={styles.rightHeader}>
             <button
-              onClick={onSubmit}
-              disabled={!canSubmit}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: canSubmit ? "#ffffff" : "rgba(255,255,255,0.12)",
-                color: canSubmit ? "#0b0f1a" : "#9aa3b2",
-                fontWeight: 800,
-                cursor: canSubmit ? "pointer" : "not-allowed",
-              }}
+              style={styles.tab(rightTab === "preview")}
+              onClick={() => setRightTab("preview")}
             >
-              {loading ? "Building..." : "Build"}
+              Preview
             </button>
-
             <button
-              onClick={clearAll}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "transparent",
-                color: "#eaeefb",
-                cursor: "pointer",
-                fontWeight: 700,
-              }}
+              style={styles.tab(rightTab === "code")}
+              onClick={() => setRightTab("code")}
             >
-              Clear
+              Code
             </button>
-
-            {mode === "json" && (
-              <button
-                onClick={applyToGitHub}
-                disabled={!builder?.files?.length || loading}
-                style={{
-                  marginLeft: 6,
-                  padding: "10px 14px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: builder?.files?.length ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
-                  color: "#eaeefb",
-                  cursor: builder?.files?.length ? "pointer" : "not-allowed",
-                  fontWeight: 800,
-                }}
-              >
-                Apply to GitHub
-              </button>
+            {activeFile && rightTab === "code" && (
+              <span style={{ marginLeft: 12, fontSize: 12, color: "#888899" }}>
+                {activeFile.path}
+              </span>
             )}
-
-            <div style={{ marginLeft: "auto", opacity: 0.7, fontSize: 12 }}>
-              Tip: Builder mode returns files you can copy/apply
-            </div>
           </div>
 
-          {error && (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 12,
-                borderRadius: 14,
-                border: "1px solid rgba(255,80,80,0.35)",
-                background: "rgba(255,80,80,0.08)",
-                color: "#ffb4b4",
-                fontSize: 13,
-              }}
-            >
-              {error}
-            </div>
-          )}
-        </section>
-
-        <section
-          style={{
-            marginTop: 16,
-            borderRadius: 18,
-            padding: 16,
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.10)",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <h3 style={{ margin: 0, fontSize: 14, opacity: 0.85 }}>Output</h3>
-
-            <button
-              onClick={() => copyText(mode === "json" ? (activeFile?.content || "") : output)}
-              style={{
-                padding: "8px 10px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(255,255,255,0.08)",
-                color: "#eaeefb",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 800,
-              }}
-            >
-              Copy
-            </button>
-          </div>
-
-          {mode === "json" && builder?.files?.length ? (
-            <div style={{ display: "grid", gridTemplateColumns: "280px 1fr", gap: 12, marginTop: 10 }}>
-              <div
-                style={{
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  background: "rgba(0,0,0,0.18)",
-                  padding: 10,
-                  maxHeight: 420,
-                  overflow: "auto",
-                }}
-              >
-                <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>
-                  Files ({builder.files.length})
+          <div style={styles.rightBody}>
+            {rightTab === "preview" ? (
+              previewHtml ? (
+                <iframe
+                  style={styles.iframe}
+                  srcDoc={previewHtml}
+                  sandbox="allow-scripts"
+                  title="Live Preview"
+                />
+              ) : (
+                <div style={styles.placeholder}>
+                  <span style={{ fontSize: 40, opacity: 0.4 }}>🖥️</span>
+                  <div style={styles.placeholderText}>
+                    {loading ? "Generating your app..." : "Your app will appear here"}
+                  </div>
+                  {loading && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {[0, 1, 2].map((i) => (
+                        <div
+                          key={i}
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: "#22c55e",
+                            animation: `dotPulse ${0.6 + i * 0.2}s ease-in-out infinite alternate`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {builder.files.map((f, idx) => {
-                  const isActive = (activeFile?.path || "") === f.path;
-                  return (
-                    <button
-                      key={f.path + idx}
-                      onClick={() => setActivePath(f.path)}
-                      style={{
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "10px 10px",
-                        borderRadius: 12,
-                        marginBottom: 8,
-                        border: "1px solid rgba(255,255,255,0.10)",
-                        background: isActive ? "rgba(255,255,255,0.10)" : "transparent",
-                        color: "#eaeefb",
-                        cursor: "pointer",
-                        fontSize: 12,
-                      }}
-                    >
-                      <div style={{ fontWeight: 800 }}>{f.action.toUpperCase()}</div>
-                      <div style={{ opacity: 0.8, wordBreak: "break-word" }}>{f.path}</div>
-                    </button>
-                  );
-                })}
+              )
+            ) : (
+              <div style={styles.codeBlock}>
+                <pre style={styles.pre}>
+                  <code>{activeFile?.content || "Select a file from the left panel to view its code."}</code>
+                </pre>
               </div>
-
-              <pre
-                style={{
-                  margin: 0,
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  background: "rgba(0,0,0,0.28)",
-                  padding: 12,
-                  maxHeight: 420,
-                  overflow: "auto",
-                  whiteSpace: "pre",
-                  fontSize: 12,
-                  lineHeight: 1.45,
-                }}
-              >
-                {activeFile?.content || "Select a file to preview its content."}
-              </pre>
-            </div>
-          ) : (
-            <pre
-              style={{
-                marginTop: 10,
-                borderRadius: 14,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background: "rgba(0,0,0,0.28)",
-                padding: 12,
-                minHeight: 240,
-                overflow: "auto",
-                whiteSpace: "pre-wrap",
-                fontSize: 12,
-                lineHeight: 1.45,
-              }}
-            >
-              {output || "No output yet."}
-            </pre>
-          )}
-        </section>
+            )}
+          </div>
+        </div>
       </div>
-    </main>
+    </>
   );
 }
