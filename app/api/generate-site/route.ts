@@ -22,7 +22,22 @@ export interface GenerateSiteResponse {
   notes?: string;
 }
 
-const SYSTEM_PROMPT = `You are ZIVO AI — an expert full-stack developer that generates complete, working web applications.
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+type GenerateMode = "standard" | "advanced" | "minimal";
+
+const BASE_RULES = `
+Rules:
+- ALWAYS include a \`preview_html\` field: a single complete self-contained HTML file with ALL CSS inline in <style> tags and ALL JS inline in <script> tags. No external CDN links that might fail.
+- Each file in \`files\` must have a \`path\`, \`content\`, and \`action\` ("create" | "update" | "delete").
+- Make the UI beautiful: use modern CSS, gradients, good typography, proper spacing.
+- The HTML preview should look like a real polished app, not a demo.
+- Return ONLY valid JSON, no markdown fences, no explanation text.`;
+
+const SYSTEM_PROMPT_STANDARD = `You are ZIVO AI — an expert full-stack developer that generates complete, working web applications.
 
 When given a description, respond with a valid JSON object:
 {
@@ -31,39 +46,84 @@ When given a description, respond with a valid JSON object:
       "path": "index.html",
       "content": "<!DOCTYPE html>...(complete, self-contained HTML with inline CSS and JS)...",
       "action": "create"
-    },
-    {
-      "path": "app/page.tsx",
-      "content": "...(complete Next.js page component)...",
-      "action": "create"
     }
   ],
   "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
   "summary": "Brief description of what was built",
   "notes": "Any additional notes"
 }
+${BASE_RULES}`;
 
-Rules:
-- ALWAYS include a \`preview_html\` field: a single complete self-contained HTML file with ALL CSS inline in <style> tags and ALL JS inline in <script> tags. No external CDN links that might fail.
-- Each file in \`files\` must have a \`path\`, \`content\`, and \`action\` ("create" | "update" | "delete").
-- Make the UI beautiful: use modern CSS, gradients, good typography, proper spacing.
-- The HTML preview should look like a real polished app, not a demo.
-- Return ONLY valid JSON, no markdown fences, no explanation text.`;
+const SYSTEM_PROMPT_ADVANCED = `You are ZIVO AI — an expert full-stack developer that generates complete Next.js projects.
+
+When given a description, respond with a valid JSON object containing a FULL Next.js project structure:
+{
+  "files": [
+    { "path": "package.json", "content": "...", "action": "create" },
+    { "path": "README.md", "content": "...", "action": "create" },
+    { "path": "app/page.tsx", "content": "...", "action": "create" },
+    { "path": "app/layout.tsx", "content": "...", "action": "create" },
+    { "path": "app/globals.css", "content": "...", "action": "create" },
+    { "path": "app/components/Header.tsx", "content": "...", "action": "create" },
+    { "path": "app/api/data/route.ts", "content": "...", "action": "create" }
+  ],
+  "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
+  "summary": "Brief description of what was built",
+  "notes": "Any additional notes"
+}
+
+Include: package.json, README.md, app/page.tsx, app/layout.tsx, app/globals.css, at least one component in app/components/, and at least one API route stub.
+${BASE_RULES}`;
+
+const SYSTEM_PROMPT_MINIMAL = `You are ZIVO AI — an expert web developer that generates minimal, self-contained HTML files.
+
+When given a description, respond with a valid JSON object containing a SINGLE HTML file:
+{
+  "files": [
+    {
+      "path": "index.html",
+      "content": "<!DOCTYPE html>...(complete, self-contained HTML with ALL CSS and JS inline)...",
+      "action": "create"
+    }
+  ],
+  "preview_html": "<!DOCTYPE html>...(same as the single HTML file)...",
+  "summary": "Brief description of what was built",
+  "notes": "Any additional notes"
+}
+${BASE_RULES}`;
 
 const TYPE_CHECK_PROMPT = `You are a TypeScript expert. Review the following generated files for TypeScript type errors or obvious bugs.
 If there are errors, return a corrected JSON object using the same schema (files, preview_html, summary, notes).
 If there are no errors, return the original JSON unchanged.
 Return ONLY valid JSON, no markdown, no explanation.`;
 
-async function generateFiles(prompt: string): Promise<GenerateSiteResponse> {
+function getSystemPrompt(mode: GenerateMode): string {
+  if (mode === "advanced") return SYSTEM_PROMPT_ADVANCED;
+  if (mode === "minimal") return SYSTEM_PROMPT_MINIMAL;
+  return SYSTEM_PROMPT_STANDARD;
+}
+
+async function generateFiles(
+  prompt: string,
+  mode: GenerateMode,
+  context: ChatMessage[]
+): Promise<GenerateSiteResponse> {
+  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    { role: "system", content: getSystemPrompt(mode) },
+  ];
+
+  // Inject prior context for multi-turn building
+  for (const m of context) {
+    messages.push({ role: m.role, content: m.content });
+  }
+
+  messages.push({ role: "user", content: prompt });
+
   const response = await client.chat.completions.create({
     model: "gpt-4o",
     temperature: Number(process.env.OPENAI_TEMPERATURE ?? "0.4"),
-    max_tokens: 4000,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: prompt },
-    ],
+    max_tokens: mode === "advanced" ? 8000 : 4000,
+    messages,
   });
 
   const text = response.choices?.[0]?.message?.content || "{}";
@@ -106,14 +166,11 @@ async function selfCorrect(
       break;
     }
 
-    // Compare file contents to detect whether the model made any changes
     const unchanged =
       corrected.files?.length === current.files?.length &&
       (corrected.files ?? []).every((f, i) => f.content === (current.files ?? [])[i]?.content);
 
-    if (unchanged) {
-      break;
-    }
+    if (unchanged) break;
 
     current = corrected;
     retries++;
@@ -126,6 +183,14 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const prompt: string = body?.prompt || "";
+    const mode: GenerateMode = ["standard", "advanced", "minimal"].includes(body?.mode)
+      ? (body.mode as GenerateMode)
+      : "standard";
+    const context: ChatMessage[] = Array.isArray(body?.context)
+      ? (body.context as Array<{ role: string; content: string }>)
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
+      : [];
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
@@ -135,20 +200,14 @@ export async function POST(req: Request) {
     }
 
     if (!prompt.trim()) {
-      return NextResponse.json(
-        { error: "Missing prompt" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
     }
 
     let parsed: GenerateSiteResponse;
     try {
-      parsed = await generateFiles(prompt);
+      parsed = await generateFiles(prompt, mode, context);
     } catch {
-      return NextResponse.json(
-        { error: "Invalid JSON from AI" },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Invalid JSON from AI" }, { status: 500 });
     }
 
     if (!Array.isArray(parsed.files)) {

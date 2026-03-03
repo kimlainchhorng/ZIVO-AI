@@ -1,48 +1,116 @@
+import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-type Step =
-  | { type: "chat"; prompt: string }
-  | { type: "image"; prompt: string; size?: string };
+export type WorkflowStepType = "Generate Code" | "Ask AI" | "Transform" | "Summarize" | "Scrape URL" | "Deploy";
+
+export interface WorkflowStep {
+  id: string;
+  type: WorkflowStepType;
+  input: string;
+}
+
+export interface WorkflowStepResult {
+  id: string;
+  type: WorkflowStepType;
+  input: string;
+  output: string;
+  status: "done" | "error";
+  error?: string;
+}
+
+async function runStep(step: WorkflowStep, previousOutput: string): Promise<WorkflowStepResult> {
+  const contextNote = previousOutput
+    ? `\n\nPrevious step output:\n${previousOutput.slice(0, 2000)}`
+    : "";
+
+  try {
+    if (step.type === "Scrape URL") {
+      // We cannot fetch external URLs server-side without issues; return placeholder
+      return {
+        id: step.id,
+        type: step.type,
+        input: step.input,
+        output: `[URL scraping is not available in this environment. URL: ${step.input}]`,
+        status: "done",
+      };
+    }
+
+    if (step.type === "Deploy") {
+      return {
+        id: step.id,
+        type: step.type,
+        input: step.input,
+        output: `[Deploy step: ${step.input || "No deployment target specified"}]`,
+        status: "done",
+      };
+    }
+
+    const systemPrompts: Record<string, string> = {
+      "Generate Code": "You are ZIVO AI — an expert full-stack developer. Generate complete, working code based on the user's request.",
+      "Ask AI": "You are ZIVO AI — a helpful assistant. Answer the user's question clearly and concisely.",
+      "Transform": "You are ZIVO AI — a code transformation expert. Transform or refactor the provided code/content as requested.",
+      "Summarize": "You are ZIVO AI — a summarization expert. Summarize the provided content clearly and concisely.",
+    };
+
+    const systemPrompt = systemPrompts[step.type] ?? "You are ZIVO AI — a helpful assistant.";
+    const userContent = step.input + contextNote;
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.4,
+      max_tokens: 2000,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
+    });
+
+    const output = response.choices?.[0]?.message?.content ?? "";
+    return { id: step.id, type: step.type, input: step.input, output, status: "done" };
+  } catch (err: unknown) {
+    return {
+      id: step.id,
+      type: step.type,
+      input: step.input,
+      output: "",
+      status: "error",
+      error: (err as Error)?.message ?? "Step failed",
+    };
+  }
+}
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const steps: Step[] = body?.steps;
-
-    if (!Array.isArray(steps) || steps.length === 0) {
-      return NextResponse.json({ error: "Missing steps[]" }, { status: 400 });
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
     }
 
-    const results: any[] = [];
+    const body = await req.json().catch(() => ({}));
+    const steps: WorkflowStep[] = Array.isArray(body?.steps) ? body.steps : [];
+
+    if (steps.length === 0) {
+      return NextResponse.json({ error: "No steps provided" }, { status: 400 });
+    }
+
+    const results: WorkflowStepResult[] = [];
+    let previousOutput = "";
 
     for (const step of steps) {
-      if (step?.type === "chat") {
-        const r = await fetch(new URL("/api/chat", req.url), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: step.prompt }),
-        });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) return NextResponse.json({ error: data?.error || "Chat step failed" }, { status: 500 });
-        results.push({ type: "chat", result: data.result });
-      } else if (step?.type === "image") {
-        const r = await fetch(new URL("/api/image", req.url), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: step.prompt, size: step.size }),
-        });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) return NextResponse.json({ error: data?.error || "Image step failed" }, { status: 500 });
-        results.push({ type: "image", ...data });
-      } else {
-        return NextResponse.json({ error: "Unknown step type" }, { status: 400 });
+      const result = await runStep(step, previousOutput);
+      results.push(result);
+      if (result.status === "done") {
+        previousOutput = result.output;
       }
     }
 
-    return NextResponse.json({ ok: true, results });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+    return NextResponse.json({ results });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: (err as Error)?.message || "Server error" },
+      { status: 500 }
+    );
   }
 }
