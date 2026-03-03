@@ -165,7 +165,6 @@ if prompt := st.chat_input("Ask ZIVO anything…"):
 if debug_mode and st.session_state.get("use_swarm", False):
     with st.expander(":material/account_tree: Agent Swarm Map", expanded=False):
         try:
-            from engine.swarm import ZIVOSwarm
             swarm_ref = st.session_state.brain._swarm
             if swarm_ref is not None:
                 st.json(swarm_ref.agent_graph)
