@@ -30,12 +30,10 @@ def _render_sidebar() -> None:
         st.session_state.last_raw_response = None
         st.rerun()
 
-
 def _render_messages() -> None:
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-
 
 def _append_message(role: str, content: str) -> None:
     st.session_state.messages.append({"role": role, "content": content})
@@ -50,6 +48,7 @@ def _render_debug_panel() -> None:
     if _debug_enabled() and st.session_state.last_raw_response:
         with st.expander("Debug: Raw OpenAI Response", expanded=False):
             st.json(st.session_state.last_raw_response)
+
 
 def main() -> None:
     st.set_page_config(page_title="ZIVO-AI", page_icon=":material/smart_toy:")
