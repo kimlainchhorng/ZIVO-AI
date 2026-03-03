@@ -23,7 +23,7 @@ def _init_session_state() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stable st.query_params (replaces legacy experimental calls)
+# Stable st.query_params for debug/trace flags
 # ---------------------------------------------------------------------------
 
 def _debug_enabled() -> bool:
@@ -35,7 +35,7 @@ def _trace_mode_enabled() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Sidebar — Material Icons (Streamlit 1.54.0+)
+# Sidebar with Material Icons
 # ---------------------------------------------------------------------------
 
 def _render_sidebar() -> None:
@@ -44,11 +44,10 @@ def _render_sidebar() -> None:
     st.sidebar.caption("Powered by OpenAI Agents SDK")
 
     st.sidebar.divider()
-    st.sidebar.markdown("**Debug Deep-Links**")
+    st.sidebar.markdown("**Debug Links**")
     base = st.sidebar.text_input("App base URL", value="http://localhost:8501", key="base_url")
     st.sidebar.markdown(
-        f"[Enable Debug]({base}?debug=true) · "
-        f"[Enable Trace]({base}?trace=true) · "
+        f"[Enable Debug]({base}?debug=true) · [Enable Trace]({base}?trace=true) · "
         f"[Both]({base}?debug=true&trace=true)"
     )
 
@@ -75,14 +74,11 @@ def _append_message(role: str, content: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Agent loop with st.status tracing
+# Agent response with st.status tracing
 # ---------------------------------------------------------------------------
 
 def _run_agent_with_trace(prompt: str) -> str:
-    """
-    Execute the Agent Loop and surface real-time tool traces via st.status.
-    st.status anchoring bug-fixes in Streamlit 1.54.0 prevent empty delta errors.
-    """
+    """Run the agent loop; display real-time tool trace inside st.status."""
     brain: ZivoBrain = st.session_state.brain
     trace_steps: list = []
 
@@ -92,14 +88,14 @@ def _run_agent_with_trace(prompt: str) -> str:
         for msg in result.new_messages:
             role = getattr(msg, "role", "")
 
-            # Agent decided to invoke a tool
+            # Tool invocation
             if role == "assistant" and getattr(msg, "tool_calls", None):
                 for tc in msg.tool_calls:
-                    step = f"⚡ **Invoking:** `{{tc.function.name}}` with `{{tc.function.arguments}}`"
+                    step = f"⚡ **Invoking:** `{{tc.function.name}}` — `{{tc.function.arguments}}`"
                     st.write(step)
                     trace_steps.append(step)
 
-            # Connector returned a result
+            # Tool result
             elif role == "tool":
                 tool_name = getattr(msg, "name", "unknown")
                 step = f"🔧 **Tool result from** `{{tool_name}}`"
@@ -114,7 +110,7 @@ def _run_agent_with_trace(prompt: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Debug panel — activated via ?debug=true query param
+# Debug panel (?debug=true)
 # ---------------------------------------------------------------------------
 
 def _render_debug_panel() -> None:
@@ -153,7 +149,7 @@ def main() -> None:
     st.title("ZIVO-AI Chat")
 
     if _trace_mode_enabled():
-        st.caption(":material/visibility: Trace mode **ON** — tool steps shown expanded.")
+        st.caption(":material/visibility: Trace mode **ON** — tool steps will be shown expanded.")
     if _debug_enabled():
         st.caption(":material/bug_report: Debug mode **ON** — full run details shown below each response.")
 
