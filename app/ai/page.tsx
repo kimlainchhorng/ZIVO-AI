@@ -151,8 +151,7 @@ function AIPageInner() {
   // Image generation state
   const [imagePrompt, setImagePrompt] = useState("");
   const [imageSize, setImageSize] = useState("1024x1024");
-  const [imageStyle, setImageStyle] = useState("vivid");
-  const [imageQuality, setImageQuality] = useState("standard");
+
   const [imageResult, setImageResult] = useState<{ dataUrl: string; size: string; prompt: string } | null>(null);
   const [imageLoading, setImageLoading] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -376,7 +375,7 @@ function AIPageInner() {
       const res = await fetch("/api/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: imagePrompt, size: imageSize, style: imageStyle, quality: imageQuality }),
+        body: JSON.stringify({ prompt: imagePrompt, size: imageSize }),
       });
       const data = await res.json();
       if (data.error) { setImageError(data.error); }
@@ -844,32 +843,13 @@ function AIPageInner() {
                       style={{ width: "100%", minHeight: "100px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", resize: "vertical", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, transition: "border-color 0.2s" }}
                     />
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", marginBottom: "0.75rem" }}>
-                    <div>
-                      <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Size</label>
-                      <select className="zivo-select" value={imageSize} onChange={(e) => setImageSize(e.target.value)} style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.45rem 0.65rem", fontSize: "0.8125rem", cursor: "pointer" }}>
-                        <option value="1024x1024" style={{ background: COLORS.bgPanel }}>1024 × 1024</option>
-                        <option value="1792x1024" style={{ background: COLORS.bgPanel }}>1792 × 1024</option>
-                        <option value="1024x1792" style={{ background: COLORS.bgPanel }}>1024 × 1792</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Style</label>
-                      <select className="zivo-select" value={imageStyle} onChange={(e) => setImageStyle(e.target.value)} style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.45rem 0.65rem", fontSize: "0.8125rem", cursor: "pointer" }}>
-                        <option value="vivid" style={{ background: COLORS.bgPanel }}>Vivid</option>
-                        <option value="natural" style={{ background: COLORS.bgPanel }}>Natural</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div style={{ marginBottom: "1rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Quality</label>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
-                      {["standard", "hd"].map((q) => (
-                        <button key={q} className="zivo-btn" onClick={() => setImageQuality(q)} style={{ flex: 1, padding: "0.4rem", borderRadius: "8px", border: `1px solid ${imageQuality === q ? "rgba(99,102,241,0.5)" : COLORS.border}`, background: imageQuality === q ? "rgba(99,102,241,0.15)" : "transparent", color: imageQuality === q ? COLORS.accent : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: imageQuality === q ? 600 : 400, textTransform: "capitalize" }}>
-                          {q === "hd" ? "HD" : "Standard"}
-                        </button>
-                      ))}
-                    </div>
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Size</label>
+                    <select className="zivo-select" value={imageSize} onChange={(e) => setImageSize(e.target.value)} style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.45rem 0.65rem", fontSize: "0.8125rem", cursor: "pointer" }}>
+                      <option value="1024x1024" style={{ background: COLORS.bgPanel }}>1024 × 1024</option>
+                      <option value="1792x1024" style={{ background: COLORS.bgPanel }}>1792 × 1024</option>
+                      <option value="1024x1792" style={{ background: COLORS.bgPanel }}>1024 × 1792</option>
+                    </select>
                   </div>
                   {imageError && (
                     <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
@@ -1360,7 +1340,7 @@ function AIPageInner() {
                         Download PNG
                       </a>
                     </div>
-                    <p style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{imageResult.size} · {imageQuality.toUpperCase()} · {imageStyle}</p>
+                    <p style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{imageResult.size}</p>
                   </div>
                 )}
               </div>
@@ -1423,7 +1403,7 @@ function AIPageInner() {
                     title="3D Scene"
                     srcDoc={threeDResult.html}
                     style={{ flex: 1, width: "100%", border: "none" }}
-                    sandbox="allow-scripts"
+                    sandbox="allow-scripts allow-same-origin"
                   />
                 )}
                 {threeDResult && threeDShowSource && (

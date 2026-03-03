@@ -12,8 +12,6 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const prompt = body?.prompt;
     const size: string = body?.size || "1024x1024";
-    const quality: string = body?.quality || "standard";
-    const style: string = body?.style || "vivid";
 
     if (!prompt || typeof prompt !== "string") {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
@@ -30,8 +28,6 @@ export async function POST(req: Request) {
         model: "gpt-image-1",
         prompt,
         size,
-        quality,
-        style,
       }),
     });
 
