@@ -1,10 +1,10 @@
-import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAI_API_KEY!,
 });
 
 export async function POST(req: Request) {
@@ -36,6 +36,36 @@ Format:
       "content": "file content here"
     }
   ]
+}
+          `,
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
+
+    const text = response.choices[0]?.message?.content || "{}";
+
+    let parsed;
+
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      return NextResponse.json(
+        { error: "AI returned invalid JSON", raw: text },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(parsed);
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || "Server error" },
+      { status: 500 }
+    );
+  }
 }
 `,
         },
