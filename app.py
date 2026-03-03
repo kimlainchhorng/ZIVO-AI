@@ -1,5 +1,4 @@
 import os
-import asyncio
 from typing import Dict, List
 
 import streamlit as st
@@ -31,10 +30,12 @@ def _render_sidebar() -> None:
         st.session_state.last_raw_response = None
         st.rerun()
 
-def _render_messages(messages: List[ChatMessage]) -> None:
-    for msg in messages:
-        with st.chat_message(msg["role"):
+
+def _render_messages() -> None:
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
+
 
 def _append_message(role: str, content: str) -> None:
     st.session_state.messages.append({"role": role, "content": content})
@@ -42,7 +43,7 @@ def _append_message(role: str, content: str) -> None:
 def _get_response(messages: List[ChatMessage]) -> str:
     brain: ZivoBrain = st.session_state.brain
     with st.status("AI Thinking...", expanded=False):
-        reply = asyncio.run(brain.get_response(messages))
+        reply = brain.get_response(messages)
     return reply
 
 def _render_debug_panel() -> None:
@@ -56,18 +57,17 @@ def main() -> None:
     _render_sidebar()
 
     st.title("ZIVO-AI Chat")
-    _render_messages(st.session_state.messages)
+    _render_messages()
 
     user_input = st.chat_input("Ask ZIVO-AI...")
     if user_input:
         _append_message("user", user_input)
-        _render_messages([st.session_state.messages[-1]])
 
         reply = _get_response(st.session_state.messages)
         _append_message("assistant", reply)
-        _render_messages([st.session_state.messages[-1]])
+        st.rerun()
 
     _render_debug_panel()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
