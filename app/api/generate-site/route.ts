@@ -3,76 +3,66 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-type BuilderFile = { action: "create" | "update" | "delete"; path: string; content?: string };
-type BuilderResponse = { files: BuilderFile[]; notes?: string };
-
-function safeJsonParse(text: string): { ok: true; value: any } | { ok: false; error: string } {
-  try {
-    return { ok: true, value: JSON.parse(text) };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || "JSON parse error" };
-  }
-}
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req: Request) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
+    const { prompt } = await req.json();
+
+    if (!prompt) {
+      return NextResponse.json(
+        { error: "Prompt is required" },
+        { status: 400 }
+      );
     }
 
-    const body = await req.json().catch(() => ({}));
-    const prompt = body?.prompt;
-    const mode: "text" | "json" = body?.mode === "json" ? "json" : "text";
+    const response = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content: `
+You are a file generator AI.
+Return ONLY valid JSON.
+Format:
 
-    if (!prompt || typeof prompt !== "string") {
-      return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
+{
+  "files": [
+    {
+      "path": "app/page.tsx",
+      "content": "file content here"
     }
-
-    if (mode === "json") {
-      const r = await client.responses.create({
-        model: "gpt-4.1-mini",
-        input: [
-          {
-            role: "system",
-            content:
-              "Return ONLY valid JSON in this exact shape: {\"files\":[{\"action\":\"create|update|delete\",\"path\":\"string\",\"content\":\"string?\"}],\"notes\":\"string\"}. No markdown.",
-          },
-          { role: "user", content: prompt },
-        ],
-      });
-
-      const text = (r as any).output_text ?? "";
-      const parsed = safeJsonParse(text);
-
-      if (!parsed.ok) {
-        return NextResponse.json(
-          { error: "Invalid JSON from AI", parseError: parsed.error, raw: text },
-          { status: 500 }
-        );
-      }
-
-      const data = parsed.value as BuilderResponse;
-      if (!data?.files || !Array.isArray(data.files)) {
-        return NextResponse.json({ error: "JSON missing files[]", raw: text }, { status: 500 });
-      }
-
-      return NextResponse.json(data);
-    }
-
-    // text mode
-    const r = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
-        { role: "system", content: "Return only the final code output. No markdown. No explanation." },
-        { role: "user", content: prompt },
+  ]
+}
+`,
+        },
+        {
+          role: "user",
+          content: prompt,
+        },
       ],
     });
 
-    const text = (r as any).output_text ?? "";
-    return NextResponse.json({ result: text });
+    const text = response.choices[0].message.content || "{}";
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON from AI", raw: text },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json(parsed);
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: err.message || "Server error" },
+      { status: 500 }
+    );
   }
 }
