@@ -1,4 +1,7 @@
 // Custom error classes
+import fs from 'node:fs';
+import path from 'node:path';
+
 class AppError extends Error {
     statusCode: number;
     isOperational: boolean;
@@ -24,9 +27,6 @@ class ValidationError extends AppError {
 }
 
 // Error Logger
-const fs = require('fs');
-const path = require('path');
-
 const logError = (err: AppError) => {
     const errorLog = `
 [${new Date().toISOString()}] ${err.statusCode || 500} - ${err.message}\n${err.stack}\n`;
@@ -44,4 +44,4 @@ const errorMiddleware = (err: AppError, req: unknown, res: { status: (code: numb
     });
 };
 
-module.exports = { AppError, NotFoundError, ValidationError, errorMiddleware };
+export { AppError, NotFoundError, ValidationError, errorMiddleware };
