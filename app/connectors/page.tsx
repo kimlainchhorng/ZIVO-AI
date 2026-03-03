@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const COLORS = {
   bg: "#0a0b14",
@@ -40,18 +40,28 @@ const CONNECTORS: Connector[] = [
   { id: "upstash", name: "Upstash", description: "Redis and Kafka for serverless.", iconBg: "#0a1e1a", iconColor: "#34d399", initials: "UP", enabled: false, personal: true },
 ];
 
-function ConnectorCard({ connector }: { connector: Connector }) {
+function GithubIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+    </svg>
+  );
+}
+
+function ConnectorCard({ connector, onConnect, isConnected }: { connector: Connector; onConnect: (id: string) => void; isConnected: boolean }) {
   const [hovered, setHovered] = useState(false);
+  const clickable = connector.id === "github";
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={() => clickable && onConnect(connector.id)}
       style={{
         background: COLORS.bgPanel,
         border: `1px solid ${hovered ? COLORS.borderHover : COLORS.border}`,
         borderRadius: "12px",
         padding: "1.25rem",
-        cursor: "pointer",
+        cursor: clickable ? "pointer" : "default",
         transition: "border-color 0.15s",
         position: "relative",
         display: "flex",
@@ -59,13 +69,28 @@ function ConnectorCard({ connector }: { connector: Connector }) {
         gap: "0.75rem",
       }}
     >
-      {connector.enabled && (
+      {connector.id === "github" && isConnected && (
+        <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "2px 7px", borderRadius: "4px" }}>
+          Connected
+        </span>
+      )}
+      {connector.id === "github" && !isConnected && connector.enabled && (
+        <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: COLORS.accent, background: "rgba(99,102,241,0.12)", padding: "2px 7px", borderRadius: "4px" }}>
+          Connect
+        </span>
+      )}
+      {connector.id !== "github" && connector.enabled && (
         <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "2px 7px", borderRadius: "4px" }}>
           Enabled
         </span>
       )}
+      {!connector.enabled && connector.id !== "github" && (
+        <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, background: "rgba(255,255,255,0.05)", padding: "2px 7px", borderRadius: "4px" }}>
+          Soon
+        </span>
+      )}
       <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: connector.iconBg, border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: connector.iconColor, fontWeight: 700, fontSize: "0.875rem" }}>
-        {connector.initials}
+        {connector.id === "github" ? <GithubIcon /> : connector.initials}
       </div>
       <div>
         <div style={{ fontWeight: 600, fontSize: "0.9375rem", color: COLORS.textPrimary, marginBottom: "0.25rem" }}>{connector.name}</div>
@@ -77,6 +102,42 @@ function ConnectorCard({ connector }: { connector: Connector }) {
 
 export default function ConnectorsPage() {
   const [search, setSearch] = useState("");
+  const [githubConnected, setGithubConnected] = useState(false);
+  const [showModal, setShowModal] = useState(false);
+  const [modalToken, setModalToken] = useState("");
+  const [modalRepo, setModalRepo] = useState("");
+  const [modalError, setModalError] = useState("");
+
+  useEffect(() => {
+    const token = localStorage.getItem("zivo_github_token");
+    const repo = localStorage.getItem("zivo_github_repo");
+    setGithubConnected(!!(token && repo));
+    if (token) setModalToken(token);
+    if (repo) setModalRepo(repo);
+  }, []);
+
+  function handleConnect(id: string) {
+    if (id === "github") setShowModal(true);
+  }
+
+  function handleSaveGithub() {
+    if (!modalToken.trim()) { setModalError("Personal Access Token is required."); return; }
+    if (!modalRepo.trim() || !/^[^/]+\/[^/]+$/.test(modalRepo.trim())) { setModalError("Repo must be in owner/repo format (e.g. myorg/myrepo)."); return; }
+    localStorage.setItem("zivo_github_token", modalToken.trim());
+    localStorage.setItem("zivo_github_repo", modalRepo.trim());
+    setGithubConnected(true);
+    setShowModal(false);
+    setModalError("");
+  }
+
+  function handleDisconnect() {
+    localStorage.removeItem("zivo_github_token");
+    localStorage.removeItem("zivo_github_repo");
+    setGithubConnected(false);
+    setModalToken("");
+    setModalRepo("");
+    setShowModal(false);
+  }
 
   const shared = CONNECTORS.filter((c) => !c.personal && c.name.toLowerCase().includes(search.toLowerCase()));
   const personal = CONNECTORS.filter((c) => c.personal && c.name.toLowerCase().includes(search.toLowerCase()));
@@ -85,6 +146,7 @@ export default function ConnectorsPage() {
     <>
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes modalIn { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         .zivo-nav:hover { color: #f1f5f9 !important; }
         .zivo-input:focus { outline: none; border-color: #6366f1 !important; }
         * { box-sizing: border-box; }
@@ -141,7 +203,13 @@ export default function ConnectorsPage() {
             <div style={{ borderTop: `1px solid ${COLORS.border}`, margin: "0.75rem 0", padding: "0 1rem", paddingTop: "0.75rem" }}>
               <p style={{ fontSize: "0.65rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 0.5rem" }}>Connectors</p>
               <a href="/connectors" style={{ fontSize: "0.8rem", color: COLORS.accent, background: "rgba(99,102,241,0.1)", padding: "0.35rem 0.5rem", borderRadius: "6px", display: "block", fontWeight: 600, textDecoration: "none" }}>Connectors</a>
-              <div style={{ fontSize: "0.8rem", color: COLORS.textSecondary, padding: "0.35rem 0.5rem", borderRadius: "6px" }}>GitHub</div>
+              <div
+                onClick={() => setShowModal(true)}
+                style={{ fontSize: "0.8rem", color: githubConnected ? COLORS.success : COLORS.textSecondary, padding: "0.35rem 0.5rem", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
+              >
+                GitHub
+                {githubConnected && <span style={{ fontSize: "0.65rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "1px 5px", borderRadius: "3px" }}>●</span>}
+              </div>
             </div>
           </div>
 
@@ -171,7 +239,14 @@ export default function ConnectorsPage() {
                 <h2 style={{ fontSize: "1rem", fontWeight: 600, margin: "0 0 0.25rem" }}>Shared connectors</h2>
                 <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 1rem" }}>Add functionality to your apps.</p>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.875rem" }}>
-                  {shared.map((c) => <ConnectorCard key={c.id} connector={c} />)}
+                  {shared.map((c) => (
+                    <ConnectorCard
+                      key={c.id}
+                      connector={c}
+                      onConnect={handleConnect}
+                      isConnected={c.id === "github" ? githubConnected : false}
+                    />
+                  ))}
                 </div>
               </div>
 
@@ -181,7 +256,14 @@ export default function ConnectorsPage() {
                   <h2 style={{ fontSize: "1rem", fontWeight: 600, margin: "0 0 0.25rem" }}>Personal connectors</h2>
                   <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 1rem" }}>Your personal integrations.</p>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.875rem" }}>
-                    {personal.map((c) => <ConnectorCard key={c.id} connector={c} />)}
+                    {personal.map((c) => (
+                      <ConnectorCard
+                        key={c.id}
+                        connector={c}
+                        onConnect={handleConnect}
+                        isConnected={false}
+                      />
+                    ))}
                   </div>
                 </div>
               )}
@@ -189,6 +271,88 @@ export default function ConnectorsPage() {
           </div>
         </div>
       </div>
+
+      {/* GitHub Modal */}
+      {showModal && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setShowModal(false); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+        >
+          <div style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "16px", padding: "1.75rem", width: "100%", maxWidth: "440px", animation: "modalIn 0.2s ease" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
+              <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#1e1e1e", border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "#f1f5f9" }}>
+                <GithubIcon />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1rem" }}>Connect GitHub</div>
+                <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary }}>Push generated code directly to your repository</div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textSecondary, marginBottom: "0.4rem" }}>
+                Personal Access Token
+              </label>
+              <input
+                className="zivo-input"
+                type="password"
+                placeholder="ghp_xxxxxxxxxxxx"
+                value={modalToken}
+                onChange={(e) => { setModalToken(e.target.value); setModalError(""); }}
+                style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", transition: "border-color 0.2s" }}
+              />
+              <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, marginTop: "0.35rem" }}>
+                Needs <code style={{ color: COLORS.textSecondary }}>repo</code> scope.{" "}
+                <a href="https://github.com/settings/tokens/new" target="_blank" rel="noreferrer" style={{ color: COLORS.accent, textDecoration: "none" }}>Create token →</a>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textSecondary, marginBottom: "0.4rem" }}>
+                Default Repository
+              </label>
+              <input
+                className="zivo-input"
+                type="text"
+                placeholder="owner/repo-name"
+                value={modalRepo}
+                onChange={(e) => { setModalRepo(e.target.value); setModalError(""); }}
+                style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", transition: "border-color 0.2s" }}
+              />
+            </div>
+
+            {modalError && (
+              <div style={{ fontSize: "0.8125rem", color: "#ef4444", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", padding: "0.5rem 0.75rem", borderRadius: "6px", marginBottom: "1rem" }}>
+                {modalError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                onClick={handleSaveGithub}
+                style={{ flex: 1, padding: "0.6rem", background: COLORS.accent, border: "none", borderRadius: "8px", color: "#fff", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
+              >
+                {githubConnected ? "Update" : "Connect"}
+              </button>
+              {githubConnected && (
+                <button
+                  onClick={handleDisconnect}
+                  style={{ padding: "0.6rem 1rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", color: "#ef4444", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
+                >
+                  Disconnect
+                </button>
+              )}
+              <button
+                onClick={() => { setShowModal(false); setModalError(""); }}
+                style={{ padding: "0.6rem 1rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
+
