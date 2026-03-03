@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List
+from typing import List, Dict
 from openai import OpenAI
 from dotenv import load_dotenv
 load_dotenv()
@@ -10,10 +10,13 @@ class ZivoBrain:
         with open(prompt_path, "r") as f:
             self.system_prompt = f.read()
 
-    async def get_response(self, messages: List[Dict[str, str]]) -> str:
+    def get_streaming_response(self, messages: List[Dict[str, str]]):
         full_messages = [{"role": "system", "content": self.system_prompt}] + messages
-        response = self.client.chat.completions.create(
+        stream = self.client.chat.completions.create(
             model="gpt-4o",
-            messages=full_messages
+            messages=full_messages,
+            stream=True
         )
-        return response.choices[0].message.content
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
