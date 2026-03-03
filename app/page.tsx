@@ -1,4 +1,4 @@
-"use client";
+use client;
 
 import { useState } from "react";
 import type { GeneratedFile, BuilderResponse } from "@/app/api/builder/route";
@@ -11,33 +11,23 @@ export default function BuilderPage() {
   const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
   const [copied, setCopied] = useState(false);
   const [filter, setFilter] = useState<string>("all");
+  const [files, setFiles] = useState<any[]>([]);
 
-  async function handleBuild() {
-    if (!prompt.trim()) return;
-    setLoading(true);
-    setError(null);
-    setResult(null);
-    setSelectedFile(null);
+  const handleBuild = async () => {
+    const res = await fetch("/api/generate-site", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
 
-    try {
-      const res = await fetch("/api/builder", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error ?? "Unknown error");
-      } else {
-        setResult(data as BuilderResponse);
-        if (data.files?.length > 0) setSelectedFile(data.files[0]);
-      }
-    } catch (e: unknown) {
-      setError((e as Error)?.message ?? "Network error");
-    } finally {
-      setLoading(false);
+    const data = await res.json();
+
+    if (data.files) {
+      setFiles(data.files);
+    } else {
+      console.error(data);
     }
-  }
+  };
 
   async function handleCopy(text: string) {
     await navigator.clipboard.writeText(text).catch(() => {});
@@ -97,13 +87,15 @@ export default function BuilderPage() {
 
           {/* Summary */}
           {result?.summary && (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">{result.summary}</p>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              {result.summary}
+            </p>
           )}
 
           {/* Filter */}
           {result && (
             <div className="flex gap-2 text-xs">
-              {["all", "create", "update", "delete"].map((f) => (
+              {['all', 'create', 'update', 'delete'].map((f) => (
                 <button
                   key={f}
                   onClick={() => setFilter(f)}
@@ -167,6 +159,14 @@ export default function BuilderPage() {
               {loading ? "Generating files…" : "Your generated files will appear here"}
             </div>
           )}
+          {files.map((file, index) => (
+            <div key={index} className="mb-6">
+              <h3 className="font-bold">{file.path}</h3>
+              <pre className="bg-black text-green-400 p-4 overflow-auto text-sm">
+                {file.content}
+              </pre>
+            </div>
+          ))}
         </main>
       </div>
     </div>
