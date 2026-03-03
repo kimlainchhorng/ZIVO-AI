@@ -1,0 +1,19 @@
+{
+  "servers": [
+    {
+      "name": "filesystem",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "description": "Access local filesystem via MCP",
+      "enabled": false
+    },
+    {
+      "name": "github",
+      "transport": "sse",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "description": "GitHub MCP server for repo operations",
+      "enabled": false
+    }
+  ]
+}
