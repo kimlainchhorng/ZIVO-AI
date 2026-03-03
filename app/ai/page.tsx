@@ -383,6 +383,7 @@ export default function AIPage() {
               <button
                 onClick={startVoiceInput}
                 title={recording ? "Stop recording" : "Start voice input"}
+                aria-label={recording ? "Stop recording" : "Start voice input"}
                 style={{
                   position: "absolute",
                   bottom: "0.4rem",

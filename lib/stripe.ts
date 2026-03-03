@@ -24,7 +24,10 @@ export async function createCheckoutSession(
     throw new Error(data.error ?? "Failed to create checkout session");
   }
 
-  return { url: data.url ?? "", sessionId: data.sessionId ?? "" };
+  if (!data.url || !data.sessionId) {
+    throw new Error("Stripe response missing url or sessionId");
+  }
+  return { url: data.url, sessionId: data.sessionId };
 }
 
 export async function redirectToCheckout(params: CheckoutSessionParams): Promise<void> {

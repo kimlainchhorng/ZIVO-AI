@@ -23,6 +23,11 @@ export async function POST(req: Request) {
     }
 
     // Parse the event payload
+    // NOTE: In production, verify the signature using the Stripe SDK:
+    //   import Stripe from 'stripe';
+    //   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+    //   const event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+    // This prevents replay attacks and ensures events are genuine.
     let event: { type: string; data: { object: Record<string, unknown> } };
     try {
       event = JSON.parse(body);
