@@ -50,7 +50,7 @@ function GithubIcon() {
 
 function ConnectorCard({ connector, onConnect, isConnected }: { connector: Connector; onConnect: (id: string) => void; isConnected: boolean }) {
   const [hovered, setHovered] = useState(false);
-  const clickable = connector.id === "github";
+  const clickable = connector.id === "github" || connector.id === "supabase";
   return (
     <div
       onMouseEnter={() => setHovered(true)}
@@ -69,22 +69,22 @@ function ConnectorCard({ connector, onConnect, isConnected }: { connector: Conne
         gap: "0.75rem",
       }}
     >
-      {connector.id === "github" && isConnected && (
+      {(connector.id === "github" || connector.id === "supabase") && isConnected && (
         <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "2px 7px", borderRadius: "4px" }}>
           Connected
         </span>
       )}
-      {connector.id === "github" && !isConnected && connector.enabled && (
+      {(connector.id === "github" || connector.id === "supabase") && !isConnected && connector.enabled && (
         <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: COLORS.accent, background: "rgba(99,102,241,0.12)", padding: "2px 7px", borderRadius: "4px" }}>
           Connect
         </span>
       )}
-      {connector.id !== "github" && connector.enabled && (
+      {connector.id !== "github" && connector.id !== "supabase" && connector.enabled && (
         <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "2px 7px", borderRadius: "4px" }}>
           Enabled
         </span>
       )}
-      {!connector.enabled && connector.id !== "github" && (
+      {!connector.enabled && connector.id !== "github" && connector.id !== "supabase" && (
         <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, background: "rgba(255,255,255,0.05)", padding: "2px 7px", borderRadius: "4px" }}>
           Soon
         </span>
@@ -108,16 +108,31 @@ export default function ConnectorsPage() {
   const [modalRepo, setModalRepo] = useState("");
   const [modalError, setModalError] = useState("");
 
+  // Supabase state
+  const [supabaseConnected, setSupabaseConnected] = useState(false);
+  const [showSupabaseModal, setShowSupabaseModal] = useState(false);
+  const [supabaseUrl, setSupabaseUrl] = useState("");
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState("");
+  const [supabaseError, setSupabaseError] = useState("");
+  const [supabaseTesting, setSupabaseTesting] = useState(false);
+
   useEffect(() => {
     const token = localStorage.getItem("zivo_github_token");
     const repo = localStorage.getItem("zivo_github_repo");
     setGithubConnected(!!(token && repo));
     if (token) setModalToken(token);
     if (repo) setModalRepo(repo);
+
+    const sbUrl = localStorage.getItem("supabase_url");
+    const sbKey = localStorage.getItem("supabase_anon_key");
+    setSupabaseConnected(!!(sbUrl && sbKey));
+    if (sbUrl) setSupabaseUrl(sbUrl);
+    if (sbKey) setSupabaseAnonKey(sbKey);
   }, []);
 
   function handleConnect(id: string) {
     if (id === "github") setShowModal(true);
+    if (id === "supabase") setShowSupabaseModal(true);
   }
 
   function handleSaveGithub() {
@@ -139,6 +154,49 @@ export default function ConnectorsPage() {
     setShowModal(false);
   }
 
+  async function handleSaveSupabase() {
+    if (!supabaseUrl.trim()) {
+      setSupabaseError("Supabase URL is required.");
+      return;
+    }
+    if (!supabaseAnonKey.trim()) {
+      setSupabaseError("Supabase Anon Key is required.");
+      return;
+    }
+    setSupabaseTesting(true);
+    setSupabaseError("");
+    try {
+      const res = await fetch("/api/supabase-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supabaseUrl: supabaseUrl.trim(), supabaseAnonKey: supabaseAnonKey.trim() }),
+      });
+      const data = await res.json();
+      if (data.connected) {
+        localStorage.setItem("supabase_url", supabaseUrl.trim());
+        localStorage.setItem("supabase_anon_key", supabaseAnonKey.trim());
+        setSupabaseConnected(true);
+        setShowSupabaseModal(false);
+        setSupabaseError("");
+      } else {
+        setSupabaseError(data.error || "Failed to connect to Supabase.");
+      }
+    } catch (err) {
+      console.error("Supabase connection error:", err);
+      setSupabaseError("Failed to connect to Supabase. Please check your credentials.");
+    }
+    setSupabaseTesting(false);
+  }
+
+  function handleDisconnectSupabase() {
+    localStorage.removeItem("supabase_url");
+    localStorage.removeItem("supabase_anon_key");
+    setSupabaseConnected(false);
+    setSupabaseUrl("");
+    setSupabaseAnonKey("");
+    setShowSupabaseModal(false);
+  }
+
   const shared = CONNECTORS.filter((c) => !c.personal && c.name.toLowerCase().includes(search.toLowerCase()));
   const personal = CONNECTORS.filter((c) => c.personal && c.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -147,6 +205,7 @@ export default function ConnectorsPage() {
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes modalIn { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .zivo-nav:hover { color: #f1f5f9 !important; }
         .zivo-input:focus { outline: none; border-color: #6366f1 !important; }
         * { box-sizing: border-box; }
@@ -244,7 +303,7 @@ export default function ConnectorsPage() {
                       key={c.id}
                       connector={c}
                       onConnect={handleConnect}
-                      isConnected={c.id === "github" ? githubConnected : false}
+                      isConnected={c.id === "github" ? githubConnected : c.id === "supabase" ? supabaseConnected : false}
                     />
                   ))}
                 </div>
@@ -344,6 +403,89 @@ export default function ConnectorsPage() {
               )}
               <button
                 onClick={() => { setShowModal(false); setModalError(""); }}
+                style={{ padding: "0.6rem 1rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Supabase Modal */}
+      {showSupabaseModal && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) { setShowSupabaseModal(false); setSupabaseError(""); } }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+        >
+          <div style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "16px", padding: "1.75rem", width: "100%", maxWidth: "440px", animation: "modalIn 0.2s ease" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
+              <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#1a2a1a", border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: "#3ecf8e", fontWeight: 700, fontSize: "0.875rem" }}>SB</div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1rem" }}>Connect Supabase</div>
+                <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary }}>Connect your Supabase project for database &amp; auth</div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "8px", padding: "0.65rem 0.75rem", marginBottom: "1.25rem" }}>
+              Find your Project URL and anon key in your{" "}
+              <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" style={{ color: COLORS.accent, textDecoration: "none" }}>Supabase dashboard</a>
+              {" "}→ Settings → API.
+            </div>
+
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textSecondary, marginBottom: "0.4rem" }}>
+                Project URL
+              </label>
+              <input
+                className="zivo-input"
+                type="text"
+                placeholder="https://xxxxxxxxxxxx.supabase.co"
+                value={supabaseUrl}
+                onChange={(e) => { setSupabaseUrl(e.target.value); setSupabaseError(""); }}
+                style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", transition: "border-color 0.2s" }}
+              />
+            </div>
+
+            <div style={{ marginBottom: "1.25rem" }}>
+              <label style={{ display: "block", fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textSecondary, marginBottom: "0.4rem" }}>
+                Anon Key
+              </label>
+              <input
+                className="zivo-input"
+                type="password"
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                value={supabaseAnonKey}
+                onChange={(e) => { setSupabaseAnonKey(e.target.value); setSupabaseError(""); }}
+                style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", transition: "border-color 0.2s" }}
+              />
+            </div>
+
+            {supabaseError && (
+              <div style={{ fontSize: "0.8125rem", color: "#ef4444", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", padding: "0.5rem 0.75rem", borderRadius: "6px", marginBottom: "1rem" }}>
+                {supabaseError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                onClick={handleSaveSupabase}
+                disabled={supabaseTesting}
+                style={{ flex: 1, padding: "0.6rem", background: supabaseTesting ? "rgba(99,102,241,0.4)" : COLORS.accent, border: "none", borderRadius: "8px", color: "#fff", fontWeight: 600, fontSize: "0.875rem", cursor: supabaseTesting ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}
+              >
+                {supabaseTesting && <span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
+                {supabaseTesting ? "Verifying…" : supabaseConnected ? "Update" : "Connect"}
+              </button>
+              {supabaseConnected && (
+                <button
+                  onClick={handleDisconnectSupabase}
+                  style={{ padding: "0.6rem 1rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", color: "#ef4444", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
+                >
+                  Disconnect
+                </button>
+              )}
+              <button
+                onClick={() => { setShowSupabaseModal(false); setSupabaseError(""); }}
                 style={{ padding: "0.6rem 1rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
               >
                 Cancel
