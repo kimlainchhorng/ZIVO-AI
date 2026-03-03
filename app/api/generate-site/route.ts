@@ -26,7 +26,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // IMPORTANT: use a normal string (no broken backticks)
     const systemPrompt =
       "You are a code generator. Return ONLY valid JSON. " +
       "Schema: { files: Array<{ path: string; content: string }>, notes?: string }. " +
