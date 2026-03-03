@@ -1,9 +1,8 @@
 """
 engine/mcp_client.py
 --------------------
-MCPClientManager: loads MCP server configurations from mcp_servers.json
-(or environment variables) and returns ready-to-use server instances for
-the OpenAI Agents SDK.
+MCPClientManager: loads MCP server configurations from ``mcp_servers.json``
+and returns ready-to-use server instances for the OpenAI Agents SDK.
 
 All connections are optional — if a server is missing or offline the
 manager logs a warning and continues so the rest of the app is unaffected.
