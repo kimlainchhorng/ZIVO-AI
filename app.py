@@ -32,7 +32,7 @@ def _render_sidebar() -> None:
 
 def _render_messages(messages: List[ChatMessage]) -> None:
     for msg in messages:
-        with st.chat_message(msg["role"]):
+        with st.chat_message(msg["role"):
             st.markdown(msg["content"])
 
 def _append_message(role: str, content: str) -> None:
