@@ -48,3 +48,11 @@ def list_directory(directory_path: str = ".") -> str:
         return f"[Error: Directory '{directory_path}' not found]"
     except Exception as e:
         return f"[Error listing directory: {str(e)}]"
+
+
+# Registry: add new tools here to auto-register them in ZivoBrain
+ALL_TOOLS = [
+    get_current_datetime,
+    read_local_file,
+    list_directory,
+]
