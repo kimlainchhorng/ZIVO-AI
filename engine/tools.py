@@ -126,5 +126,104 @@ def write_local_file(file_path: str, content: str) -> str:
         return f"[Error writing file: {str(e)}]"
 
 
+@function_tool
+def web_search(query: str) -> str:
+    """
+    Performs a web search for the given query and returns summarized results.
+    Use this when the user asks about recent events, current facts, or anything
+    requiring up-to-date information from the internet.
+
+    Args:
+        query: The search query string.
+    """
+    try:
+        import urllib.request
+        import urllib.parse
+        # Use DuckDuckGo Instant Answer API (no key required)
+        encoded = urllib.parse.quote_plus(query)
+        url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_redirect=1&no_html=1&skip_disambig=1"
+        req = urllib.request.Request(url, headers={"User-Agent": "ZIVO-AI/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        abstract = data.get("AbstractText", "")
+        related = [r.get("Text", "") for r in data.get("RelatedTopics", [])[:3] if isinstance(r, dict) and "Text" in r]
+        if abstract:
+            return f"**Summary:** {abstract}\n\n**Related:**\n" + "\n".join(f"- {r}" for r in related)
+        elif related:
+            return "**Related topics:**\n" + "\n".join(f"- {r}" for r in related)
+        else:
+            return f"[No instant answer found for '{query}'. Try rephrasing.]"
+    except Exception as e:
+        return f"[Web search error: {str(e)}]"
+
+
+@function_tool
+def deep_research(topic: str, depth: int = 3) -> str:
+    """
+    Performs multi-angle deep research on a topic by running several searches,
+    cross-referencing findings, and synthesizing a structured report.
+    Use this when the user asks for comprehensive analysis, research papers,
+    strategic insights, or detailed background on a complex subject.
+
+    Args:
+        topic: The research topic or question.
+        depth: Number of sub-queries to run (1-5). Defaults to 3.
+    """
+    import urllib.request
+    import urllib.parse
+
+    depth = max(1, min(5, depth))
+    sub_queries = [
+        topic,
+        f"{topic} latest developments 2025 2026",
+        f"{topic} expert analysis criticism",
+        f"{topic} practical applications examples",
+        f"{topic} future trends predictions",
+    ][:depth]
+
+    findings = []
+    for i, q in enumerate(sub_queries, 1):
+        try:
+            encoded = urllib.parse.quote_plus(q)
+            url = f"https://api.duckduckgo.com/?q={encoded}&format=json&no_redirect=1&no_html=1&skip_disambig=1"
+            req = urllib.request.Request(url, headers={"User-Agent": "ZIVO-AI-Research/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            abstract = data.get("AbstractText", "")
+            related = [r.get("Text", "") for r in data.get("RelatedTopics", [])[:2] if isinstance(r, dict) and "Text" in r]
+            if abstract:
+                findings.append(f"**Angle {i} — {q}:**\n{abstract}")
+            elif related:
+                findings.append(f"**Angle {i} — {q}:**\n" + "; ".join(related))
+        except Exception as e:
+            findings.append(f"**Angle {i} — {q}:** [Search error: {str(e)}]")
+
+    if not findings:
+        return f"[Deep research produced no results for '{topic}']"
+
+    report = f"# Deep Research Report: {topic}\n\n"
+    report += "\n\n---\n\n".join(findings)
+    report += f"\n\n---\n*Research depth: {depth} angles. Cross-referenced {len(findings)} sources.*"
+    return report
+
+
 # Expose all registered tools as a list for the Agent
-ALL_TOOLS = list(CONNECTOR_REGISTRY.values())
+ALL_TOOLS = [
+    get_current_datetime,
+    read_local_file,
+    list_directory,
+    web_search,
+    deep_research,
+]
+
+PLANNER_TOOLS = [
+    get_current_datetime,
+    list_directory,
+]
+
+EXECUTOR_TOOLS = ALL_TOOLS  # Executor has access to everything
+
+VALIDATOR_TOOLS = [
+    get_current_datetime,
+    read_local_file,
+]

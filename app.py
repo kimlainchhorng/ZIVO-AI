@@ -42,7 +42,60 @@ if "brain" not in st.session_state:
 # Header
 # ──────────────────────────────────────────────
 st.title(":material/smart_toy: ZIVO-AI")
-st.caption("Your intelligent assistant — powered by OpenAI Agents SDK")
+st.caption("Multi-Agent: Planner · Executor · Validator")
+
+# ──────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────
+
+def _run_agent_with_trace(prompt: str) -> str:
+    """Run the multi-agent pipeline; display real-time agent/tool trace inside st.status."""
+    brain: ZivoBrain = st.session_state.brain
+    trace_steps: list = []
+
+    # Agent name → emoji mapping for visual clarity
+    AGENT_ICONS = {
+        "ZIVO-AI": "🧠",
+        "ZIVO-Planner": "🗺️",
+        "ZIVO-Executor": "⚡",
+        "ZIVO-Validator": "✅",
+    }
+
+    with st.status("ZIVO is thinking...", expanded=debug_mode) as status:
+        result = brain.run(st.session_state.messages)
+
+        for msg in result.new_messages:
+            role = getattr(msg, "role", "")
+            agent_name = getattr(msg, "sender", getattr(msg, "agent_name", "ZIVO-AI"))
+            icon = AGENT_ICONS.get(agent_name, "🤖")
+
+            # Handoff message
+            if hasattr(msg, "type") and getattr(msg, "type", "") == "handoff":
+                target = getattr(msg, "target_agent", "next agent")
+                step = f"🔀 **Handoff →** `{target}`"
+                st.write(step)
+                trace_steps.append(step)
+
+            # Tool invocation
+            elif role == "assistant" and getattr(msg, "tool_calls", None):
+                for tc in msg.tool_calls:
+                    step = f"{icon} **[{agent_name}] Calling:** `{tc.function.name}` — `{tc.function.arguments}`"
+                    st.write(step)
+                    trace_steps.append(step)
+
+            # Tool result
+            elif role == "tool":
+                tool_name = getattr(msg, "name", "unknown")
+                step = f"🔧 **Tool result from** `{tool_name}`"
+                st.write(step)
+                trace_steps.append(step)
+
+        status.update(label="✅ Done!", state="complete", expanded=False)
+
+    st.session_state.trace = trace_steps
+    st.session_state.last_run_result = result
+    return result.final_output
+
 
 # ──────────────────────────────────────────────
 # Render existing chat history
@@ -60,51 +113,24 @@ if prompt := st.chat_input("Ask ZIVO anything…"):
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # ── Feature #1: st.status Thinking Traces ──────────────────────────────
-    # Show a collapsible status container while the agent works so the user
-    # can see every reasoning/tool step in real-time.
-    # ──────────────────────────────────────────────────────────────────────
     with st.chat_message("assistant"):
-        with st.status("ZIVO is thinking…", expanded=False) as status:
-            st.write(":material/search: Searching internal memory…")
-            st.write(":material/psychology: Analysing query context…")
-
-            # Run the agent
-            result = st.session_state.brain.run(st.session_state.messages)
-
-            # Expose tool calls inside the status block so the user can
-            # see which tools fired (if any).
-            if hasattr(result, "new_messages") and result.new_messages:
-                for agent_msg in result.new_messages:
-                    role = getattr(agent_msg, "role", "")
-                    # Surface tool-call names when available
-                    if role == "tool" or str(role) == "tool":
-                        tool_name = getattr(agent_msg, "name", "unknown tool")
-                        st.write(f":material/build: Tool called ��� `{tool_name}`")
-
-            # Capture raw response for the debug panel (Feature #3)
-            if debug_mode:
-                try:
-                    st.session_state.last_raw_response = {
-                        "final_output": str(result.final_output),
-                        "new_messages_count": (
-                            len(result.new_messages)
-                            if hasattr(result, "new_messages")
-                            else 0
-                        ),
-                    }
-                except Exception:
-                    pass
-
-            status.update(
-                label=":material/check_circle: Analysis complete!",
-                state="complete",
-                expanded=False,
-            )
-
-        # Render the final assistant answer
-        final_answer: str = result.final_output or ""
+        final_answer: str = _run_agent_with_trace(prompt)
         st.markdown(final_answer)
+
+        # Capture raw response for the debug panel (Feature #3)
+        if debug_mode:
+            try:
+                result = st.session_state.last_run_result
+                st.session_state.last_raw_response = {
+                    "final_output": str(result.final_output),
+                    "new_messages_count": (
+                        len(result.new_messages)
+                        if hasattr(result, "new_messages")
+                        else 0
+                    ),
+                }
+            except Exception:
+                pass
 
     # Persist assistant message
     st.session_state.messages.append(
