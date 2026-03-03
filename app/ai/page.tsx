@@ -65,10 +65,10 @@ function getSpeechRecognitionAPI(): typeof SpeechRecognition | null {
 
 function getFileIcon(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase();
-  if (ext === "tsx" || ext === "ts") return "📘";
+  if (ext === "tsx" || ext === "ts") return "📄";
   if (ext === "jsx" || ext === "js") return "📙";
   if (ext === "css") return "🎨";
-  if (ext === "json") return "📋";
+  if (ext === "json") return "📦";
   if (ext === "html") return "🌐";
   if (ext === "md") return "📝";
   return "📄";
@@ -97,11 +97,13 @@ export default function AIPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [buildTime, setBuildTime] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [copyLabel, setCopyLabel] = useState("📋 Copy");
+  const [copyLabel, setCopyLabel] = useState("💾 Save");
   const [copyFileLabel, setCopyFileLabel] = useState("📋 Copy");
   const [loadingStep, setLoadingStep] = useState(0);
   const [activeNav, setActiveNav] = useState<"builder" | "dashboard" | "connectors">("builder");
+  const [consoleLogs, setConsoleLogs] = useState<Array<{ text: string; type: "info" | "success" | "error" }>>([]);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const consoleEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
@@ -115,7 +117,9 @@ export default function AIPage() {
     setDeployError(null);
     setDownloadError(null);
     setActiveFile(null);
+    setConsoleLogs([{ text: "> Building project...", type: "info" }]);
 
+    const buildStart = Date.now();
     const stepTimer1 = setTimeout(() => setLoadingStep(1), LOADING_STEP1_DELAY);
     const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
 
@@ -128,9 +132,17 @@ export default function AIPage() {
       const data: GenerateSiteResponse = await res.json();
       setOutput(data);
       if (data.files?.length) setActiveFile(data.files[0]);
-      setBuildTime(new Date().toLocaleTimeString());
+      const duration = Date.now() - buildStart;
+      setBuildTime(`${(duration / 1000).toFixed(1)}s`);
+      const fileLogs = data.files?.map((f) => ({ text: `> Created: ${f.path}`, type: "success" as const })) ?? [];
+      setConsoleLogs((prev) => [
+        ...prev,
+        ...fileLogs,
+        { text: `> Build complete in ${duration}ms ✓`, type: "success" },
+      ]);
     } catch {
       setOutput({ error: "Request failed" });
+      setConsoleLogs((prev) => [...prev, { text: "> Error: Request failed", type: "error" }]);
     }
 
     clearTimeout(stepTimer1);
@@ -171,6 +183,10 @@ export default function AIPage() {
   useEffect(() => {
     applyVisualEditOverlay(visualEdit);
   }, [visualEdit, output, applyVisualEditOverlay]);
+
+  useEffect(() => {
+    consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [consoleLogs]);
 
   async function handleDeploy(platform: "vercel" | "netlify") {
     if (!output?.files?.length) return;
@@ -249,13 +265,14 @@ export default function AIPage() {
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes recordPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
+        @keyframes statusBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         .zivo-btn:hover { opacity: 0.85; transform: scale(1.02); }
         .zivo-btn { transition: opacity 0.15s, transform 0.15s; }
         .zivo-chip:hover { background: rgba(99,102,241,0.2) !important; border-color: rgba(99,102,241,0.4) !important; }
         .zivo-file:hover { background: rgba(255,255,255,0.06) !important; }
         .zivo-tab:hover { color: #f1f5f9 !important; }
         .zivo-nav:hover { color: #f1f5f9 !important; }
-        .zivo-textarea:focus { outline: none; border-color: #6366f1 !important; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
+        .zivo-textarea:focus { outline: none; border-color: #6366f1 !important; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.4); }
         .zivo-input:focus { outline: none; border-color: #6366f1 !important; }
         .zivo-select:focus { outline: none; border-color: #6366f1 !important; }
         * { box-sizing: border-box; }
@@ -314,10 +331,16 @@ export default function AIPage() {
                     className="zivo-textarea"
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                        e.preventDefault();
+                        handleBuild();
+                      }
+                    }}
                     placeholder="Describe the app you want to build... (e.g. A todo app with Supabase auth and dark mode)"
                     style={{ width: "100%", minHeight: "120px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", resize: "vertical", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, transition: "border-color 0.2s" }}
                   />
-                  <span style={{ position: "absolute", bottom: "0.5rem", right: "0.75rem", fontSize: "0.7rem", color: COLORS.textMuted }}>{prompt.length}</span>
+                  <span style={{ position: "absolute", bottom: "0.5rem", right: "0.75rem", fontSize: "0.7rem", color: COLORS.textMuted }}>{prompt.length} / 2000</span>
                 </div>
               </div>
 
@@ -462,11 +485,11 @@ export default function AIPage() {
                   onClick={() => {
                     const all = output?.files?.map((f) => `// ${f.path}\n${f.content}`).join("\n\n---\n\n") ?? "";
                     navigator.clipboard.writeText(all).then(() => {
-                      setCopyLabel("✅ Copied!");
-                      setTimeout(() => setCopyLabel("📋 Copy"), 2000);
+                      setCopyLabel("✅ Saved!");
+                      setTimeout(() => setCopyLabel("💾 Save"), 2000);
                     }).catch(() => {});
                   }}
-                  style={{ flex: 1, padding: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
+                  style={{ flex: 1, padding: "0.5rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
                 >
                   {copyLabel}
                 </button>
@@ -523,7 +546,7 @@ export default function AIPage() {
                 title="Visual Edit"
                 style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1px solid ${visualEdit ? "rgba(99,102,241,0.4)" : COLORS.border}`, background: visualEdit ? "rgba(99,102,241,0.15)" : "transparent", color: visualEdit ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
               >
-                ✏️ <span>Edit</span>
+                ✏️ <span>{visualEdit ? "Editing" : "Edit"}</span>
               </button>
 
               {/* Refresh */}
@@ -598,7 +621,7 @@ export default function AIPage() {
                         ref={iframeRef}
                         src={previewSrc}
                         title="Live Preview"
-                        style={{ width: "100%", height: "100%", border: "none" }}
+                        style={{ width: "100%", height: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
                         sandbox="allow-scripts allow-same-origin"
                         onLoad={() => applyVisualEditOverlay(visualEdit)}
                       />
@@ -637,8 +660,10 @@ export default function AIPage() {
                       )}
                     </>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.875rem" }}>
-                      No preview available for this project type.
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.875rem", textAlign: "center", padding: "2rem" }}>
+                      {output?.files?.some((f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts"))
+                        ? "Live preview not available for TypeScript files — view in Code tab"
+                        : "No preview available for this project type."}
                     </div>
                   )}
                 </div>
@@ -686,19 +711,17 @@ export default function AIPage() {
 
               {/* Console Tab */}
               {!loading && output && activeTab === "console" && (
-                <div style={{ width: "100%", height: "100%", padding: "1rem", animation: "fadeIn 0.3s ease", overflow: "auto" }}>
-                  <div style={{ fontFamily: "monospace", fontSize: "0.8125rem", lineHeight: 1.8 }}>
-                    {output.summary && <div style={{ color: COLORS.success }}>✓ {output.summary}</div>}
-                    {output.notes && <div style={{ color: COLORS.warning }}>ℹ {output.notes}</div>}
-                    {output.files?.map((f, i) => (
-                      <div key={i} style={{ color: COLORS.textSecondary }}>
-                        <span style={{ color: f.action === "create" ? COLORS.success : f.action === "delete" ? COLORS.error : COLORS.accent }}>{f.action.toUpperCase()}</span>
-                        {" "}{f.path}
+                <div style={{ width: "100%", height: "100%", padding: "1rem", animation: "fadeIn 0.3s ease", overflow: "auto", background: "#000" }}>
+                  <div style={{ fontFamily: "'Fira Code', 'SF Mono', 'Monaco', 'Consolas', monospace", fontSize: "0.8125rem", lineHeight: 1.8 }}>
+                    {consoleLogs.map((log, i) => (
+                      <div key={i} style={{ color: log.type === "error" ? COLORS.error : log.type === "success" ? COLORS.success : "#4ade80" }}>
+                        {log.text}
                       </div>
                     ))}
-                    {!output.summary && !output.notes && !output.files?.length && (
-                      <div style={{ color: COLORS.textMuted }}>No console output.</div>
+                    {consoleLogs.length === 0 && (
+                      <div style={{ color: COLORS.textMuted }}>No console output yet.</div>
                     )}
+                    <div ref={consoleEndRef} />
                   </div>
                 </div>
               )}
@@ -709,7 +732,7 @@ export default function AIPage() {
         {/* Status Bar */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "28px", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0, fontSize: "0.7rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: loading ? COLORS.warning : COLORS.success }} />
+            <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: loading ? COLORS.warning : COLORS.success, animation: "statusBlink 2s infinite" }} />
             <span style={{ color: COLORS.textMuted }}>{loading ? "Building…" : "Ready to build"}</span>
           </div>
           <span style={{ color: COLORS.textMuted }}>{buildTime ? `Last build: ${buildTime}` : "No builds yet"}</span>
