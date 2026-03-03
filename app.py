@@ -1,173 +1,112 @@
-from typing import Dict, List
-
 import streamlit as st
-
 from engine.zivo_brain import ZivoBrain
 
-ChatMessage = Dict[str, str]
+# ──────────────────────────────────────────────
+# Page config
+# ──────────────────────────────────────────────
+st.set_page_config(
+    page_title="ZIVO-AI",
+    page_icon=":material/smart_toy:",
+    layout="centered",
+)
 
+# ──────────────────────────────────────────────
+# 2026 Material Symbol branding  (Feature #2)
+# st.logo: sidebar icon + collapsed icon
+# ──────────────────────────────────────────────
+st.logo(":material/bolt:", icon_image=":material/smart_toy:")
 
-# ---------------------------------------------------------------------------
-# Session state
-# ---------------------------------------------------------------------------
+# ──────────────────────────────────────────────
+# Deep-link / debug mode  (Feature #3)
+# Visit ?debug=true to activate the debug panel
+# ──────────────────────────────────────────────
+debug_mode: bool = st.query_params.get("debug") == "true"
 
-def _init_session_state() -> None:
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "brain" not in st.session_state:
-        st.session_state.brain = ZivoBrain()
-    if "last_run_result" not in st.session_state:
-        st.session_state.last_run_result = None
-    if "trace" not in st.session_state:
-        st.session_state.trace = []
+if debug_mode:
+    st.sidebar.markdown("### :material/bug_report: Debug Mode")
+    if "last_raw_response" in st.session_state:
+        st.sidebar.json(st.session_state.last_raw_response)
+    else:
+        st.sidebar.info("No response captured yet.")
 
+# ──────────────────────────────────────────────
+# Session state bootstrap
+# ──────────────────────────────────────────────
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# ---------------------------------------------------------------------------
-# Stable st.query_params for debug/trace flags
-# ---------------------------------------------------------------------------
+if "brain" not in st.session_state:
+    st.session_state.brain = ZivoBrain()
 
-def _debug_enabled() -> bool:
-    return str(st.query_params.get("debug", "false")).lower() == "true"
+# ──────────────────────────────────────────────
+# Header
+# ──────────────────────────────────────────────
+st.title(":material/smart_toy: ZIVO-AI")
+st.caption("Your intelligent assistant — powered by OpenAI Agents SDK")
 
+# ──────────────────────────────────────────────
+# Render existing chat history
+# ──────────────────────────────────────────────
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
 
-def _trace_mode_enabled() -> bool:
-    return str(st.query_params.get("trace", "false")).lower() == "true"
+# ──────────────────────────────────────────────
+# Chat input
+# ──────────────────────────────────────────────
+if prompt := st.chat_input("Ask ZIVO anything…"):
+    # Append user message
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
+    # ── Feature #1: st.status Thinking Traces ──────────────────────────────
+    # Show a collapsible status container while the agent works so the user
+    # can see every reasoning/tool step in real-time.
+    # ──────────────────────────────────────────────────────────────────────
+    with st.chat_message("assistant"):
+        with st.status("ZIVO is thinking…", expanded=False) as status:
+            st.write(":material/search: Searching internal memory…")
+            st.write(":material/psychology: Analysing query context…")
 
-# ---------------------------------------------------------------------------
-# Sidebar with Material Icons
-# ---------------------------------------------------------------------------
+            # Run the agent
+            result = st.session_state.brain.run(st.session_state.messages)
 
-def _render_sidebar() -> None:
-    st.logo(":material/smart_toy:", icon_image=":material/bolt:")
-    st.sidebar.title("ZIVO-AI")
-    st.sidebar.caption("Powered by OpenAI Agents SDK")
+            # Expose tool calls inside the status block so the user can
+            # see which tools fired (if any).
+            if hasattr(result, "new_messages") and result.new_messages:
+                for agent_msg in result.new_messages:
+                    role = getattr(agent_msg, "role", "")
+                    # Surface tool-call names when available
+                    if role == "tool" or str(role) == "tool":
+                        tool_name = getattr(agent_msg, "name", "unknown tool")
+                        st.write(f":material/build: Tool called ��� `{tool_name}`")
 
-    st.sidebar.divider()
-    st.sidebar.markdown("**Debug Links**")
-    base = st.sidebar.text_input("App base URL", value="http://localhost:8501", key="base_url")
-    st.sidebar.markdown(
-        f"[Enable Debug]({base}?debug=true) · [Enable Trace]({base}?trace=true) · "
-        f"[Both]({base}?debug=true&trace=true)"
+            # Capture raw response for the debug panel (Feature #3)
+            if debug_mode:
+                try:
+                    st.session_state.last_raw_response = {
+                        "final_output": str(result.final_output),
+                        "new_messages_count": (
+                            len(result.new_messages)
+                            if hasattr(result, "new_messages")
+                            else 0
+                        ),
+                    }
+                except Exception:
+                    pass
+
+            status.update(
+                label=":material/check_circle: Analysis complete!",
+                state="complete",
+                expanded=False,
+            )
+
+        # Render the final assistant answer
+        final_answer: str = result.final_output or ""
+        st.markdown(final_answer)
+
+    # Persist assistant message
+    st.session_state.messages.append(
+        {"role": "assistant", "content": final_answer}
     )
-
-    st.sidebar.divider()
-    if st.sidebar.button(":material/delete: Clear Chat"):
-        st.session_state.messages = []
-        st.session_state.last_run_result = None
-        st.session_state.trace = []
-        st.rerun()
-
-
-# ---------------------------------------------------------------------------
-# Message rendering
-# ---------------------------------------------------------------------------
-
-def _render_messages() -> None:
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-
-def _append_message(role: str, content: str) -> None:
-    st.session_state.messages.append({"role": role, "content": content})
-
-
-# ---------------------------------------------------------------------------
-# Agent response with st.status tracing
-# ---------------------------------------------------------------------------
-
-def _run_agent_with_trace(prompt: str) -> str:
-    """Run the agent loop; display real-time tool trace inside st.status."""
-    brain: ZivoBrain = st.session_state.brain
-    trace_steps: list = []
-
-    with st.status("ZIVO is thinking...", expanded=_trace_mode_enabled()) as status:
-        result = brain.run(st.session_state.messages)
-
-        for msg in result.new_messages:
-            role = getattr(msg, "role", "")
-
-            # Tool invocation
-            if role == "assistant" and getattr(msg, "tool_calls", None):
-                for tc in msg.tool_calls:
-                    step = f"⚡ **Invoking:** `{{tc.function.name}}` — `{{tc.function.arguments}}`"
-                    st.write(step)
-                    trace_steps.append(step)
-
-            # Tool result
-            elif role == "tool":
-                tool_name = getattr(msg, "name", "unknown")
-                step = f"🔧 **Tool result from** `{{tool_name}}`"
-                st.write(step)
-                trace_steps.append(step)
-
-        status.update(label="✅ Done!", state="complete", expanded=False)
-
-    st.session_state.trace = trace_steps
-    st.session_state.last_run_result = result
-    return result.final_output
-
-
-# ---------------------------------------------------------------------------
-# Debug panel (?debug=true)
-# ---------------------------------------------------------------------------
-
-def _render_debug_panel() -> None:
-    if not _debug_enabled() or not st.session_state.last_run_result:
-        return
-
-    result = st.session_state.last_run_result
-    with st.expander(":material/bug_report: Debug: Agent Run Details", expanded=True):
-        st.json({
-            "final_output": result.final_output,
-            "new_messages_count": len(result.new_messages),
-            "trace_steps": st.session_state.trace,
-            "messages": [
-                {
-                    "role": getattr(m, "role", "unknown"),
-                    "content": str(getattr(m, "content", ""))
-                }
-                for m in result.new_messages
-            ]
-        })
-
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-def main() -> None:
-    st.set_page_config(
-        page_title="ZIVO-AI",
-        page_icon=":material/smart_toy:",
-        layout="centered",
-    )
-    _init_session_state()
-    _render_sidebar()
-
-    st.title("ZIVO-AI Chat")
-
-    if _trace_mode_enabled():
-        st.caption(":material/visibility: Trace mode **ON** — tool steps will be shown expanded.")
-    if _debug_enabled():
-        st.caption(":material/bug_report: Debug mode **ON** — full run details shown below each response.")
-
-    _render_messages()
-
-    if prompt := st.chat_input("Ask ZIVO anything..."):
-        _append_message("user", prompt)
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        with st.chat_message("assistant"):
-            response = _run_agent_with_trace(prompt)
-            st.markdown(response)
-
-        _append_message("assistant", response)
-
-    _render_debug_panel()
-
-
-if __name__ == "__main__":
-    main()
