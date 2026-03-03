@@ -3,63 +3,61 @@ import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
-let _openai: OpenAI | null = null;
-
-function _get_client(): OpenAI {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set in environment variables.");
-  }
-  if (!_openai) {
-    _openai = new OpenAI({ apiKey });
-  }
-  return _openai;
-}
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 export async function POST(req: Request) {
   try {
-    const { prompt } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const prompt: string = body?.prompt || "";
 
-    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "A non-empty prompt is required." },
+        { error: "OPENAI_API_KEY is missing in .env.local" },
+        { status: 500 }
+      );
+    }
+
+    if (!prompt.trim()) {
+      return NextResponse.json(
+        { error: "Missing prompt" },
         { status: 400 }
       );
     }
 
-    const client = _get_client();
-    const model = process.env.OPENAI_MODEL_TEXT ?? "gpt-4.1-mini";
-    const temperature = parseFloat(process.env.OPENAI_TEMPERATURE ?? "0.4");
-
+    // IMPORTANT: use a normal string (no broken backticks)
     const systemPrompt =
-      "You are a file generator AI.\n" +
-      "Return ONLY valid JSON in the following format:\n" +
-      '{\n  "files": [\n    { "path": "app/page.tsx", "content": "file content here" }\n  ]\n}';
+      "You are a code generator. Return ONLY valid JSON. " +
+      "Schema: { files: Array<{ path: string; content: string }>, notes?: string }. " +
+      "Do NOT wrap JSON in markdown. Do NOT include backticks.";
 
     const response = await client.chat.completions.create({
-      model,
-      temperature,
+      model: process.env.OPENAI_MODEL_TEXT || "gpt-4.1-mini",
+      temperature: Number(process.env.OPENAI_TEMPERATURE ?? "0.4"),
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: prompt.trim() },
+        { role: "user", content: prompt },
       ],
     });
 
-    const text = response.choices[0]?.message?.content ?? "{}";
+    const text = response.choices?.[0]?.message?.content || "{}";
 
-    let parsed: unknown;
+    let parsed: any;
     try {
       parsed = JSON.parse(text);
     } catch {
       return NextResponse.json(
-        { error: "AI returned invalid JSON.", raw: text },
+        { error: "Invalid JSON from AI", raw: text },
         { status: 500 }
       );
     }
 
     return NextResponse.json(parsed);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unexpected server error.";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message || "Server error" },
+      { status: 500 }
+    );
   }
 }
