@@ -1,4 +1,5 @@
 import os
+import asyncio
 from typing import Dict, List
 
 import streamlit as st
@@ -13,7 +14,7 @@ def _init_session_state() -> None:
     if "last_raw_response" not in st.session_state:
         st.session_state.last_raw_response = None
     if "brain" not in st.session_state:
-        st.session_state.brain = ZivoBrain(api_key=os.getenv("OPENAI_API_KEY"))
+        st.session_state.brain = ZivoBrain()
 
 def _debug_enabled() -> bool:
     params = st.query_params
@@ -32,7 +33,7 @@ def _render_sidebar() -> None:
 
 def _render_messages(messages: List[ChatMessage]) -> None:
     for msg in messages:
-        with st.chat_message(msg["role"]):
+        with st.chat_message(msg["role"):
             st.markdown(msg["content"])
 
 def _append_message(role: str, content: str) -> None:
@@ -41,8 +42,7 @@ def _append_message(role: str, content: str) -> None:
 def _get_response(messages: List[ChatMessage]) -> str:
     brain: ZivoBrain = st.session_state.brain
     with st.status("AI Thinking...", expanded=False):
-        reply, raw_response = brain.generate_reply(messages)
-    st.session_state.last_raw_response = raw_response
+        reply = asyncio.run(brain.get_response(messages))
     return reply
 
 def _render_debug_panel() -> None:
@@ -69,5 +69,5 @@ def main() -> None:
 
     _render_debug_panel()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
