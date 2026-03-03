@@ -32,8 +32,8 @@ async function generateFrame(
         quality: "standard",
       }),
     });
-    const data = await r.json().catch(() => ({}));
     if (!r.ok) return null;
+    const data = await r.json().catch(() => ({}));
     const b64 = data?.data?.[0]?.b64_json;
     if (!b64) return null;
     return `data:image/png;base64,${b64}`;

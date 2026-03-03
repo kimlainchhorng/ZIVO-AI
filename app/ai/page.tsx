@@ -164,6 +164,7 @@ function AIPageInner() {
   const [videoFrames, setVideoFrames] = useState<string[]>([]);
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [videoZipError, setVideoZipError] = useState<string | null>(null);
 
   // 3D generation state
   const [threeDPrompt, setThreeDPrompt] = useState("");
@@ -418,7 +419,7 @@ function AIPageInner() {
       a.download = "zivo-frames.zip";
       a.click();
       URL.revokeObjectURL(url);
-    } catch { /* ignore */ }
+    } catch { setVideoZipError("Download failed. Please try again."); }
   }
 
   async function handle3DGenerate() {
@@ -946,6 +947,7 @@ function AIPageInner() {
                     )}
                   </button>
                   {videoFrames.length > 0 && (
+                    <>
                     <button
                       className="zivo-btn"
                       onClick={handleVideoDownloadZip}
@@ -954,6 +956,12 @@ function AIPageInner() {
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
                       Download Frames as ZIP
                     </button>
+                    {videoZipError && (
+                      <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.65rem 0.75rem", borderRadius: "8px", marginTop: "0.5rem", fontSize: "0.8125rem" }}>
+                        {videoZipError}
+                      </div>
+                    )}
+                    </>
                   )}
                 </div>
               )}
@@ -1100,13 +1108,13 @@ function AIPageInner() {
                 ["desktop" as const, <DesktopIcon key="d" />],
                 ["tablet" as const, <TabletIcon key="t" />],
                 ["mobile" as const, <MobileIcon key="m" />],
-              ] as Array<["desktop"|"tablet"|"mobile", React.ReactElement]>).map(([dm, icon]) => (
+              ] as Array<["desktop"|"tablet"|"mobile", React.ReactElement]>).map(([deviceType, icon]) => (
                   <button
-                    key={dm}
+                    key={deviceType}
                     className="zivo-btn"
-                    onClick={() => setDeviceMode(dm)}
-                    title={dm}
-                    style={{ width: "30px", height: "30px", borderRadius: "6px", border: "none", background: deviceMode === dm ? "rgba(99,102,241,0.15)" : "transparent", color: deviceMode === dm ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    onClick={() => setDeviceMode(deviceType)}
+                    title={deviceType}
+                    style={{ width: "30px", height: "30px", borderRadius: "6px", border: "none", background: deviceMode === deviceType ? "rgba(99,102,241,0.15)" : "transparent", color: deviceMode === deviceType ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "14px", display: "flex", alignItems: "center", justifyContent: "center" }}
                   >
                     {icon}
                   </button>
