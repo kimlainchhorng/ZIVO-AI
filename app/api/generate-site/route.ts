@@ -22,6 +22,11 @@ export interface GenerateSiteResponse {
   notes?: string;
 }
 
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 type GenerateMode = "standard" | "advanced" | "minimal";
 
 const BASE_RULES = `
@@ -101,7 +106,7 @@ function getSystemPrompt(mode: GenerateMode): string {
 async function generateFiles(
   prompt: string,
   mode: GenerateMode,
-  context: Array<{ role: string; content: string }>
+  context: ChatMessage[]
 ): Promise<GenerateSiteResponse> {
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: getSystemPrompt(mode) },
@@ -109,9 +114,7 @@ async function generateFiles(
 
   // Inject prior context for multi-turn building
   for (const m of context) {
-    if (m.role === "user" || m.role === "assistant") {
-      messages.push({ role: m.role, content: m.content });
-    }
+    messages.push({ role: m.role, content: m.content });
   }
 
   messages.push({ role: "user", content: prompt });
@@ -183,8 +186,10 @@ export async function POST(req: Request) {
     const mode: GenerateMode = ["standard", "advanced", "minimal"].includes(body?.mode)
       ? (body.mode as GenerateMode)
       : "standard";
-    const context: Array<{ role: string; content: string }> = Array.isArray(body?.context)
-      ? body.context
+    const context: ChatMessage[] = Array.isArray(body?.context)
+      ? (body.context as Array<{ role: string; content: string }>)
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
       : [];
 
     if (!process.env.OPENAI_API_KEY) {

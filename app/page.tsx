@@ -1,4 +1,4 @@
-use client;
+'use client';
 
 import { useState } from "react";
 import type { GeneratedFile, BuilderResponse } from "@/app/api/builder/route";
