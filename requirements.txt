@@ -3,3 +3,4 @@ openai-agents>=0.0.14
 streamlit>=1.54.0
 python-dotenv>=1.0.1
 pydantic>=2.10.0
+mcp>=1.0.0

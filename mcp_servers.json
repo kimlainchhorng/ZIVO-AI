@@ -1,0 +1,15 @@
+[
+  {
+    "name": "filesystem",
+    "transport": "stdio",
+    "command": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+    "env": null
+  },
+  {
+    "name": "github",
+    "transport": "sse",
+    "url": "http://localhost:8811/sse",
+    "headers": null
+  }
+]
