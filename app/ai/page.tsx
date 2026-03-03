@@ -1,6 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { addHistoryEntry } from "../history/page";
 
 interface GeneratedFile {
   path: string;
@@ -65,6 +68,10 @@ const MODELS = [
 
 const LOADING_STEP1_DELAY = 800;
 const LOADING_STEP2_DELAY = 2000;
+// Debounce delay for AI prompt suggestions (ms)
+const SUGGEST_DEBOUNCE_MS = 800;
+// Max characters of existing code sent to the enhance endpoint
+const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 
 function getSpeechRecognitionAPI(): typeof SpeechRecognition | null {
   if (typeof window === "undefined") return null;
@@ -93,7 +100,7 @@ function getActionStyle(action: string): React.CSSProperties {
   return { background: "rgba(99,102,241,0.15)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.3)" };
 }
 
-export default function AIPage() {
+function AIPageInner() {
   const [prompt, setPrompt] = useState("");
   const [output, setOutput] = useState<GenerateSiteResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -117,6 +124,53 @@ export default function AIPage() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  // Chat panel state
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Prompt suggestions state
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Enhance loading state
+  const [enhancing, setEnhancing] = useState(false);
+
+  // Read ?prompt= from URL
+  const searchParams = useSearchParams();
+  useEffect(() => {
+    const urlPrompt = searchParams.get("prompt");
+    if (urlPrompt) setPrompt(urlPrompt);
+  }, [searchParams]);
+
+  // Scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  // Prompt suggestions debounce
+  useEffect(() => {
+    if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+    if (!prompt.trim() || prompt.length < 10) { setSuggestions([]); return; }
+    suggestTimerRef.current = setTimeout(async () => {
+      setSuggestLoading(true);
+      try {
+        const res = await fetch("/api/suggest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ partial: prompt }),
+        });
+        const data = await res.json();
+        setSuggestions(data.suggestions ?? []);
+      } catch { setSuggestions([]); }
+      setSuggestLoading(false);
+    }, SUGGEST_DEBOUNCE_MS);
+    return () => { if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current); };
+  }, [prompt]);
 
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
@@ -146,6 +200,14 @@ export default function AIPage() {
       if (data.files?.length) setActiveFile(data.files[0]);
       const duration = Date.now() - buildStart;
       setBuildTime(`${(duration / 1000).toFixed(1)}s`);
+      // Save to build history
+      addHistoryEntry({
+        timestamp: Date.now(),
+        prompt,
+        model,
+        fileCount: data.files?.length ?? 0,
+        duration,
+      });
       const fileLogs = data.files?.map((f) => ({ text: `> Created: ${f.path}`, type: "success" as const })) ?? [];
       setConsoleLogs((prev) => [
         ...prev,
@@ -263,6 +325,80 @@ export default function AIPage() {
     setIsRecording(true);
   }
 
+  async function handleEnhance() {
+    if (!output?.preview_html && !output?.files?.length) return;
+    setEnhancing(true);
+    const currentCode = output?.files?.map((f) => `// ${f.path}\n${f.content}`).join("\n\n---\n\n") ?? output?.preview_html ?? "";
+    try {
+      const res = await fetch("/api/generate-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: "Improve and add more features to this code. Make the UI more polished and add useful functionality:\n\n" + currentCode.slice(0, MAX_ENHANCE_CONTEXT_LENGTH),
+          model,
+          context: [{ role: "user", content: prompt }],
+        }),
+      });
+      const data: GenerateSiteResponse = await res.json();
+      setOutput(data);
+      if (data.files?.length) setActiveFile(data.files[0]);
+    } catch { /* ignore enhance errors */ }
+    setEnhancing(false);
+  }
+
+  async function handleChatSend() {
+    if (!chatInput.trim() || chatLoading) return;
+    const userMsg = chatInput.trim();
+    setChatInput("");
+    setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setChatLoading(true);
+
+    const allMessages = [...chatMessages, { role: "user" as const, content: userMsg }];
+    let assistantText = "";
+    setChatMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: allMessages }),
+      });
+
+      if (!res.body) throw new Error("No stream");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split("\n").filter((l) => l.startsWith("data: "));
+        for (const line of lines) {
+          const payload = line.slice(6);
+          if (payload === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(payload) as { text?: string; error?: string };
+            if (parsed.text) {
+              assistantText += parsed.text;
+              setChatMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = { role: "assistant", content: assistantText };
+                return updated;
+              });
+            }
+          } catch { /* skip malformed chunks */ }
+        }
+      }
+    } catch {
+      setChatMessages((prev) => {
+        const updated = [...prev];
+        updated[updated.length - 1] = { role: "assistant", content: "Sorry, I encountered an error. Please try again." };
+        return updated;
+      });
+    }
+    setChatLoading(false);
+  }
+
   const previewSrc = output?.preview_html
     ? `data:text/html;charset=utf-8,${encodeURIComponent(output.preview_html)}`
     : null;
@@ -302,22 +438,34 @@ export default function AIPage() {
             <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>ZIVO AI</span>
             <div style={{ width: "1px", height: "20px", background: COLORS.border, margin: "0 0.25rem" }} />
             <nav style={{ display: "flex", gap: "0.25rem" }}>
-              {([["builder", "/ai"], ["dashboard", "/dashboard"], ["connectors", "/connectors"]] as const).map(([nav, href]) => (
-                <a
-                  key={nav}
-                  href={href}
-                  className="zivo-nav"
-                  style={{ padding: "0.25rem 0.75rem", background: nav === "builder" ? "rgba(99,102,241,0.15)" : "transparent", color: nav === "builder" ? COLORS.accent : COLORS.textSecondary, borderRadius: "6px", border: nav === "builder" ? `1px solid rgba(99,102,241,0.3)` : "1px solid transparent", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s", textDecoration: "none", display: "inline-flex", alignItems: "center" }}
-                >
-                  {nav.charAt(0).toUpperCase() + nav.slice(1)}
-                </a>
-              ))}
+              {([["Builder", "/ai"], ["Workflow", "/workflow"], ["Templates", "/templates"], ["History", "/history"]] as const).map(([label, href]) => {
+                const isActive = href === "/ai";
+                return (
+                  <a
+                    key={href}
+                    href={href}
+                    className="zivo-nav"
+                    style={{ padding: "0.25rem 0.75rem", background: isActive ? "rgba(99,102,241,0.15)" : "transparent", color: isActive ? COLORS.accent : COLORS.textSecondary, borderRadius: "6px", border: isActive ? `1px solid rgba(99,102,241,0.3)` : "1px solid transparent", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, transition: "color 0.15s", textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+                  >
+                    {label}
+                  </a>
+                );
+              })}
             </nav>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: COLORS.success, boxShadow: `0 0 6px ${COLORS.success}` }} />
             <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>Ready</span>
-            <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: COLORS.accentGradient, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.875rem" }}>N</div>
+            <button
+              className="zivo-btn"
+              onClick={() => setChatOpen((o) => !o)}
+              title="AI Chat"
+              style={{ padding: "0.3rem 0.65rem", background: chatOpen ? "rgba(99,102,241,0.15)" : COLORS.bgCard, border: `1px solid ${chatOpen ? "rgba(99,102,241,0.4)" : COLORS.border}`, borderRadius: "6px", color: chatOpen ? COLORS.accent : COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Chat
+            </button>
+            <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: COLORS.accentGradient, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.875rem" }}>Z</div>
           </div>
         </div>
 
@@ -355,6 +503,24 @@ export default function AIPage() {
                   <span style={{ position: "absolute", bottom: "0.5rem", right: "0.75rem", fontSize: "0.7rem", color: COLORS.textMuted }}>{prompt.length} / 2000</span>
                 </div>
               </div>
+
+              {/* Prompt Suggestions */}
+              {(suggestions.length > 0 || suggestLoading) && (
+                <div style={{ marginBottom: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+                  {suggestLoading && <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}><span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid rgba(255,255,255,0.1)", borderTop: "2px solid " + COLORS.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Suggesting…</span>}
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      className="zivo-chip"
+                      onClick={() => setPrompt(s)}
+                      style={{ padding: "0.3rem 0.65rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "20px", color: COLORS.accent, cursor: "pointer", fontSize: "0.75rem", maxWidth: "240px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "background 0.15s" }}
+                      title={s}
+                    >
+                      ✦ {s.length > 60 ? s.slice(0, 60) + "…" : s}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* Quick Prompts */}
               <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
@@ -418,6 +584,22 @@ export default function AIPage() {
                   <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Build</>
                 )}
               </button>
+
+              {/* Enhance Button */}
+              {hasFiles && (
+                <button
+                  className="zivo-btn"
+                  onClick={handleEnhance}
+                  disabled={enhancing || loading}
+                  style={{ width: "100%", padding: "0.55rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: enhancing || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", marginBottom: "0.75rem" }}
+                >
+                  {enhancing ? (
+                    <><span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(255,255,255,0.2)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Enhancing…</>
+                  ) : (
+                    <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="6" r="3"/></svg> Enhance with AI</>
+                  )}
+                </button>
+              )}
 
               {/* Notifications */}
               {deployResult && (
@@ -763,6 +945,53 @@ export default function AIPage() {
           </div>
         </div>
 
+        {/* Chat Panel Overlay */}
+        {chatOpen && (
+          <div style={{ position: "fixed", top: "52px", right: 0, bottom: "28px", width: "340px", background: COLORS.bgPanel, borderLeft: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", zIndex: 40, animation: "fadeIn 0.2s ease" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+              <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>AI Chat</span>
+              <button onClick={() => setChatOpen(false)} style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1.25rem" }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {chatMessages.length === 0 && (
+                <div style={{ textAlign: "center", color: COLORS.textMuted, fontSize: "0.8125rem", padding: "2rem 0" }}>Ask the AI anything about your project…</div>
+              )}
+              {chatMessages.map((msg, i) => (
+                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", gap: "0.25rem" }}>
+                  <div style={{ maxWidth: "85%", padding: "0.5rem 0.75rem", borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px", background: msg.role === "user" ? COLORS.accentGradient : COLORS.bgCard, border: `1px solid ${COLORS.border}`, fontSize: "0.8125rem", color: COLORS.textPrimary, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.content || (msg.role === "assistant" && chatLoading ? "…" : "")}</div>
+                  {msg.role === "assistant" && msg.content && (
+                    <button
+                      onClick={() => setPrompt((prev) => prev ? prev + "\n\n" + msg.content : msg.content)}
+                      style={{ fontSize: "0.7rem", color: COLORS.accent, background: "transparent", border: "none", cursor: "pointer", padding: "0 0.25rem" }}
+                    >
+                      Use in prompt ↑
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div ref={chatEndRef} />
+            </div>
+            <div style={{ padding: "0.75rem", borderTop: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                  placeholder="Ask something…"
+                  style={{ flex: 1, background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.45rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                />
+                <button
+                  onClick={handleChatSend}
+                  disabled={chatLoading || !chatInput.trim()}
+                  style={{ padding: "0.45rem 0.75rem", background: chatLoading || !chatInput.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600 }}
+                >
+                  {chatLoading ? "…" : "→"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Status Bar */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "28px", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0, fontSize: "0.7rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
@@ -774,5 +1003,13 @@ export default function AIPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function AIPage() {
+  return (
+    <Suspense fallback={null}>
+      <AIPageInner />
+    </Suspense>
   );
 }
