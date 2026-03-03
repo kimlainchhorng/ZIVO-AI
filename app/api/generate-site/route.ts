@@ -7,6 +7,33 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const SYSTEM_PROMPT = `You are ZIVO AI — an expert full-stack developer that generates complete, working web applications.
+
+When given a description, respond with a valid JSON object:
+{
+  "files": [
+    {
+      "path": "index.html",
+      "content": "<!DOCTYPE html>...(complete, self-contained HTML with inline CSS and JS)...",
+      "language": "html"
+    },
+    {
+      "path": "app/page.tsx",
+      "content": "...(complete Next.js page component)...",
+      "language": "typescript"
+    }
+  ],
+  "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
+  "summary": "Brief description of what was built"
+}
+
+Rules:
+- ALWAYS include a \`preview_html\` field: a single complete self-contained HTML file with ALL CSS inline in <style> tags and ALL JS inline in <script> tags. No external CDN links that might fail.
+- Make the UI beautiful: use modern CSS, gradients, good typography, proper spacing
+- The HTML preview should look like a real polished app, not a demo
+- Also include the main Next.js/React files in the \`files\` array
+- Return ONLY valid JSON, no markdown fences, no explanation text`;
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -26,16 +53,12 @@ export async function POST(req: Request) {
       );
     }
 
-    const systemPrompt =
-      "You are a code generator. Return ONLY valid JSON. " +
-      "Schema: { files: Array<{ path: string; content: string }>, notes?: string }. " +
-      "Do NOT wrap JSON in markdown. Do NOT include backticks.";
-
     const response = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL_TEXT || "gpt-4.1-mini",
+      model: "gpt-4o",
       temperature: Number(process.env.OPENAI_TEMPERATURE ?? "0.4"),
+      max_tokens: 4000,
       messages: [
-        { role: "system", content: systemPrompt },
+        { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
     });
