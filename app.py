@@ -1,57 +1,58 @@
 import os
-from typing import List, Dict
+from typing import Any, Dict, List
 
 import streamlit as st
-from openai import OpenAI
+
+from engine.zivo_brain import ZivoBrain
 
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-
-class ChatMessage(Dict[str, str]):
-    """Typed alias for chat messages."""
-
-
+ChatMessage = Dict[str, str]
 
 def _init_session_state() -> None:
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "last_raw_response" not in st.session_state:
+        st.session_state.last_raw_response = None
+    if "brain" not in st.session_state:
+        st.session_state.brain = ZivoBrain(api_key=os.getenv("OPENAI_API_KEY"))
 
-
+def _debug_enabled() -> bool:
+    params = st.query_params
+    debug_value = params.get("debug", "false")
+    if isinstance(debug_value, list):
+        debug_value = debug_value[0] if debug_value else "false"
+    return str(debug_value).lower() == "true"
 
 def _render_sidebar() -> None:
+    st.logo(":material/smart_toy:", icon_image=":material/bolt:")
     st.sidebar.title("ZIVO-AI")
-    st.sidebar.logo("🤖")
     if st.sidebar.button("Clear Chat"):
         st.session_state.messages = []
-        st.experimental_rerun()
-
-
+        st.session_state.last_raw_response = None
+        st.rerun()
 
 def _render_messages(messages: List[ChatMessage]) -> None:
     for msg in messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-
-
 def _append_message(role: str, content: str) -> None:
     st.session_state.messages.append({"role": role, "content": content})
 
-
-
-def _get_response(prompt: str) -> str:
+def _get_response(messages: List[ChatMessage]) -> str:
+    brain: ZivoBrain = st.session_state.brain
     with st.status("AI Thinking...", expanded=False):
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return response.choices[0].message.content or ""
+        reply, raw_response = brain.generate_reply(messages)
+    st.session_state.last_raw_response = raw_response
+    return reply
 
-
+def _render_debug_panel() -> None:
+    if _debug_enabled() and st.session_state.last_raw_response:
+        with st.expander("Debug: Raw OpenAI Response", expanded=False):
+            st.json(st.session_state.last_raw_response)
 
 def main() -> None:
-    st.set_page_config(page_title="ZIVO-AI", page_icon="🤖")
+    st.set_page_config(page_title="ZIVO-AI", page_icon=":material/smart_toy:")
     _init_session_state()
     _render_sidebar()
 
@@ -63,9 +64,11 @@ def main() -> None:
         _append_message("user", user_input)
         _render_messages([st.session_state.messages[-1]])
 
-        reply = _get_response(user_input)
+        reply = _get_response(st.session_state.messages)
         _append_message("assistant", reply)
         _render_messages([st.session_state.messages[-1]])
+
+    _render_debug_panel()
 
 
 if __name__ == "__main__":
