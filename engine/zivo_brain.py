@@ -1,15 +1,16 @@
 import os
 from typing import List, Dict, AsyncIterator, Optional
+
 from dotenv import load_dotenv
+
 from agents import Agent, Runner, ModelSettings
 from engine.tools import ALL_TOOLS
 from engine.mcp_client import MCPClientManager
 
 load_dotenv()
 
-
 class ZivoBrain:
-    def __init__(
+    def __init__(self,
         self,
         prompt_path: str = "prompts/system_v1.txt",
         use_swarm: bool = False,
