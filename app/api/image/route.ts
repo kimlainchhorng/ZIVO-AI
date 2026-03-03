@@ -1,13 +1,11 @@
-import OpenAI from "openai";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 export async function POST(req: Request) {
   try {
-    if (!process.env.OPENAI_API_KEY) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
       return NextResponse.json({ error: "Missing OPENAI_API_KEY in .env.local" }, { status: 500 });
     }
 
@@ -19,23 +17,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
     }
 
-    // OpenAI image generation
-    const img = await client.images.generate({
-      model: "gpt-image-1",
-      prompt,
-      size,
+    // Use HTTP call so it works even if SDK versions differ
+    const r = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "gpt-image-1",
+        prompt,
+        size,
+      }),
     });
 
-    const b64 = img.data?.[0]?.b64_json;
-    if (!b64) {
-      return NextResponse.json({ error: "No image returned" }, { status: 500 });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      return NextResponse.json({ error: data?.error?.message || "Image generation failed", raw: data }, { status: 500 });
     }
 
-    return NextResponse.json({
-      ok: true,
-      contentType: "image/png",
-      dataUrl: `data:image/png;base64,${b64}`,
-    });
+    const b64 = data?.data?.[0]?.b64_json;
+    if (!b64) {
+      return NextResponse.json({ error: "No image returned", raw: data }, { status: 500 });
+    }
+
+    const dataUrl = `data:image/png;base64,${b64}`;
+    return NextResponse.json({ type: "image", dataUrl, size });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
   }
