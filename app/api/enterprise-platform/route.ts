@@ -8,7 +8,7 @@ import {
 
 export const runtime = "nodejs";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? "placeholder" });
 
 export async function GET() {
   return NextResponse.json({
