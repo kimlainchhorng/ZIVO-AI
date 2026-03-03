@@ -3,82 +3,47 @@ import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
+const client = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req: Request) {
   try {
-    const { prompt } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const prompt: string = body?.prompt || "";
 
-    if (!prompt) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "Prompt is required" },
-        { status: 400 }
-      );
-    }
-
-    const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4.1-mini",
-      temperature: 0.3,
-      messages: [
-        {
-          role: "system",
-          content: `
-You are a file generator AI.
-Return ONLY valid JSON.
-Format:
-
-{
-  "files": [
-    {
-      "path": "app/page.tsx",
-      "content": "file content here"
-    }
-  ]
-}
-          `,
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    });
-
-    const text = response.choices[0]?.message?.content || "{}";
-
-    let parsed;
-
-    try {
-      parsed = JSON.parse(text);
-    } catch (err) {
-      return NextResponse.json(
-        { error: "AI returned invalid JSON", raw: text },
+        { error: "OPENAI_API_KEY is missing in .env.local" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json(parsed);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || "Server error" },
-      { status: 500 }
-    );
-  }
-}
-`,
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
+    if (!prompt.trim()) {
+      return NextResponse.json(
+        { error: "Missing prompt" },
+        { status: 400 }
+      );
+    }
+
+    // IMPORTANT: use a normal string (no broken backticks)
+    const systemPrompt =
+      "You are a code generator. Return ONLY valid JSON. " +
+      "Schema: { files: Array<{ path: string; content: string }>, notes?: string }. " +
+      "Do NOT wrap JSON in markdown. Do NOT include backticks.";
+
+    const response = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL_TEXT || "gpt-4.1-mini",
+      temperature: Number(process.env.OPENAI_TEMPERATURE ?? "0.4"),
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt },
       ],
     });
 
-    const text = response.choices[0].message.content || "{}";
+    const text = response.choices?.[0]?.message?.content || "{}";
 
-    let parsed;
+    let parsed: any;
     try {
       parsed = JSON.parse(text);
     } catch {
@@ -91,7 +56,7 @@ Format:
     return NextResponse.json(parsed);
   } catch (err: any) {
     return NextResponse.json(
-      { error: err.message || "Server error" },
+      { error: err?.message || "Server error" },
       { status: 500 }
     );
   }
