@@ -1,6 +1,30 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Getting Started
+## ZIVO-AI Python App
+
+### Using uv (recommended — 10-100x faster)
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create environment and install dependencies
+uv sync
+
+# Run the app
+uv run streamlit run app.py
+```
+
+### Using pip (classic)
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+---
+
+## Getting Started (Next.js)
 
 First, run the development server:
 
