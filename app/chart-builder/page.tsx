@@ -70,8 +70,14 @@ function BarChart({ data, color }: { data: { labels: string[]; values: number[] 
 function PieChart({ data, color }: { data: { labels: string[]; values: number[] }; color: string }) {
   const total = data.values.reduce((a, b) => a + b, 0) || 1;
   const sliceColors = [color, '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
-  let startAngle = -Math.PI / 2;
+  const startAngles: number[] = [];
+  let running = -Math.PI / 2;
+  data.values.slice(0, 3).forEach((v) => {
+    startAngles.push(running);
+    running += (v / total) * 2 * Math.PI;
+  });
   const slices = data.values.slice(0, 3).map((v, i) => {
+    const startAngle = startAngles[i];
     const angle = (v / total) * 2 * Math.PI;
     const endAngle = startAngle + angle;
     const x1 = 200 + 120 * Math.cos(startAngle), y1 = 150 + 120 * Math.sin(startAngle);
@@ -79,7 +85,6 @@ function PieChart({ data, color }: { data: { labels: string[]; values: number[] 
     const large = angle > Math.PI ? 1 : 0;
     const d = `M200,150 L${x1},${y1} A120,120 0 ${large},1 ${x2},${y2} Z`;
     const mid = startAngle + angle / 2;
-    startAngle = endAngle;
     return { d, color: sliceColors[i], label: data.labels[i], mx: 200 + 80 * Math.cos(mid), my: 150 + 80 * Math.sin(mid) };
   });
   return (
@@ -104,9 +109,11 @@ function AreaChart({ data, color }: { data: { labels: string[]; values: number[]
   );
 }
 
+const HEATMAP_DATA = Array.from({ length: 24 }, (_, i) => ((i * 7 + 13) % 100) / 100);
+
 function HeatmapChart() {
   const rows = 4, cols = 6;
-  const data = Array.from({ length: rows * cols }, () => Math.random());
+  const data = HEATMAP_DATA;
   return (
     <svg viewBox="0 0 500 300" style={{ width: '100%' }}>
       {data.map((v, i) => {

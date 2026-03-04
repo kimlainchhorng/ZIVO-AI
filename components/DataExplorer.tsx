@@ -11,7 +11,7 @@ const COLORS = {
   textMuted: "#64748b",
 };
 
-const TABLES: Record<string, Record<string, string | number>[]> = {
+const TABLES: Record<string, Record<string, string | number | null>[]> = {
   users: [
     { id: 1, email: 'alice@example.com', name: 'Alice Chen', role: 'admin', created_at: '2025-01-01' },
     { id: 2, email: 'bob@example.com', name: 'Bob Kim', role: 'developer', created_at: '2025-01-05' },
@@ -61,7 +61,7 @@ export default function DataExplorer() {
 
   const handleTableChange = (t: string) => { setTable(t); setPage(0); };
 
-  const cellColor = (col: string, val: string | number) => {
+  const cellColor = (col: string, val: string | number | null) => {
     if (col === 'level') {
       if (val === 'error') return '#ef4444';
       if (val === 'warn') return '#f59e0b';
@@ -111,7 +111,7 @@ export default function DataExplorer() {
                   const val = row[col];
                   const displayVal = val === null || val === undefined ? '—' : String(val).length > 30 ? String(val).slice(0, 30) + '…' : String(val);
                   return (
-                    <td key={col} style={{ padding: '0.5rem 0.75rem', color: cellColor(col, val as string), verticalAlign: 'middle' }} title={String(val)}>
+                    <td key={col} style={{ padding: '0.5rem 0.75rem', color: cellColor(col, val ?? null), verticalAlign: 'middle' }} title={String(val ?? '')}>
                       {displayVal}
                     </td>
                   );

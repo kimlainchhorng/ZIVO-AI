@@ -120,7 +120,7 @@ export default function AgentStudio() {
   const toggleTool = (id: number) => setTools(prev => prev.map(t => t.id === id ? { ...t, enabled: !t.enabled } : t));
   const toggleAccordion = (name: string) => setExpandedAgents(prev => {
     const next = new Set(prev);
-    next.has(name) ? next.delete(name) : next.add(name);
+    if (next.has(name)) { next.delete(name); } else { next.add(name); }
     return next;
   });
   const clearMemory = (agentName: string) => {
