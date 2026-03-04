@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const COLORS = {
   bg: "#0a0b14",
@@ -128,8 +128,9 @@ function loadConnectorState(): ConnectorState {
 }
 
 export default function ConnectorsPage() {
+  const [mounted, setMounted] = useState(false);
   const [search, setSearch] = useState("");
-  const [connState, setConnState] = useState<ConnectorState>(loadConnectorState);
+  const [connState, setConnState] = useState<ConnectorState>({ githubConnected: false, modalToken: "", modalRepo: "", supabaseConnected: false, supabaseUrl: "", supabaseAnonKey: "" });
   const [showModal, setShowModal] = useState(false);
   const [modalError, setModalError] = useState("");
 
@@ -137,6 +138,11 @@ export default function ConnectorsPage() {
   const [showSupabaseModal, setShowSupabaseModal] = useState(false);
   const [supabaseError, setSupabaseError] = useState("");
   const [supabaseTesting, setSupabaseTesting] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    setConnState(loadConnectorState());
+  }, []);
 
   function handleConnect(id: string) {
     if (id === "github") setShowModal(true);
@@ -268,10 +274,10 @@ export default function ConnectorsPage() {
               <a href="/connectors" style={{ fontSize: "0.8rem", color: COLORS.accent, background: "rgba(99,102,241,0.1)", padding: "0.35rem 0.5rem", borderRadius: "6px", display: "block", fontWeight: 600, textDecoration: "none" }}>Connectors</a>
               <div
                 onClick={() => setShowModal(true)}
-                style={{ fontSize: "0.8rem", color: connState.githubConnected ? COLORS.success : COLORS.textSecondary, padding: "0.35rem 0.5rem", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
+                style={{ fontSize: "0.8rem", color: mounted && connState.githubConnected ? COLORS.success : COLORS.textSecondary, padding: "0.35rem 0.5rem", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
               >
                 GitHub
-                {connState.githubConnected && <span style={{ fontSize: "0.65rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "1px 5px", borderRadius: "3px" }}>●</span>}
+                {mounted && connState.githubConnected && <span style={{ fontSize: "0.65rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "1px 5px", borderRadius: "3px" }}>●</span>}
               </div>
             </div>
           </div>
@@ -307,7 +313,7 @@ export default function ConnectorsPage() {
                       key={c.id}
                       connector={c}
                       onConnect={handleConnect}
-                      isConnected={c.id === "github" ? connState.githubConnected : c.id === "supabase" ? connState.supabaseConnected : false}
+                      isConnected={c.id === "github" ? (mounted && connState.githubConnected) : c.id === "supabase" ? (mounted && connState.supabaseConnected) : false}
                     />
                   ))}
                 </div>
@@ -395,9 +401,9 @@ export default function ConnectorsPage() {
                 onClick={handleSaveGithub}
                 style={{ flex: 1, padding: "0.6rem", background: COLORS.accent, border: "none", borderRadius: "8px", color: "#fff", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
               >
-                {connState.githubConnected ? "Update" : "Connect"}
+                {mounted && connState.githubConnected ? "Update" : "Connect"}
               </button>
-              {connState.githubConnected && (
+              {mounted && connState.githubConnected && (
                 <button
                   onClick={handleDisconnect}
                   style={{ padding: "0.6rem 1rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", color: "#ef4444", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
@@ -478,9 +484,9 @@ export default function ConnectorsPage() {
                 style={{ flex: 1, padding: "0.6rem", background: supabaseTesting ? "rgba(99,102,241,0.4)" : COLORS.accent, border: "none", borderRadius: "8px", color: "#fff", fontWeight: 600, fontSize: "0.875rem", cursor: supabaseTesting ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}
               >
                 {supabaseTesting && <span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
-                {supabaseTesting ? "Verifying…" : connState.supabaseConnected ? "Update" : "Connect"}
+                {supabaseTesting ? "Verifying…" : (mounted && connState.supabaseConnected) ? "Update" : "Connect"}
               </button>
-              {connState.supabaseConnected && (
+              {mounted && connState.supabaseConnected && (
                 <button
                   onClick={handleDisconnectSupabase}
                   style={{ padding: "0.6rem 1rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", color: "#ef4444", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
