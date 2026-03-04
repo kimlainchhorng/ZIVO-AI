@@ -72,6 +72,9 @@ const LOADING_STEP2_DELAY = 2000;
 const SUGGEST_DEBOUNCE_MS = 800;
 // Max characters of existing code sent to the enhance endpoint
 const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
+// Mobile phone frame dimensions for preview
+const MOBILE_FRAME_WIDTH = 375;
+const MOBILE_FRAME_HEIGHT = 812;
 
 function getSpeechRecognitionAPI(): typeof SpeechRecognition | null {
   if (typeof window === "undefined") return null;
@@ -146,7 +149,21 @@ function AIPageInner() {
   const [githubPushError, setGithubPushError] = useState<string | null>(null);
 
   // Mode switcher
-  const [mode, setMode] = useState<"code" | "image" | "video" | "3d">("code");
+  const [mode, setMode] = useState<"code" | "website" | "mobile" | "image" | "video" | "3d">("code");
+
+  // Website generation state
+  const [websitePrompt, setWebsitePrompt] = useState("");
+  const [websiteStyle, setWebsiteStyle] = useState("modern");
+  const [websiteResult, setWebsiteResult] = useState<{ files: GeneratedFile[]; preview_html: string; summary: string } | null>(null);
+  const [websiteLoading, setWebsiteLoading] = useState(false);
+  const [websiteError, setWebsiteError] = useState<string | null>(null);
+
+  // Mobile app generation state
+  const [mobilePrompt, setMobilePrompt] = useState("");
+  const [mobileFramework, setMobileFramework] = useState("react-native");
+  const [mobileResult, setMobileResult] = useState<{ files: GeneratedFile[]; preview_html: string; summary: string } | null>(null);
+  const [mobileLoading, setMobileLoading] = useState(false);
+  const [mobileError, setMobileError] = useState<string | null>(null);
 
   // Image generation state
   const [imagePrompt, setImagePrompt] = useState("");
@@ -385,6 +402,42 @@ function AIPageInner() {
     setImageLoading(false);
   }
 
+  async function handleWebsiteGenerate() {
+    if (!websitePrompt.trim()) return;
+    setWebsiteLoading(true);
+    setWebsiteError(null);
+    setWebsiteResult(null);
+    try {
+      const res = await fetch("/api/generate-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: `Build a complete multi-page website: ${websitePrompt}. Style: ${websiteStyle}. Include a homepage, about page, and contact page with modern design.`, model }),
+      });
+      const data = await res.json();
+      if (data.error) { setWebsiteError(data.error); }
+      else { setWebsiteResult({ files: data.files ?? [], preview_html: data.preview_html ?? "", summary: data.summary ?? "" }); }
+    } catch { setWebsiteError("Website generation failed. Please try again."); }
+    setWebsiteLoading(false);
+  }
+
+  async function handleMobileGenerate() {
+    if (!mobilePrompt.trim()) return;
+    setMobileLoading(true);
+    setMobileError(null);
+    setMobileResult(null);
+    try {
+      const res = await fetch("/api/generate-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: `Build a ${mobileFramework} mobile app: ${mobilePrompt}. Generate the main screens with navigation, styled components, and mobile-first UI patterns. Output as a single self-contained HTML preview that simulates a mobile app interface with a phone frame.`, model }),
+      });
+      const data = await res.json();
+      if (data.error) { setMobileError(data.error); }
+      else { setMobileResult({ files: data.files ?? [], preview_html: data.preview_html ?? "", summary: data.summary ?? "" }); }
+    } catch { setMobileError("Mobile app generation failed. Please try again."); }
+    setMobileLoading(false);
+  }
+
   async function handleVideoGenerate() {
     if (!videoPrompt.trim()) return;
     setVideoLoading(true);
@@ -619,6 +672,8 @@ function AIPageInner() {
               <div style={{ display: "flex", gap: "4px", marginBottom: "1.25rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "4px" }}>
                 {([
                   ["code", "Code Builder"],
+                  ["website", "Website"],
+                  ["mobile", "Mobile App"],
                   ["image", "Image"],
                   ["video", "Video"],
                   ["3d", "3D"],
@@ -826,6 +881,121 @@ function AIPageInner() {
                 </div>
               )}
               </>)}
+
+              {/* ── Website Mode ── */}
+              {mode === "website" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
+                  <div>
+                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Website Builder</h2>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a complete multi-page site instantly</p>
+                  </div>
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
+                    <textarea
+                      className="zivo-textarea"
+                      value={websitePrompt}
+                      onChange={(e) => setWebsitePrompt(e.target.value)}
+                      onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); handleWebsiteGenerate(); } }}
+                      placeholder="A portfolio website for a designer with a dark theme, project gallery, and contact form..."
+                      style={{ width: "100%", minHeight: "100px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit" }}
+                    />
+                  </div>
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Style</label>
+                    <select
+                      value={websiteStyle}
+                      onChange={(e) => setWebsiteStyle(e.target.value)}
+                      style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem" }}
+                    >
+                      <option value="modern">Modern &amp; Minimal</option>
+                      <option value="bold">Bold &amp; Colorful</option>
+                      <option value="corporate">Corporate &amp; Professional</option>
+                      <option value="creative">Creative &amp; Artistic</option>
+                      <option value="dark">Dark &amp; Elegant</option>
+                    </select>
+                  </div>
+                  <button
+                    className="zivo-btn"
+                    onClick={handleWebsiteGenerate}
+                    disabled={websiteLoading || !websitePrompt.trim()}
+                    style={{ width: "100%", padding: "0.65rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
+                  >
+                    {websiteLoading ? (
+                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
+                    ) : (
+                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Build Website</>
+                    )}
+                  </button>
+                  {websiteError && (
+                    <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{websiteError}</div>
+                  )}
+                  {websiteResult && (
+                    <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px" }}>
+                      <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600, marginBottom: "0.35rem" }}>✓ Website generated</div>
+                      <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{websiteResult.summary}</div>
+                      <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{websiteResult.files.length} file(s) generated</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Mobile App Mode ── */}
+              {mode === "mobile" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
+                  <div>
+                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Mobile App Builder</h2>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates React Native / Expo screens instantly</p>
+                  </div>
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
+                    <textarea
+                      className="zivo-textarea"
+                      value={mobilePrompt}
+                      onChange={(e) => setMobilePrompt(e.target.value)}
+                      onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); handleMobileGenerate(); } }}
+                      placeholder="A fitness tracking app with a home screen, workout logger, and progress charts..."
+                      style={{ width: "100%", minHeight: "100px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit" }}
+                    />
+                  </div>
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Framework</label>
+                    <select
+                      value={mobileFramework}
+                      onChange={(e) => setMobileFramework(e.target.value)}
+                      style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem" }}
+                    >
+                      <option value="react-native">React Native</option>
+                      <option value="expo">Expo (React Native)</option>
+                      <option value="flutter-web">Flutter (Web Preview)</option>
+                      <option value="ionic">Ionic / Capacitor</option>
+                    </select>
+                  </div>
+                  <button
+                    className="zivo-btn"
+                    onClick={handleMobileGenerate}
+                    disabled={mobileLoading || !mobilePrompt.trim()}
+                    style={{ width: "100%", padding: "0.65rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
+                  >
+                    {mobileLoading ? (
+                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
+                    ) : (
+                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Build Mobile App</>
+                    )}
+                  </button>
+                  {mobileError && (
+                    <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{mobileError}</div>
+                  )}
+                  {mobileResult && (
+                    <div>
+                      <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px", marginBottom: "0.75rem" }}>
+                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600, marginBottom: "0.35rem" }}>✓ Mobile app generated</div>
+                        <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{mobileResult.summary}</div>
+                        <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{mobileResult.files.length} file(s) generated</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* ── Image Mode ── */}
               {mode === "image" && (
@@ -1377,6 +1547,76 @@ function AIPageInner() {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Website Right Panel ── */}
+            {mode === "website" && (
+              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                {/* Toolbar */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.accent }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary }}>Website Preview</span>
+                </div>
+                {!websiteResult && !websiteLoading && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                    <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    </div>
+                    <p style={{ fontSize: "0.875rem" }}>Your generated website will appear here</p>
+                  </div>
+                )}
+                {websiteLoading && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem" }}>
+                    <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
+                  </div>
+                )}
+                {websiteResult?.preview_html && (
+                  <iframe
+                    title="Website Preview"
+                    srcDoc={websiteResult.preview_html}
+                    style={{ flex: 1, width: "100%", border: "none" }}
+                    sandbox="allow-scripts allow-same-origin"
+                  />
+                )}
+              </div>
+            )}
+
+            {/* ── Mobile App Right Panel ── */}
+            {mode === "mobile" && (
+              <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
+                {/* Toolbar */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.accent }}><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary }}>Mobile Preview</span>
+                </div>
+                {!mobileResult && !mobileLoading && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                    <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                    </div>
+                    <p style={{ fontSize: "0.875rem" }}>Your generated mobile app will appear here</p>
+                  </div>
+                )}
+                {mobileLoading && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem" }}>
+                    <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building mobile app…</p>
+                  </div>
+                )}
+                {mobileResult?.preview_html && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem", flex: 1 }}>
+                    <div style={{ width: `${MOBILE_FRAME_WIDTH}px`, height: `${MOBILE_FRAME_HEIGHT}px`, borderRadius: "40px", border: "8px solid #111", boxShadow: "0 0 0 2px #333, 0 20px 60px rgba(0,0,0,0.5)", overflow: "hidden", flexShrink: 0, background: "#000", position: "relative" }}>
+                      <iframe
+                        title="Mobile App Preview"
+                        srcDoc={mobileResult.preview_html}
+                        style={{ width: "100%", height: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin"
+                      />
                     </div>
                   </div>
                 )}
