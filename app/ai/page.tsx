@@ -7,6 +7,7 @@ import { addHistoryEntry } from "../history/page";
 import PlanViewer from "@/components/PlanViewer";
 import BuildOutputPanel from "@/components/BuildOutputPanel";
 import DiffViewer from "@/components/DiffViewer";
+import FileExplorer from "@/components/FileExplorer";
 import ModelSelector from "@/components/ModelSelector";
 import CommandPalette from "@/components/CommandPalette";
 import DesignSystemPanel from "@/components/DesignSystemPanel";
@@ -84,6 +85,17 @@ const QUICK_PROMPTS = [
   { icon: <CartIcon />, label: "E-commerce", prompt: "Build an e-commerce product listing page with cart and checkout flow" },
   { icon: <LockIcon />, label: "Auth Flow", prompt: "Build a complete authentication flow with login, signup, and password reset pages" },
   { icon: <BarChartIcon />, label: "Dashboard", prompt: "Build an analytics dashboard with charts, stats cards, and data tables" },
+];
+
+const TEMPLATE_CARDS = [
+  { icon: "🚀", label: "Landing Page", description: "SaaS landing page with hero, features, pricing, testimonials, and CTA", prompt: "Build a SaaS landing page with hero, features, pricing, testimonials, and CTA" },
+  { icon: "📊", label: "Dashboard", description: "Analytics dashboard with sidebar navigation, stats cards, charts, and data tables", prompt: "Build an analytics dashboard with sidebar navigation, stats cards, charts, and data tables" },
+  { icon: "🛒", label: "E-commerce", description: "E-commerce store with product listings, cart, and checkout flow", prompt: "Build an e-commerce store with product listings, cart, and checkout flow" },
+  { icon: "🔐", label: "Auth System", description: "Complete auth flow with login, signup, forgot password, and profile pages", prompt: "Build a complete auth flow with login, signup, forgot password, and profile pages" },
+  { icon: "⚙️", label: "Admin Panel", description: "Admin panel with user management, data tables, CRUD operations, and role permissions", prompt: "Build an admin panel with user management, data tables, CRUD operations, and role permissions" },
+  { icon: "📱", label: "Mobile App", description: "Mobile-first React Native-style app with bottom navigation and card-based UI", prompt: "Build a mobile-first React Native-style app with bottom navigation and card-based UI" },
+  { icon: "🤝", label: "SaaS App", description: "Full SaaS application with dashboard, billing, team management, and settings", prompt: "Build a full SaaS application with dashboard, billing, team management, and settings" },
+  { icon: "🏪", label: "Marketplace", description: "Marketplace with listings, search, filters, seller profiles, and messaging", prompt: "Build a marketplace with listings, search, filters, seller profiles, and messaging" },
 ];
 
 const MODELS = [
@@ -291,10 +303,10 @@ function AIPageInner() {
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const [buildIteration, setBuildIteration] = useState(0);
   const [isBuildRunning, setIsBuildRunning] = useState(false);
-  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "files">("prompt");
+  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows">("prompt");
+  const [activeRightTab, setActiveRightTab] = useState<"files" | "code" | "diff">("files");
   const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
   const [showDiff, setShowDiff] = useState(false);
-  const [diffFileIndex, setDiffFileIndex] = useState(0);
   // Architecture plan from /api/plan
   const [planData, setPlanData] = useState<ArchitecturePlan | null>(null);
   // Command palette + design system panel
@@ -355,8 +367,8 @@ function AIPageInner() {
       if (data.files?.length) {
         setActiveFile(data.files[0]);
         setDiffFiles(data.files.map((f) => ({ path: f.path, oldContent: "", newContent: f.content })));
-        setDiffFileIndex(0);
         setShowDiff(true);
+        setActiveRightTab("files");
       }
       if (data.preview_html) setActiveTab("preview");
       const duration = Date.now() - buildStart;
@@ -861,7 +873,7 @@ function AIPageInner() {
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
           {/* Left Panel */}
-          <div style={{ width: "40%", minWidth: "360px", display: "flex", flexDirection: "column", borderRight: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
+          <div style={{ width: "320px", flexShrink: 0, display: "flex", flexDirection: "column", borderRight: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
 
             {/* Scrollable content */}
             <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem" }}>
@@ -898,12 +910,13 @@ function AIPageInner() {
                 <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
-              {/* Prompt / Plan / Files Tabs */}
+              {/* Prompt / Plan / Templates / Workflows Tabs */}
               <div style={{ display: "flex", gap: "4px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px" }}>
                 {([
                   ["prompt", "Prompt"],
                   ["plan", "Plan"],
-                  ["files", "Files"],
+                  ["templates", "Templates"],
+                  ["workflows", "Workflows"],
                 ] as const).map(([tab, label]) => (
                   <button
                     key={tab}
@@ -911,9 +924,7 @@ function AIPageInner() {
                     onClick={() => setActiveLeftTab(tab)}
                     style={{ flex: 1, padding: "0.35rem 0.5rem", borderRadius: "6px", border: "none", background: activeLeftTab === tab ? COLORS.accentGradient : "transparent", color: activeLeftTab === tab ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: activeLeftTab === tab ? 600 : 400, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem" }}
                   >
-                    {tab === "files" && output?.files?.length ? (
-                      <><span>{label}</span><span style={{ background: "rgba(255,255,255,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.7rem", fontWeight: 700 }}>{output.files.length}</span></>
-                    ) : label}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -1006,57 +1017,74 @@ function AIPageInner() {
                 </div>
               )}
 
-              {/* Files Explorer Tab */}
-              {activeLeftTab === "files" && (
+              {/* Templates Tab */}
+              {activeLeftTab === "templates" && (
                 <div style={{ animation: "fadeIn 0.3s ease" }}>
-                  {!output?.files?.length ? (
-                    <div style={{ textAlign: "center", padding: "2rem 1rem", color: COLORS.textMuted, fontSize: "0.8125rem" }}>
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 0.75rem", display: "block" }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                      Build a project to see files here.
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                        <span style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Files</span>
-                        <span style={{ fontSize: "0.75rem", color: COLORS.textMuted }}>{output.files.length} files · {Math.round(output.files.reduce((acc, f) => acc + f.content.length, 0) / 1024)}KB</span>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>Quick Start Templates</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {TEMPLATE_CARDS.map((tpl) => (
+                      <div
+                        key={tpl.label}
+                        className="zivo-file"
+                        style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", cursor: "pointer", transition: "border-color 0.15s, background 0.15s" }}
+                        onClick={() => { setPrompt(tpl.prompt); setActiveLeftTab("prompt"); }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPrompt(tpl.prompt); setActiveLeftTab("prompt"); } }}
+                        aria-label={`Use template: ${tpl.label}`}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                          <span style={{ fontSize: "1.125rem", lineHeight: 1 }}>{tpl.icon}</span>
+                          <span style={{ fontWeight: 600, fontSize: "0.875rem", color: COLORS.textPrimary }}>{tpl.label}</span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.5 }}>{tpl.description}</p>
+                        <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.35rem" }}>
+                          <button
+                            className="zivo-btn"
+                            onClick={(e) => { e.stopPropagation(); setPrompt(tpl.prompt); setActiveLeftTab("prompt"); }}
+                            style={{ padding: "0.25rem 0.6rem", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "20px", color: COLORS.accent, cursor: "pointer", fontSize: "0.7rem", fontWeight: 600 }}
+                          >
+                            Use Template
+                          </button>
+                          <button
+                            className="zivo-btn"
+                            onClick={(e) => { e.stopPropagation(); setPrompt(tpl.prompt); setActiveLeftTab("prompt"); setTimeout(() => handleBuild(), 100); }}
+                            style={{ padding: "0.25rem 0.6rem", background: COLORS.accentGradient, border: "none", borderRadius: "20px", color: "#fff", cursor: "pointer", fontSize: "0.7rem", fontWeight: 600 }}
+                          >
+                            Build Now
+                          </button>
+                        </div>
                       </div>
-                      {(() => {
-                        // Build folder groups
-                        const groups: Record<string, GeneratedFile[]> = {};
-                        for (const f of output.files) {
-                          const parts = f.path.split("/");
-                          const folder = parts.length > 1 ? parts.slice(0, -1).join("/") : ".";
-                          if (!groups[folder]) groups[folder] = [];
-                          groups[folder].push(f);
-                        }
-                        return Object.entries(groups).map(([folder, files]) => (
-                          <div key={folder} style={{ marginBottom: "0.5rem" }}>
-                            {folder !== "." && (
-                              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.2rem 0.5rem", marginBottom: "2px" }}>
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                                <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, fontFamily: "monospace" }}>{folder}/</span>
-                              </div>
-                            )}
-                            {files.map((f, i) => {
-                              const filename = f.path.split("/").pop() ?? f.path;
-                              return (
-                                <div
-                                  key={i}
-                                  className="zivo-file"
-                                  onClick={() => { setActiveFile(f); setActiveTab("code"); }}
-                                  style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0.5rem", paddingLeft: folder !== "." ? "1.5rem" : "0.5rem", borderRadius: "6px", cursor: "pointer", background: activeFile?.path === f.path ? "rgba(99,102,241,0.12)" : "transparent", border: activeFile?.path === f.path ? "1px solid rgba(99,102,241,0.25)" : "1px solid transparent" }}
-                                >
-                                  <span>{getFileIcon(f.path)}</span>
-                                  <span style={{ flex: 1, fontSize: "0.8125rem", color: activeFile?.path === f.path ? COLORS.textPrimary : COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{filename}</span>
-                                  <span style={{ fontSize: "0.65rem", color: COLORS.textMuted }}>{Math.round(f.content.length / 1024 * 10) / 10}k</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ));
-                      })()}
-                    </>
-                  )}
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "1rem", textAlign: "center" }}>
+                    <a href="/component-library" style={{ fontSize: "0.75rem", color: COLORS.accent, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                      Browse Component Library →
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {/* Workflows Tab */}
+              {activeLeftTab === "workflows" && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>Automated Workflows</div>
+                  <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "12px", padding: "1.25rem", textAlign: "center" }}>
+                    <div style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>⚡</div>
+                    <div style={{ fontWeight: 600, color: COLORS.textPrimary, marginBottom: "0.4rem", fontSize: "0.9375rem" }}>Visual Workflow Builder</div>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 1rem", lineHeight: 1.6 }}>
+                      Chain AI actions, set triggers, and automate your build pipeline with a drag-and-drop workflow editor.
+                    </p>
+                    <a
+                      href="/workflow"
+                      className="zivo-btn"
+                      style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", padding: "0.5rem 1.25rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", textDecoration: "none", fontSize: "0.8125rem", fontWeight: 600 }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      Open Workflow Builder
+                    </a>
+                  </div>
                 </div>
               )}
 
@@ -1350,27 +1378,11 @@ function AIPageInner() {
                 </div>
               )}
 
-              {/* File Tree */}
-              {hasFiles && output?.files && (
-                <div style={{ animation: "fadeIn 0.4s ease" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                    <h2 style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textSecondary, margin: 0, textTransform: "uppercase", letterSpacing: "0.05em" }}>Generated Files</h2>
-                    <span style={{ fontSize: "0.75rem", color: COLORS.textMuted }}>{output.files.length} files</span>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                    {output.files.map((f, i) => (
-                      <div
-                        key={i}
-                        className="zivo-file"
-                        onClick={() => { setActiveFile(f); setActiveTab("code"); }}
-                        style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.5rem", borderRadius: "6px", cursor: "pointer", background: activeFile?.path === f.path ? "rgba(99,102,241,0.12)" : "transparent", border: activeFile?.path === f.path ? "1px solid rgba(99,102,241,0.25)" : "1px solid transparent", transition: "background 0.15s" }}
-                      >
-                        <span style={{ fontSize: "0.875rem" }}>{getFileIcon(f.path)}</span>
-                        <span style={{ flex: 1, fontSize: "0.8125rem", color: activeFile?.path === f.path ? COLORS.textPrimary : COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.path}</span>
-                        <span style={{ fontSize: "0.65rem", fontWeight: 600, padding: "1px 6px", borderRadius: "4px", textTransform: "uppercase", flexShrink: 0, ...getActionStyle(f.action) }}>{f.action}</span>
-                      </div>
-                    ))}
-                  </div>
+              {/* File count hint (files are in the right panel) */}
+              {hasFiles && (
+                <div style={{ marginBottom: "0.5rem", padding: "0.5rem 0.625rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: COLORS.textSecondary, animation: "fadeIn 0.3s ease" }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                  <span><strong style={{ color: COLORS.accent }}>{output?.files?.length ?? 0} files</strong> generated — view in the <strong style={{ color: COLORS.textPrimary }}>Files</strong> panel →</span>
                 </div>
               )}
               </>)}
@@ -2107,28 +2119,8 @@ function AIPageInner() {
 
               {/* Diff Tab */}
               {!loading && activeTab === "diff" && showDiff && diffFiles.length > 0 && (
-                <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
-                  {diffFiles.length > 1 && (
-                    <div style={{ display: "flex", gap: "4px", padding: "0.5rem 1rem", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0, overflowX: "auto" }}>
-                      {diffFiles.map((df, i) => (
-                        <button
-                          key={i}
-                          className="zivo-btn"
-                          onClick={() => setDiffFileIndex(i)}
-                          style={{ padding: "0.25rem 0.65rem", borderRadius: "6px", border: `1px solid ${diffFileIndex === i ? "rgba(99,102,241,0.4)" : COLORS.border}`, background: diffFileIndex === i ? "rgba(99,102,241,0.15)" : "transparent", color: diffFileIndex === i ? COLORS.accent : COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", fontFamily: "monospace", whiteSpace: "nowrap" }}
-                        >
-                          {df.path}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div style={{ flex: 1, overflow: "auto" }}>
-                    <DiffViewer
-                      filePath={diffFiles[diffFileIndex]?.path ?? ""}
-                      oldContent={diffFiles[diffFileIndex]?.oldContent ?? ""}
-                      newContent={diffFiles[diffFileIndex]?.newContent ?? ""}
-                    />
-                  </div>
+                <div style={{ width: "100%", height: "100%", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  <DiffViewer files={diffFiles} />
                 </div>
               )}
             </div>
@@ -2433,6 +2425,90 @@ function AIPageInner() {
             )}
 
           </div>
+
+          {/* Right Panel — Files / Code / Diff (Code Builder only) */}
+          {mode === "code" && (
+            <div style={{ width: "360px", flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
+              {/* Tab bar */}
+              <div style={{ display: "flex", alignItems: "center", gap: "2px", padding: "0 0.75rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+                {(["files", "code", "diff"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    className="zivo-tab"
+                    onClick={() => setActiveRightTab(tab)}
+                    style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeRightTab === tab ? "rgba(99,102,241,0.15)" : "transparent", color: activeRightTab === tab ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s", display: "flex", alignItems: "center", gap: "0.3rem" }}
+                  >
+                    {tab === "files" && output?.files?.length ? (
+                      <>{tab.charAt(0).toUpperCase() + tab.slice(1)}<span style={{ background: "rgba(99,102,241,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>{output.files.length}</span></>
+                    ) : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
+              </div>
+
+              {/* Files tab */}
+              {activeRightTab === "files" && (
+                <div style={{ flex: 1, overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  <FileExplorer
+                    files={(output?.files ?? []) as Array<{ path: string; content: string; action: "create" | "update" | "delete" }>}
+                    activeFilePath={activeFile?.path ?? null}
+                    onFileSelect={(f) => { setActiveFile(f); setActiveRightTab("code"); }}
+                  />
+                </div>
+              )}
+
+              {/* Code tab */}
+              {activeRightTab === "code" && (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  {activeFile ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+                        <span style={{ fontSize: "0.875rem" }}>{getFileIcon(activeFile.path)}</span>
+                        <code style={{ flex: 1, fontSize: "0.75rem", color: COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeFile.path}</code>
+                        <button
+                          className="zivo-btn"
+                          onClick={() => navigator.clipboard.writeText(activeFile.content).then(() => {
+                            setCopyFileLabel("copied");
+                            setTimeout(() => setCopyFileLabel("copy"), 2000);
+                          }).catch(() => {})}
+                          style={{ padding: "0.2rem 0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "5px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.7rem", flexShrink: 0 }}
+                        >
+                          {copyFileLabel === "copied" ? "✓ Copied" : "Copy"}
+                        </button>
+                      </div>
+                      <div style={{ flex: 1, overflow: "auto", padding: "0.75rem" }}>
+                        <pre style={{ margin: 0, fontSize: "0.75rem", lineHeight: 1.7, color: COLORS.textPrimary, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                          {activeFile.content.split("\n").map((line, i) => (
+                            <div key={i} style={{ display: "flex", gap: "0.75rem" }}>
+                              <span style={{ color: COLORS.textMuted, userSelect: "none", minWidth: "2rem", textAlign: "right", flexShrink: 0, fontSize: "0.7rem" }}>{i + 1}</span>
+                              <span>{line}</span>
+                            </div>
+                          ))}
+                        </pre>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.8125rem", textAlign: "center", padding: "2rem" }}>
+                      Select a file from the Files tab to view its code.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Diff tab */}
+              {activeRightTab === "diff" && (
+                <div style={{ flex: 1, overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  {showDiff && diffFiles.length > 0 ? (
+                    <DiffViewer files={diffFiles} />
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.8125rem", textAlign: "center", padding: "2rem" }}>
+                      No diff available. Build a project to see changes.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
 
         {/* Chat Panel Overlay */}
@@ -2498,7 +2574,7 @@ function AIPageInner() {
         <CommandPalette
           onClose={() => setCommandPaletteOpen(false)}
           onSetPrompt={(p) => { setPrompt(p); setActiveLeftTab("prompt"); }}
-          onOpenFiles={() => setActiveLeftTab("files")}
+          onOpenFiles={() => setActiveRightTab("files")}
           onOpenDesignSystem={() => setDesignSystemOpen(true)}
         />
       )}
