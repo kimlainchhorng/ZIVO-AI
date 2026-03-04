@@ -22,11 +22,11 @@ const COLORS = {
 
 export interface BuildHistoryEntry {
   id: string;
-  timestamp: number;
   prompt: string;
   model: string;
-  fileCount: number;
-  duration: number; // ms
+  files: Array<{ path: string; action: string }>;
+  buildTimeMs: number;
+  createdAt: number; // timestamp ms
 }
 
 const HISTORY_KEY = "zivo_build_history";
@@ -130,9 +130,9 @@ export default function HistoryPage() {
                   >
                     <span style={{ fontSize: '0.8125rem', color: COLORS.textPrimary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '1rem' }}>{entry.prompt}</span>
                     <span style={{ fontSize: '0.75rem', color: COLORS.textSecondary, fontFamily: 'monospace' }}>{entry.model}</span>
-                    <span style={{ fontSize: '0.75rem', color: COLORS.textSecondary }}>{entry.fileCount} file{entry.fileCount !== 1 ? 's' : ''}</span>
-                    <span style={{ fontSize: '0.75rem', color: COLORS.success }}>{formatDuration(entry.duration)}</span>
-                    <span style={{ fontSize: '0.75rem', color: COLORS.textMuted }}>{formatTime(entry.timestamp)}</span>
+                    <span style={{ fontSize: '0.75rem', color: COLORS.textSecondary }}>{entry.files.length} file{entry.files.length !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: '0.75rem', color: COLORS.success }}>{formatDuration(entry.buildTimeMs)}</span>
+                    <span style={{ fontSize: '0.75rem', color: COLORS.textMuted }}>{formatTime(entry.createdAt)}</span>
                   </div>
                 ))}
               </div>
@@ -156,9 +156,9 @@ export default function HistoryPage() {
               </div>
               <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                 <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary }}>{selected.model}</span>
-                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, color: COLORS.success }}>{selected.fileCount} files</span>
-                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary }}>{formatDuration(selected.duration)}</span>
-                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, color: COLORS.textMuted }}>{formatTime(selected.timestamp)}</span>
+                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, color: COLORS.success }}>{selected.files.length} files</span>
+                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary }}>{formatDuration(selected.buildTimeMs)}</span>
+                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '6px', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, color: COLORS.textMuted }}>{formatTime(selected.createdAt)}</span>
               </div>
               <div style={{ marginBottom: '1.25rem' }}>
                 <p style={{ margin: '0 0 0.5rem', fontSize: '0.75rem', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Prompt</p>

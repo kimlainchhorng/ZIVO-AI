@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { Suspense } from "react";
 import { addHistoryEntry } from "../history/page";
 
@@ -175,6 +175,7 @@ function AIPageInner() {
 
   // Read ?prompt= from URL
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   useEffect(() => {
     const urlPrompt = searchParams.get("prompt");
     if (urlPrompt) setPrompt(urlPrompt);
@@ -235,11 +236,11 @@ function AIPageInner() {
       setBuildTime(`${(duration / 1000).toFixed(1)}s`);
       // Save to build history
       addHistoryEntry({
-        timestamp: Date.now(),
+        createdAt: Date.now(),
         prompt,
         model,
-        fileCount: data.files?.length ?? 0,
-        duration,
+        files: (data.files ?? []).map((f) => ({ path: f.path, action: f.action })),
+        buildTimeMs: duration,
       });
       const fileLogs = data.files?.map((f) => ({ text: `> Created: ${f.path}`, type: "success" as const })) ?? [];
       setConsoleLogs((prev) => [
@@ -575,7 +576,7 @@ function AIPageInner() {
             <div style={{ width: "1px", height: "20px", background: COLORS.border, margin: "0 0.25rem" }} />
             <nav style={{ display: "flex", gap: "0.25rem" }}>
               {([["Builder", "/ai"], ["Workflow", "/workflow"], ["Templates", "/templates"], ["History", "/history"], ["Connectors", "/connectors"]] as const).map(([label, href]) => {
-                const isActive = href === "/ai";
+                const isActive = pathname === href;
                 return (
                   <a
                     key={href}
@@ -656,6 +657,7 @@ function AIPageInner() {
                       }
                     }}
                     placeholder="Describe the app you want to build... (e.g. A todo app with Supabase auth and dark mode)"
+                    maxLength={2000}
                     style={{ width: "100%", minHeight: "120px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", resize: "vertical", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, transition: "border-color 0.2s" }}
                   />
                   <span style={{ position: "absolute", bottom: "0.5rem", right: "0.75rem", fontSize: "0.7rem", color: COLORS.textMuted }}>{prompt.length} / 2000</span>
