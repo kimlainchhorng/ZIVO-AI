@@ -34,12 +34,18 @@ function loadConnectorState(): ConnectorState {
 function saveConnectorState(state: ConnectorState): void {
   if (typeof window === 'undefined') return;
   try {
-    // Do not persist secrets like tokens/keys to localStorage.
-    // Only store non-sensitive fields so that credentials remain in-memory only.
+    // Do not persist secrets in connectorState; only store non-sensitive fields.
     const { modalToken, supabaseAnonKey, ...nonSensitiveState } = state;
-    void modalToken;
     void supabaseAnonKey;
     localStorage.setItem('connectorState', JSON.stringify(nonSensitiveState));
+    // Write/clear the dedicated keys that other parts of the app (e.g. app/ai/page.tsx) read.
+    if (state.githubConnected && modalToken) {
+      localStorage.setItem('zivo_github_token', modalToken);
+      localStorage.setItem('zivo_github_repo', state.modalRepo);
+    } else if (!state.githubConnected) {
+      localStorage.removeItem('zivo_github_token');
+      localStorage.removeItem('zivo_github_repo');
+    }
   } catch (err) {
     console.error('[connectors] Failed to save state to localStorage:', err);
   }

@@ -108,7 +108,7 @@ export default function MobileBuilder() {
       a.href = url;
       a.download = `zivo-${platform}-app.zip`;
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       setDownloadError((err as Error)?.message || "Download failed. Please try again.");
     }

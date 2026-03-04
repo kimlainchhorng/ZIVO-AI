@@ -39,6 +39,19 @@ function parseJSON(text: string): UpdateSiteResponse {
   }
 }
 
+const VALID_FILE_ACTIONS = new Set(["create", "update", "delete"]);
+
+function isValidFile(f: unknown): f is GeneratedFile {
+  if (!f || typeof f !== "object") return false;
+  const { path, content, action } = f as Record<string, unknown>;
+  return (
+    typeof path === "string" &&
+    path.length > 0 &&
+    typeof content === "string" &&
+    VALID_FILE_ACTIONS.has(action as string)
+  );
+}
+
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -102,6 +115,7 @@ export async function POST(req: Request) {
     if (!Array.isArray(parsed.files)) {
       parsed.files = [];
     }
+    parsed.files = parsed.files.filter(isValidFile);
 
     return NextResponse.json(parsed);
   } catch (err: unknown) {
