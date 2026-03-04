@@ -7,12 +7,12 @@ interface ProjectVersion {
   id: string;
   projectId: string;
   htmlContent: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   createdAt: string;
 }
 
 // Memory storage for versions (in production, use a database)
-let versions: ProjectVersion[] = [];
+const versions: ProjectVersion[] = [];
 
 const PROJECTS_DIR = path.join(process.cwd(), "projects");
 
@@ -20,14 +20,14 @@ const PROJECTS_DIR = path.join(process.cwd(), "projects");
 async function ensureProjectsDir() {
   try {
     await fs.mkdir(PROJECTS_DIR, { recursive: true });
-  } catch (err: any) {
-    if (err.code !== "EEXIST") throw err;
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
   }
 }
 
 // Get all versions
 export function getVersions(): ProjectVersion[] {
-  return [...versions].sort((a, b) => 
+  return [...versions].sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 }
@@ -92,10 +92,10 @@ export async function POST(req: Request) {
       },
       { status: 200 }
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     const msg =
-      typeof err?.message === "string"
-        ? err.message
+      typeof (err as Error)?.message === "string"
+        ? (err as Error).message
         : "Failed to save project";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
