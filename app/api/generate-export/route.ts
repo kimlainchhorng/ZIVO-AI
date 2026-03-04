@@ -67,7 +67,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       );
     }
 
-    const body = await req.json().catch(() => ({})) as GenerateExportRequest;
+    let body: GenerateExportRequest;
+    try {
+      body = await req.json() as GenerateExportRequest;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
     const {
       appName = "My App",
       exportFormats = ["all"],

@@ -69,7 +69,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       );
     }
 
-    const body = await req.json().catch(() => ({})) as GenerateDevOpsRequest;
+    let body: GenerateDevOpsRequest;
+    try {
+      body = await req.json() as GenerateDevOpsRequest;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
     const {
       appName = "My App",
       deployTarget = "vercel",

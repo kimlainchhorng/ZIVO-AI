@@ -79,7 +79,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       );
     }
 
-    const body = await req.json().catch(() => ({})) as GeneratePerformanceRequest;
+    let body: GeneratePerformanceRequest;
+    try {
+      body = await req.json() as GeneratePerformanceRequest;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
     const {
       appName = "My App",
       optimizations = ["all"],

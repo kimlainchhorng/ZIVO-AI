@@ -83,7 +83,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       );
     }
 
-    const body = await req.json().catch(() => ({})) as GenerateFormBuilderRequest;
+    let body: GenerateFormBuilderRequest;
+    try {
+      body = await req.json() as GenerateFormBuilderRequest;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
     const {
       appName = "My App",
       fieldTypes = ["all"],

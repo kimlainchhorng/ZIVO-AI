@@ -68,7 +68,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       );
     }
 
-    const body = await req.json().catch(() => ({})) as GenerateSaasRequest;
+    let body: GenerateSaasRequest;
+    try {
+      body = await req.json() as GenerateSaasRequest;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
 
     if (!body.appName) {
       return NextResponse.json({ error: "appName is required" }, { status: 400 });

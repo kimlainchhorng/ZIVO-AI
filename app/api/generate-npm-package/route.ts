@@ -68,7 +68,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       );
     }
 
-    const body = await req.json().catch(() => ({})) as GenerateNpmPackageRequest;
+    let body: GenerateNpmPackageRequest;
+    try {
+      body = await req.json() as GenerateNpmPackageRequest;
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON in request body" }, { status: 400 });
+    }
 
     if (!body.packageName) {
       return NextResponse.json({ error: "packageName is required" }, { status: 400 });
