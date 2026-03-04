@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import NavBar from '../components/NavBar';
+import NavBar from '../../components/NavBar';
 
 const COLORS = {
   bg: "#0a0b14",
