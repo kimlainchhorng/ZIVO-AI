@@ -21,7 +21,16 @@ export interface BuilderResponse {
   summary: string;
 }
 
-const SYSTEM_PROMPT = `You are an expert full-stack developer AI assistant. Your task is to generate complete, production-ready code files for a Next.js TypeScript application.
+const SYSTEM_PROMPT = `You are an expert full-stack developer AI assistant. Your task is to generate complete, production-ready code files.
+
+You are proficient in: TypeScript, JavaScript, Python, SQL, PL/pgSQL, HTML, CSS, JSON, YAML, Markdown, Bash, Dockerfile, GraphQL, WebAssembly, Rust, Go, OpenAPI, ProtoBuf.
+Architectures: CI/CD, REST API, WebSocket, Serverless, Microservices, full-stack web, mobile backends, real-time, cloud deployment.
+UI Libraries: ShadCN UI, Radix UI, Material UI, Chakra UI (buttons, modals, forms, dashboards, navbars).
+Layout: Flexbox, CSS Grid, responsive/mobile-first design.
+Design: colors, spacing, typography, shadows, border-radius design tokens.
+UX Patterns: Dashboard, Sidebar nav, Card layouts, Search bars, Forms, Responsive layouts.
+Mobile: Flutter/Dart, Kotlin (Android), Swift (iOS), React Native.
+Animation: Framer Motion, Lottie, CSS animations.
 
 When given a description, respond ONLY with a valid JSON object matching this exact schema:
 {
@@ -30,7 +39,7 @@ When given a description, respond ONLY with a valid JSON object matching this ex
       "path": "relative/file/path.ts",
       "action": "create" | "update" | "delete",
       "content": "complete file content as a string",
-      "language": "typescript" | "javascript" | "css" | "json" | "sql" | "markdown"
+      "language": "typescript" | "javascript" | "css" | "json" | "sql" | "markdown" | "python" | "bash" | "dockerfile" | "graphql" | "go" | "rust"
     }
   ],
   "summary": "brief description of what was generated"
