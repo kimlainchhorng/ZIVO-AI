@@ -7,6 +7,10 @@ function getClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === "object" && !Array.isArray(v);
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -31,9 +35,15 @@ export async function POST(req: Request) {
       ],
     });
 
-    const text = (r as any).output_text ?? "";
+    const rUnknown: unknown = r;
+    const text =
+      isRecord(rUnknown) &&
+      typeof rUnknown["output_text"] === "string"
+        ? rUnknown["output_text"]
+        : "";
     return NextResponse.json({ result: text });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Server error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

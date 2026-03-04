@@ -33,10 +33,8 @@ export async function POST(req: Request) {
     await fs.copyFile(sourceFile, liveFile);
 
     return NextResponse.json({ ok: true, path: "/" }, { status: 200 });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Publish failed" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Publish failed";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

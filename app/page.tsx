@@ -11,7 +11,7 @@ export default function BuilderPage() {
   const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
   const [copied, setCopied] = useState(false);
   const [filter, setFilter] = useState<string>("all");
-  const [files, setFiles] = useState<any[]>([]);
+  const [files, setFiles] = useState<GeneratedFile[]>([]);
 
   const handleBuild = async () => {
     const res = await fetch("/api/generate-site", {
@@ -20,10 +20,14 @@ export default function BuilderPage() {
       body: JSON.stringify({ prompt }),
     });
 
-    const data = await res.json();
-
-    if (data.files) {
-      setFiles(data.files);
+    const data: unknown = await res.json();
+    if (
+      data &&
+      typeof data === "object" &&
+      "files" in data &&
+      Array.isArray((data as { files: unknown }).files)
+    ) {
+      setFiles((data as { files: GeneratedFile[] }).files);
     } else {
       console.error(data);
     }
