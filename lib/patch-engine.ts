@@ -129,7 +129,7 @@ function _buildHunks(
   if (inChange) {
     changeRanges.push({
       start: changeStart,
-      end: Math.min(ops.length - 1, ops.length - 1 + CONTEXT_LINES),
+      end: ops.length - 1,
     });
   }
 

@@ -110,7 +110,7 @@ export async function POST(req: Request): Promise<Response> {
           if (validation.valid || errors.length === 0) {
             enqueue({
               type: "step",
-              step: i === 0 ? "No errors found" : `Pass ${i + 1}: All errors resolved`,
+              step: `Pass ${i + 1}: ${i === 0 ? "No errors found" : "All errors resolved"}`,
               status: "done",
               detail: validation.summary,
             });
@@ -125,7 +125,7 @@ export async function POST(req: Request): Promise<Response> {
 
           enqueue({
             type: "step",
-            step: i === 0 ? `Found ${errors.length} error(s)` : `Pass ${i + 1}: Found ${errors.length} error(s)`,
+            step: `Pass ${i + 1}: Found ${errors.length} error(s)`,
             status: "done",
             detail: errorDetail,
           });

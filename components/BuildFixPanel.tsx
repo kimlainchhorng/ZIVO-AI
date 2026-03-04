@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useRef, useState } from "react";
+import { generateUnifiedDiff } from "@/lib/patch-engine";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -335,11 +336,7 @@ export default function BuildFixPanel({
             for (const f of fixEvent.files) {
               const oldContent = files[f.path] ?? "";
               if (oldContent !== f.content) {
-                newDiffs[f.path] = `--- a/${f.path}\n+++ b/${f.path}\n` +
-                  f.content
-                    .split("\n")
-                    .map((l) => `+${l}`)
-                    .join("\n");
+                newDiffs[f.path] = generateUnifiedDiff(oldContent, f.content, f.path);
               }
             }
             setPendingDiffs((prev) => ({ ...(prev ?? {}), ...newDiffs }));
@@ -355,12 +352,9 @@ export default function BuildFixPanel({
             const diffs: Record<string, string> = {};
             for (const [path, newContent] of Object.entries(newMap)) {
               const oldContent = files[path] ?? "";
-              if (oldContent !== newContent) {
-                diffs[path] = `--- a/${path}\n+++ b/${path}\n` +
-                  newContent
-                    .split("\n")
-                    .map((l) => `+${l}`)
-                    .join("\n");
+              const diff = generateUnifiedDiff(oldContent, newContent, path);
+              if (diff) {
+                diffs[path] = diff;
               }
             }
             setPendingFiles(newMap);
