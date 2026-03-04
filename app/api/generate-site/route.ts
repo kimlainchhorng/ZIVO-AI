@@ -163,10 +163,14 @@ async function generateFiles(
 }
 
 function parseJSON(text: string): GenerateSiteResponse {
+  const cleaned = text
+    .replace(/^```(?:json)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
   try {
-    return JSON.parse(text);
+    return JSON.parse(cleaned);
   } catch {
-    const match = text.match(/\{[\s\S]*\}/);
+    const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
     throw new Error("AI did not return valid JSON");
   }
