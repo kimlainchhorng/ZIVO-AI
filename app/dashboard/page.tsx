@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from "react";
+import UsageDashboard from "@/components/UsageDashboard";
 
 const COLORS = {
   bg: "#0a0b14",
@@ -41,11 +42,13 @@ const STATUS_COLORS: Record<string, { bg: string; color: string; label: string }
 
 export default function DashboardPage() {
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const [showUsage, setShowUsage] = useState(false);
 
   const totalBuilds = MOCK_PROJECTS.length;
   const totalFiles = MOCK_PROJECTS.reduce((s, p) => s + p.files, 0);
   const tokensUsed = 184320;
-  const lastBuildTime = "2.4s";
+  const mostUsedModel = "GPT-4o";
+  const usageCost = "$2.45";
 
   const stats = [
     {
@@ -82,12 +85,25 @@ export default function DashboardPage() {
       ),
     },
     {
-      label: "Last Build Time",
-      value: lastBuildTime,
+      label: "Most Used Model",
+      value: mostUsedModel,
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2a8 8 0 0 1 8 8v4a8 8 0 0 1-16 0v-4a8 8 0 0 1 8-8z"/>
+          <path d="M9 10h.01M15 10h.01"/>
+          <path d="M9.5 15a3.5 3.5 0 0 0 5 0"/>
+        </svg>
+      ),
+    },
+    {
+      label: "Usage Cost (Month)",
+      value: usageCost,
       icon: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10"/>
-          <polyline points="12 6 12 12 16 14"/>
+          <path d="M16 8h-6a2 2 0 0 0 0 4h4a2 2 0 0 1 0 4H8"/>
+          <line x1="12" x2="12" y1="6" y2="8"/>
+          <line x1="12" x2="12" y1="16" y2="18"/>
         </svg>
       ),
     },
@@ -165,7 +181,7 @@ export default function DashboardPage() {
           <div style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
 
             {/* Stats Row */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem", marginBottom: "1.5rem", animation: "fadeIn 0.4s ease" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem", marginBottom: "1.5rem", animation: "fadeIn 0.4s ease" }}>
               {stats.map((s) => (
                 <div key={s.label} style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "12px", padding: "1.25rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                   <div style={{ color: COLORS.accent }}>{s.icon}</div>
@@ -219,7 +235,7 @@ export default function DashboardPage() {
             </div>
 
             {/* Quick Actions */}
-            <div style={{ display: "flex", gap: "1rem", animation: "fadeIn 0.6s ease" }}>
+            <div style={{ display: "flex", gap: "1rem", animation: "fadeIn 0.6s ease", flexWrap: "wrap" }}>
               <a href="/ai" style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.75rem 1.25rem", background: COLORS.accentGradient, borderRadius: "10px", color: "#fff", textDecoration: "none", fontWeight: 600, fontSize: "0.9rem" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>
                 New Project
@@ -228,7 +244,35 @@ export default function DashboardPage() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
                 View Connectors
               </a>
+              <button
+                className="zivo-btn"
+                onClick={() => setShowUsage((v) => !v)}
+                style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.75rem 1.25rem", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", color: COLORS.textSecondary, fontWeight: 500, fontSize: "0.9rem", cursor: "pointer" }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" x2="18" y1="20" y2="4"/><line x1="12" x2="12" y1="20" y2="10"/><line x1="6" x2="6" y1="20" y2="16"/></svg>
+                View Usage Stats
+              </button>
             </div>
+
+            {/* Memory Section */}
+            <div style={{ marginTop: "1rem", padding: "0.875rem 1.25rem", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "space-between", animation: "fadeIn 0.7s ease" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M21.18 8.02A10 10 0 0 0 12 2v10h10a10 10 0 0 0-.82-3.98z"/></svg>
+                <span style={{ fontSize: "0.875rem", color: COLORS.textSecondary }}>
+                  <span style={{ color: COLORS.textPrimary, fontWeight: 600 }}>Project Memory:</span>{" "}
+                  <span style={{ color: COLORS.success }}>Active</span>
+                  {" "}(5 decisions, 12 changes)
+                </span>
+              </div>
+              <a href="/dashboard/memory" style={{ fontSize: "0.8rem", color: COLORS.accent, textDecoration: "none", fontWeight: 500 }}>View Memory Panel →</a>
+            </div>
+
+            {/* Usage Dashboard (collapsible) */}
+            {showUsage && (
+              <div id="usage" style={{ marginTop: "1.5rem", animation: "fadeIn 0.4s ease" }}>
+                <UsageDashboard />
+              </div>
+            )}
           </div>
         </div>
       </div>
