@@ -69,6 +69,21 @@ The markdown plan should include:
 
 Return ONLY the JSON object, no markdown fences, no extra text.`;
 
+function stripMarkdownFences(text: string): string {
+  return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+}
+
+function parseBuilderJSON<T>(text: string): T {
+  const clean = stripMarkdownFences(text);
+  try {
+    return JSON.parse(clean) as T;
+  } catch {
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]) as T;
+    throw new Error("AI did not return valid JSON");
+  }
+}
+
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -98,11 +113,9 @@ export async function POST(req: Request) {
       const text: string = r.choices[0]?.message?.content ?? "";
       let parsed: { plan: string };
       try {
-        parsed = JSON.parse(text);
+        parsed = parseBuilderJSON<{ plan: string }>(text);
       } catch {
-        const match = text.match(/\{[\s\S]*\}/);
-        if (!match) return NextResponse.json({ error: "AI did not return valid JSON", raw: text }, { status: 502 });
-        parsed = JSON.parse(match[0]);
+        return NextResponse.json({ error: "AI did not return valid JSON", raw: text }, { status: 502 });
       }
       if (typeof parsed.plan !== "string") {
         return NextResponse.json({ error: "Invalid plan response structure" }, { status: 502 });
@@ -123,17 +136,12 @@ export async function POST(req: Request) {
 
     let parsed: BuilderResponse;
     try {
-      parsed = JSON.parse(text);
+      parsed = parseBuilderJSON<BuilderResponse>(text);
     } catch {
-      // Attempt to extract JSON if the model wrapped it
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) {
-        return NextResponse.json(
-          { error: "AI did not return valid JSON", raw: text },
-          { status: 502 }
-        );
-      }
-      parsed = JSON.parse(match[0]);
+      return NextResponse.json(
+        { error: "AI did not return valid JSON", raw: text },
+        { status: 502 }
+      );
     }
 
     if (!Array.isArray(parsed.files)) {
