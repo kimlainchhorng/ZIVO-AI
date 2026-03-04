@@ -6,6 +6,8 @@ export interface FixRequest {
   file: string;
   content: string;
   issues: Array<{ line?: number; message: string; rule?: string }>;
+  /** Optional: summary of other files in the project for cross-file context. */
+  projectContext?: string;
 }
 
 export interface FixResult {
@@ -36,6 +38,10 @@ export async function fixFile(request: FixRequest): Promise<FixResult> {
     .map((i) => `- Line ${i.line ?? "?"}: [${i.rule ?? "rule"}] ${i.message}`)
     .join("\n");
 
+  const contextSection = request.projectContext
+    ? `\n\nProject context (other files, truncated):\n${request.projectContext}`
+    : "";
+
   const completion = await getClient().chat.completions.create({
     model: "gpt-4o",
     temperature: 0.1,
@@ -44,7 +50,7 @@ export async function fixFile(request: FixRequest): Promise<FixResult> {
       { role: "system", content: CODE_FIXER_SYSTEM_PROMPT },
       {
         role: "user",
-        content: `File: ${request.file}\n\nIssues to fix:\n${issueList}\n\nOriginal code:\n${request.content}`,
+        content: `File: ${request.file}\n\nIssues to fix:\n${issueList}\n\nOriginal code:\n${request.content}${contextSection}`,
       },
     ],
   });

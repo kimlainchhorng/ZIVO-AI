@@ -52,6 +52,23 @@ class ZIVOSwarm:
             mcp_servers=mcp_servers,
         )
 
+        # ── Executor: Code Builder ──────────────────────────────────────────
+        code_builder_prompt = _load_prompt(
+            "prompts/code-builder-agent.txt",
+            "You are ZIVO-AI's CodeBuilder specialist for generating complete full-stack projects.",
+        )
+        self.code_builder_agent = Agent(
+            name="CodeBuilderAgent",
+            instructions=code_builder_prompt,
+            model="gpt-4o",
+            model_settings=ModelSettings(temperature=0.2),
+            tools=[
+                CONNECTOR_REGISTRY["write_local_file"],
+                CONNECTOR_REGISTRY["read_local_file"],
+                CONNECTOR_REGISTRY["list_directory"],
+            ],
+        )
+
         # ── Executor: Code ──────────────────────────────────────────────────
         code_prompt = _load_prompt(
             "prompts/code_executor_v1.txt",
@@ -95,6 +112,7 @@ class ZIVOSwarm:
             model_settings=ModelSettings(temperature=0.3),
             handoffs=[
                 self.web_research_agent,
+                self.code_builder_agent,
                 self.code_executor_agent,
                 self.data_validator_agent,
             ],
