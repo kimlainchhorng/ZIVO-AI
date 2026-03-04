@@ -18,6 +18,7 @@ export interface GeneratedFile {
 }
 
 export interface BuilderResponse {
+  thinking?: string;
   files: GeneratedFile[];
   commands?: string[];
   summary: string;
@@ -61,12 +62,13 @@ export async function POST(req: Request) {
 
     if (planOnly) {
       const r = await getClient().chat.completions.create({
-        model: "gpt-4o-mini",
+        model: "gpt-4o",
         messages: [
           { role: "system", content: CODE_BUILDER_PLAN_PROMPT },
           { role: "user", content: prompt.trim() },
         ],
         temperature: 0.3,
+        max_tokens: 4096,
       });
       const text: string = r.choices[0]?.message?.content ?? "";
       let parsed: { plan: string };
@@ -76,54 +78,40 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: "AI did not return valid JSON", raw: text }, { status: 502 });
       }
       if (typeof parsed.plan !== "string") {
-        return NextResponse.json({ error: "Invalid plan response structure" }, { status: 502 });
+        return NextResponse.json({ error: "AI plan response missing 'plan' field", raw: text }, { status: 502 });
       }
-      return NextResponse.json(parsed);
+      return NextResponse.json({ plan: parsed.plan });
     }
 
-    // Retry up to 3 attempts if JSON is invalid
-    let parsed: BuilderResponse | null = null;
-    let lastError = "";
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const r = await getClient().chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: CODE_BUILDER_SYSTEM_PROMPT },
-          { role: "user", content: prompt.trim() },
-        ],
-        temperature: 0.2,
-      });
-
-      const text: string = r.choices[0]?.message?.content ?? "";
-
+    // Full code generation with retry
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        parsed = parseBuilderJSON(text);
-        if (Array.isArray(parsed.files)) break;
-        lastError = "Invalid response structure: missing files array";
-        parsed = null;
-      } catch (e) {
-        lastError = (e as Error).message || "AI did not return valid JSON";
+        const r = await getClient().chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: CODE_BUILDER_SYSTEM_PROMPT },
+            { role: "user", content: prompt.trim() },
+          ],
+          temperature: 0.2,
+          max_tokens: 16000,
+        });
+        const text = r.choices[0]?.message?.content ?? "";
+        const parsed = parseBuilderJSON(text);
+        if (!Array.isArray(parsed.files) || parsed.files.length === 0) {
+          throw new Error("AI returned no files");
+        }
+        return NextResponse.json(parsed);
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        console.error(`[builder] Attempt ${attempt} failed:`, lastError.message);
+        if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
       }
     }
-
-    if (!parsed) {
-      return NextResponse.json({ error: lastError || "AI did not return valid JSON" }, { status: 502 });
-    }
-
-    const validActions: FileAction[] = ["create", "update", "delete"];
-    for (const file of parsed.files) {
-      if (!file.path || typeof file.path !== "string") {
-        return NextResponse.json({ error: "File missing path" }, { status: 502 });
-      }
-      if (!validActions.includes(file.action)) {
-        return NextResponse.json(
-          { error: `Invalid file action: ${file.action}` },
-          { status: 502 }
-        );
-      }
-    }
-
-    return NextResponse.json(parsed);
+    return NextResponse.json(
+      { error: lastError?.message ?? "Failed after 3 attempts" },
+      { status: 502 }
+    );
   } catch (err: unknown) {
     return NextResponse.json({ error: (err as Error)?.message || "Server error" }, { status: 500 });
   }
