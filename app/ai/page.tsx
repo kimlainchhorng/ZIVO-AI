@@ -164,6 +164,7 @@ function AIPageInner() {
   const [githubPushing, setGithubPushing] = useState(false);
   const [githubPushResult, setGithubPushResult] = useState<string | null>(null);
   const [githubPushError, setGithubPushError] = useState<string | null>(null);
+  const [connectedGithubRepo, setConnectedGithubRepo] = useState<string | null>(null);
 
   // Mode switcher
   const [mode, setMode] = useState<"code" | "security" | "website" | "mobile" | "image" | "video" | "3d">("code");
@@ -225,6 +226,13 @@ function AIPageInner() {
     const urlPrompt = searchParams.get("prompt");
     if (urlPrompt) setPrompt(urlPrompt);
   }, [searchParams]);
+
+  // Read connected GitHub repo from localStorage on mount
+  useEffect(() => {
+    const token = localStorage.getItem("zivo_github_token");
+    const repo  = localStorage.getItem("zivo_github_repo");
+    setConnectedGithubRepo(token && repo ? repo : null);
+  }, []);
 
   // Scroll chat to bottom
   useEffect(() => {
@@ -395,16 +403,29 @@ function AIPageInner() {
     setGithubPushResult(null);
     setGithubPushError(null);
     try {
-      const res = await fetch("/api/github-push", {
+      const res = await fetch("/api/github", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, repo, files: output.files }),
+        body: JSON.stringify({
+          mode: "upsert",
+          token,
+          repo,
+          files: output.files.map((f) => ({
+            path: f.path,
+            content: f.content,
+            message: `ZIVO AI: ${prompt.slice(0, 60)}`,
+          })),
+        }),
       });
       const data = await res.json();
       if (data.error) {
         setGithubPushError(data.error);
       } else {
-        setGithubPushResult(data.commitUrl);
+        const parts = repo.split("/");
+        const repoUrl = parts.length === 2 && parts[0] && parts[1]
+          ? `https://github.com/${parts[0]}/${parts[1]}`
+          : `https://github.com/${repo}`;
+        setGithubPushResult(repoUrl);
       }
     } catch {
       setGithubPushError("GitHub push failed. Please try again.");
@@ -868,6 +889,48 @@ function AIPageInner() {
                 )}
               </button>
 
+              {/* Connected Project Panel */}
+              <div style={{ marginBottom: "1rem" }}>
+                {connectedGithubRepo ? (
+                  <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem 1rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.textSecondary, display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                        Connected Project
+                      </span>
+                      <a href="/connectors" style={{ fontSize: "0.7rem", color: COLORS.accent, textDecoration: "none" }}>Change</a>
+                    </div>
+                    <div style={{ fontSize: "0.8125rem", color: COLORS.textPrimary, fontWeight: 500, marginBottom: "0.5rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{connectedGithubRepo}</div>
+                    <button
+                      className="zivo-btn"
+                      onClick={handleGithubPush}
+                      disabled={githubPushing || !output?.files?.length}
+                      style={{ width: "100%", padding: "0.4rem 0.75rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.35)", borderRadius: "6px", color: COLORS.accent, cursor: githubPushing || !output?.files?.length ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", opacity: !output?.files?.length ? 0.5 : 1 }}
+                    >
+                      {githubPushing ? (
+                        <><span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(99,102,241,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Pushing…</>
+                      ) : (
+                        <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" x2="12" y1="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Push to GitHub</>
+                      )}
+                    </button>
+                    {githubPushResult && (
+                      <div style={{ marginTop: "0.5rem", fontSize: "0.775rem", color: COLORS.success, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        Pushed!{" "}<a href={githubPushResult} target="_blank" rel="noreferrer" style={{ color: COLORS.success }}>View repo</a>
+                      </div>
+                    )}
+                    {githubPushError && (
+                      <div style={{ marginTop: "0.5rem", fontSize: "0.775rem", color: COLORS.error }}>{githubPushError}</div>
+                    )}
+                  </div>
+                ) : (
+                  <a href="/connectors" style={{ fontSize: "0.8125rem", color: COLORS.textMuted, textDecoration: "none", display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                    Connect a GitHub repo →
+                  </a>
+                )}
+              </div>
+
               {/* Enhance Button */}
               {hasFiles && (
                 <button
@@ -903,13 +966,13 @@ function AIPageInner() {
                   <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{downloadError}</>
                 </div>
               )}
-              {githubPushResult && (
+              {githubPushResult && !connectedGithubRepo && (
                 <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", animation: "fadeIn 0.3s ease", fontSize: "0.875rem" }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>{" "}Pushed:{" "}
                   <a href={githubPushResult} target="_blank" rel="noreferrer" style={{ color: COLORS.success }}>{githubPushResult}</a>
                 </div>
               )}
-              {githubPushError && (
+              {githubPushError && !connectedGithubRepo && (
                 <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
                   <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{githubPushError}</>
                 </div>
