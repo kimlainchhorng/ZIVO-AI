@@ -13,14 +13,14 @@ function asErrorMessage(data: unknown): string | undefined {
   return undefined;
 }
 
-async function gh<T>(url: string, init?: RequestInit): Promise<T> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) throw new Error("Missing GITHUB_TOKEN");
+async function gh<T>(url: string, init?: RequestInit, token?: string): Promise<T> {
+  const resolvedToken = token ?? process.env.GITHUB_TOKEN;
+  if (!resolvedToken) throw new Error("Missing GITHUB_TOKEN");
 
   const res = await fetch(url, {
     ...init,
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${resolvedToken}`,
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
       ...(init?.headers || {}),
@@ -47,10 +47,10 @@ function b64(str: string): string {
   return Buffer.from(str, "utf8").toString("base64");
 }
 
-async function getFileSha(owner: string, repo: string, path: string, branch: string): Promise<string | null> {
+async function getFileSha(owner: string, repo: string, path: string, branch: string, token?: string): Promise<string | null> {
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`;
   try {
-    const data = await gh<{ sha: string }>(url, { method: "GET" });
+    const data = await gh<{ sha: string }>(url, { method: "GET" }, token);
     return data.sha;
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "";
@@ -85,13 +85,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "mode and files[] required" }, { status: 400 });
     }
 
-    const owner  = process.env.GITHUB_OWNER!;
-    const repo   = process.env.GITHUB_REPO!;
-    const branch = process.env.GITHUB_BRANCH || "main";
+    // Prefer token/repo from request body (user-connected), fall back to env vars
+    const bodyToken = typeof body["token"] === "string" && body["token"].trim() ? body["token"].trim() : undefined;
+    const bodyRepo  = typeof body["repo"]  === "string" && body["repo"].trim()  ? body["repo"].trim()  : undefined;
 
-    if (!owner || !repo) {
-      return NextResponse.json({ error: "Missing GITHUB_OWNER or GITHUB_REPO in env" }, { status: 400 });
+    let owner: string;
+    let repoName: string;
+
+    if (bodyRepo) {
+      const parts = bodyRepo.split("/");
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        return NextResponse.json({ error: "repo must be in owner/repo format" }, { status: 400 });
+      }
+      owner    = parts[0];
+      repoName = parts[1];
+    } else {
+      owner    = process.env.GITHUB_OWNER!;
+      repoName = process.env.GITHUB_REPO!;
+      if (!owner || !repoName) {
+        return NextResponse.json({ error: "Missing GITHUB_OWNER or GITHUB_REPO in env" }, { status: 400 });
+      }
     }
+
+    const token  = bodyToken;
+    const branch = process.env.GITHUB_BRANCH || "main";
 
     const results: GithubResult[] = [];
 
@@ -101,12 +118,12 @@ export async function POST(req: Request) {
       const filePath = typeof f["path"] === "string" ? f["path"].trim() : "";
       if (!filePath) throw new Error("File path is required");
 
-      const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(filePath)}`;
+      const apiUrl = `https://api.github.com/repos/${owner}/${repoName}/contents/${encodeURIComponent(filePath)}`;
 
       if (mode === "upsert") {
         const content = typeof f["content"] === "string" ? f["content"] : String(f["content"] ?? "");
         const message = typeof f["message"] === "string" ? f["message"] : `AI update: ${filePath}`;
-        const sha = await getFileSha(owner, repo, filePath, branch);
+        const sha = await getFileSha(owner, repoName, filePath, branch, token);
 
         const payload: UpsertPayload = {
           message,
@@ -118,12 +135,12 @@ export async function POST(req: Request) {
         const r = await gh<{ commit?: { sha?: string } }>(apiUrl, {
           method: "PUT",
           body: JSON.stringify(payload),
-        });
+        }, token);
 
         results.push({ path: filePath, action: sha ? "updated" : "created", commit: r.commit?.sha });
       } else {
         const message = typeof f["message"] === "string" ? f["message"] : `AI delete: ${filePath}`;
-        const sha = await getFileSha(owner, repo, filePath, branch);
+        const sha = await getFileSha(owner, repoName, filePath, branch, token);
 
         if (!sha) {
           results.push({ path: filePath, action: "skipped (not found)" });
@@ -135,7 +152,7 @@ export async function POST(req: Request) {
         const r = await gh<{ commit?: { sha?: string } }>(apiUrl, {
           method: "DELETE",
           body: JSON.stringify(payload),
-        });
+        }, token);
 
         results.push({ path: filePath, action: "deleted", commit: r.commit?.sha });
       }
