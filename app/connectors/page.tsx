@@ -14,7 +14,7 @@ interface ConnectorState {
   resendConnected: boolean;
   resendApiKey: string;
   storageConnected: boolean;
-  storageProvider: 'S3' | 'Supabase';
+  storageProvider: 's3' | 'supabase';
   storageAccessKey: string;
   storageSecretKey: string;
   storageBucket: string;
@@ -34,7 +34,7 @@ const DEFAULT_STATE: ConnectorState = {
   resendConnected: false,
   resendApiKey: '',
   storageConnected: false,
-  storageProvider: 'S3',
+  storageProvider: 's3',
   storageAccessKey: '',
   storageSecretKey: '',
   storageBucket: '',
@@ -261,7 +261,7 @@ const ConnectorComponent = () => {
   function handleStorageConnect(e: React.FormEvent) {
     e.preventDefault();
     setStorageError('');
-    if (connState.storageProvider === 'S3') {
+    if (connState.storageProvider === 's3') {
       if (!connState.storageAccessKey.trim()) {
         setStorageError('AWS Access Key ID is required.');
         return;
@@ -455,7 +455,7 @@ const ConnectorComponent = () => {
         {connState.storageConnected ? (
           <div>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: '#d1d5db' }}>
-              Provider: <strong>{connState.storageProvider}</strong> — Bucket: <strong>{connState.storageBucket}</strong>
+              Provider: <strong>{connState.storageProvider === 's3' ? 'AWS S3' : 'Supabase Storage'}</strong> — Bucket: <strong>{connState.storageBucket}</strong>
             </p>
             <button onClick={handleStorageDisconnect} style={disconnectBtnStyle}>Disconnect</button>
           </div>
@@ -465,14 +465,14 @@ const ConnectorComponent = () => {
               <label style={labelStyle}>Provider</label>
               <select
                 value={connState.storageProvider}
-                onChange={(e) => updateState({ storageProvider: e.target.value as 'S3' | 'Supabase' })}
+                onChange={(e) => updateState({ storageProvider: e.target.value as 's3' | 'supabase' })}
                 style={{ ...inputStyle, appearance: 'none' }}
               >
-                <option value="S3">AWS S3</option>
-                <option value="Supabase">Supabase Storage</option>
+                <option value="s3">AWS S3</option>
+                <option value="supabase">Supabase Storage</option>
               </select>
             </div>
-            {connState.storageProvider === 'S3' && (
+            {connState.storageProvider === 's3' && (
               <>
                 <div style={{ marginBottom: '0.75rem' }}>
                   <label style={labelStyle}>Access Key ID</label>
