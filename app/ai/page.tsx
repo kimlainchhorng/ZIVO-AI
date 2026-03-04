@@ -292,6 +292,7 @@ function AIPageInner() {
       if (data.files?.length) setActiveFile(data.files[0]);
       if (data.preview_html) setActiveTab("preview");
       const duration = Date.now() - buildStart;
+      setBuildTime(`${(duration / 1000).toFixed(1)}s`);
       // Save to build history
       addHistoryEntry({
         createdAt: Date.now(),
@@ -825,7 +826,7 @@ function AIPageInner() {
                       handleBuild();
                     }
                   }}
-                  placeholder="Describe the app you want to build..."
+                  placeholder="Describe the app you want to build... (e.g. A todo app with Supabase auth and dark mode)"
                   maxLength={2000}
                   style={{ width: "100%", minHeight: "100px", background: "transparent", border: "none", borderRadius: 0, padding: "0.875rem 0.875rem 0.25rem", resize: "none", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }}
                 />
@@ -973,9 +974,20 @@ function AIPageInner() {
                       </div>
                     ) : planResult ? (
                       <>
-                        <pre style={{ margin: 0, fontSize: "0.8125rem", color: COLORS.textPrimary, fontFamily: "inherit", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.7 }}>
-                          {planResult}
-                        </pre>
+                        <div style={{ fontSize: "0.8125rem", color: COLORS.textPrimary, lineHeight: 1.75 }}>
+                          {planResult.split("\n").map((line, i) => {
+                            const trimmed = line.trimStart();
+                            const indent = line.length - trimmed.length;
+                            const bold = trimmed.replace(/\*\*(.+?)\*\*/g, "$1");
+                            const isHeading = /^\*\*.*\*\*$/.test(trimmed) || trimmed.startsWith("##") || trimmed.startsWith("#");
+                            const displayLine = bold.replace(/^#+\s*/, "");
+                            return (
+                              <div key={i} style={{ paddingLeft: `${indent * 0.35}rem`, fontWeight: isHeading ? 700 : 400, color: isHeading ? COLORS.textPrimary : COLORS.textSecondary, marginBottom: isHeading ? "0.15rem" : 0 }}>
+                                {displayLine || "\u00A0"}
+                              </div>
+                            );
+                          })}
+                        </div>
                         <button
                           className="zivo-btn"
                           onClick={() => { setPlanOpen(false); handleBuild(); }}
