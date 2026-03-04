@@ -336,7 +336,10 @@ function AIPageInner() {
     const stepTimer1 = setTimeout(() => setLoadingStep(1), LOADING_STEP1_DELAY);
     const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
 
-    // Create abort controller for this build
+    // Create abort controller for this build, cancel any previous
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
     const controller = new AbortController();
     abortControllerRef.current = controller;
 

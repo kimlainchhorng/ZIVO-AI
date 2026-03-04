@@ -143,10 +143,6 @@ export default function CommandPalette({ onClose, onSetPrompt, onOpenFiles, onOp
   const categories = [...new Set(filtered.map((c) => c.category))];
 
   useEffect(() => {
-    setActiveIndex(0);
-  }, [query]);
-
-  useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
@@ -172,7 +168,10 @@ export default function CommandPalette({ onClose, onSetPrompt, onOpenFiles, onOp
     item?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
-  let globalIndex = 0;
+  // Build a flat index map: cmdId -> globalIndex
+  const indexMap = new Map<string, number>(
+    filtered.map((cmd, idx) => [cmd.id, idx])
+  );
 
   return (
     <>
@@ -191,7 +190,7 @@ export default function CommandPalette({ onClose, onSetPrompt, onOpenFiles, onOp
             <input
               ref={inputRef}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => { setQuery(e.target.value); setActiveIndex(0); }}
               placeholder="Type a command or search…"
               style={{ flex: 1, background: "transparent", border: "none", outline: "none", color: COLORS_UI.textPrimary, fontSize: "0.9375rem" }}
             />
@@ -213,7 +212,7 @@ export default function CommandPalette({ onClose, onSetPrompt, onOpenFiles, onOp
                       {category}
                     </div>
                     {cmds.map((cmd) => {
-                      const idx = globalIndex++;
+                      const idx = indexMap.get(cmd.id) ?? 0;
                       const isActive = idx === activeIndex;
                       return (
                         <div

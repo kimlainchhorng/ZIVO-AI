@@ -5,7 +5,9 @@ import { WEBSITE_BUILDER_SYSTEM_PROMPT } from "@/prompts/website-builder";
 export const runtime = "nodejs";
 
 function getClient() {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY environment variable is not set");
+  return new OpenAI({ apiKey });
 }
 
 interface StreamStep {
