@@ -45,6 +45,21 @@ Rules:
 - File paths should be relative to the project root (e.g. "app/page.tsx").
 - For delete actions, content should be an empty string.`;
 
+const PLAN_SYSTEM_PROMPT = `You are an expert full-stack developer AI assistant. The user wants a project plan, not code yet.
+
+When given an app description, respond ONLY with a valid JSON object matching this exact schema:
+{
+  "plan": "markdown string with the build plan"
+}
+
+The markdown plan should include:
+- **Pages to build** (list each page and its purpose)
+- **Key components** (reusable UI components needed)
+- **Data flow** (state management, API routes, data models)
+- **Estimated complexity** (Low / Medium / High with brief reason)
+
+Return ONLY the JSON object, no markdown fences, no extra text.`;
+
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -56,9 +71,34 @@ export async function POST(req: Request) {
 
     const body = await req.json().catch(() => ({}));
     const prompt = body?.prompt;
+    const planOnly = Boolean(body?.planOnly);
 
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
       return NextResponse.json({ error: "Missing or invalid prompt" }, { status: 400 });
+    }
+
+    if (planOnly) {
+      const r = await getClient().chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: PLAN_SYSTEM_PROMPT },
+          { role: "user", content: prompt.trim() },
+        ],
+        temperature: 0.3,
+      });
+      const text: string = r.choices[0]?.message?.content ?? "";
+      let parsed: { plan: string };
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        const match = text.match(/\{[\s\S]*\}/);
+        if (!match) return NextResponse.json({ error: "AI did not return valid JSON", raw: text }, { status: 502 });
+        parsed = JSON.parse(match[0]);
+      }
+      if (typeof parsed.plan !== "string") {
+        return NextResponse.json({ error: "Invalid plan response structure" }, { status: 502 });
+      }
+      return NextResponse.json(parsed);
     }
 
     const r = await getClient().chat.completions.create({
