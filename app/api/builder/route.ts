@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
+import { CODE_BUILDER_SYSTEM_PROMPT, CODE_BUILDER_PLAN_PROMPT } from "../../../prompts/code-builder";
 
 export const runtime = "nodejs";
 
@@ -18,68 +19,25 @@ export interface GeneratedFile {
 
 export interface BuilderResponse {
   files: GeneratedFile[];
+  commands?: string[];
   summary: string;
 }
 
-const SYSTEM_PROMPT = `You are an expert full-stack developer AI assistant. Your task is to generate complete, production-ready code files.
-
-You are proficient in: TypeScript, JavaScript, Python, SQL, PL/pgSQL, HTML, CSS, JSON, YAML, Markdown, Bash, Dockerfile, GraphQL, WebAssembly, Rust, Go, OpenAPI, ProtoBuf.
-Architectures: CI/CD, REST API, WebSocket, Serverless, Microservices, full-stack web, mobile backends, real-time, cloud deployment.
-UI Libraries: ShadCN UI, Radix UI, Material UI, Chakra UI (buttons, modals, forms, dashboards, navbars).
-Layout: Flexbox, CSS Grid, responsive/mobile-first design.
-Design: colors, spacing, typography, shadows, border-radius design tokens.
-UX Patterns: Dashboard, Sidebar nav, Card layouts, Search bars, Forms, Responsive layouts.
-Mobile: Flutter/Dart, Kotlin (Android), Swift (iOS), React Native.
-Animation: Framer Motion, Lottie, CSS animations.
-
-When given a description, respond ONLY with a valid JSON object matching this exact schema:
-{
-  "files": [
-    {
-      "path": "relative/file/path.ts",
-      "action": "create" | "update" | "delete",
-      "content": "complete file content as a string",
-      "language": "typescript" | "javascript" | "css" | "json" | "sql" | "markdown" | "python" | "bash" | "dockerfile" | "graphql" | "go" | "rust"
-    }
-  ],
-  "summary": "brief description of what was generated"
-}
-
-Rules:
-- Return ONLY the JSON object, no markdown fences, no extra text.
-- Generate minimal working code that follows Next.js App Router best practices.
-- Include proper TypeScript types.
-- Organize imports alphabetically.
-- Add concise comments only where needed.
-- File paths should be relative to the project root (e.g. "app/page.tsx").
-- For delete actions, content should be an empty string.`;
-
-const PLAN_SYSTEM_PROMPT = `You are an expert full-stack developer AI assistant. The user wants a project plan, not code yet.
-
-When given an app description, respond ONLY with a valid JSON object matching this exact schema:
-{
-  "plan": "markdown string with the build plan"
-}
-
-The markdown plan should include:
-- **Pages to build** (list each page and its purpose)
-- **Key components** (reusable UI components needed)
-- **Data flow** (state management, API routes, data models)
-- **Estimated complexity** (Low / Medium / High with brief reason)
-
-Return ONLY the JSON object, no markdown fences, no extra text.`;
-
 function stripMarkdownFences(text: string): string {
-  return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  return text
+    .replace(/^```(?:json)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
 }
 
-function parseBuilderJSON<T>(text: string): T {
-  const clean = stripMarkdownFences(text);
+function parseBuilderJSON(text: string): BuilderResponse {
+  const cleaned = stripMarkdownFences(text);
   try {
-    return JSON.parse(clean) as T;
-  } catch {
-    const match = clean.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]) as T;
+    return JSON.parse(cleaned);
+  } catch (parseErr) {
+    console.error("[builder] Initial JSON parse failed:", parseErr);
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
     throw new Error("AI did not return valid JSON");
   }
 }
@@ -105,7 +63,7 @@ export async function POST(req: Request) {
       const r = await getClient().chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: PLAN_SYSTEM_PROMPT },
+          { role: "system", content: CODE_BUILDER_PLAN_PROMPT },
           { role: "user", content: prompt.trim() },
         ],
         temperature: 0.3,
@@ -113,7 +71,7 @@ export async function POST(req: Request) {
       const text: string = r.choices[0]?.message?.content ?? "";
       let parsed: { plan: string };
       try {
-        parsed = parseBuilderJSON<{ plan: string }>(text);
+        parsed = parseBuilderJSON(text) as unknown as { plan: string };
       } catch {
         return NextResponse.json({ error: "AI did not return valid JSON", raw: text }, { status: 502 });
       }
@@ -123,32 +81,33 @@ export async function POST(req: Request) {
       return NextResponse.json(parsed);
     }
 
-    const r = await getClient().chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: prompt.trim() },
-      ],
-      temperature: 0.2,
-    });
+    // Retry up to 3 attempts if JSON is invalid
+    let parsed: BuilderResponse | null = null;
+    let lastError = "";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await getClient().chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: CODE_BUILDER_SYSTEM_PROMPT },
+          { role: "user", content: prompt.trim() },
+        ],
+        temperature: 0.2,
+      });
 
-    const text: string = r.choices[0]?.message?.content ?? "";
+      const text: string = r.choices[0]?.message?.content ?? "";
 
-    let parsed: BuilderResponse;
-    try {
-      parsed = parseBuilderJSON<BuilderResponse>(text);
-    } catch {
-      return NextResponse.json(
-        { error: "AI did not return valid JSON", raw: text },
-        { status: 502 }
-      );
+      try {
+        parsed = parseBuilderJSON(text);
+        if (Array.isArray(parsed.files)) break;
+        lastError = "Invalid response structure: missing files array";
+        parsed = null;
+      } catch (e) {
+        lastError = (e as Error).message || "AI did not return valid JSON";
+      }
     }
 
-    if (!Array.isArray(parsed.files)) {
-      return NextResponse.json(
-        { error: "Invalid response structure: missing files array" },
-        { status: 502 }
-      );
+    if (!parsed) {
+      return NextResponse.json({ error: lastError || "AI did not return valid JSON" }, { status: 502 });
     }
 
     const validActions: FileAction[] = ["create", "update", "delete"];
