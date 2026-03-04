@@ -1756,6 +1756,7 @@ function AIPageInner() {
                     <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(videoFrames.length, 3)}, 1fr)`, gap: "0.5rem" }}>
                       {videoFrames.map((frame, i) => (
                         <div key={i} style={{ position: "relative", borderRadius: "8px", overflow: "hidden", border: `1px solid ${COLORS.border}` }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={frame} alt={`Frame ${i + 1}`} style={{ width: "100%", display: "block" }} />
                           <div style={{ position: "absolute", top: "6px", left: "6px", background: "rgba(0,0,0,0.6)", color: "#fff", fontSize: "0.7rem", padding: "2px 6px", borderRadius: "4px", fontWeight: 600 }}>
                             {i + 1}
