@@ -259,6 +259,11 @@ function AIPageInner() {
     return () => { if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current); };
   }, [prompt]);
 
+  // Plan feature state
+  const [planResult, setPlanResult] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
   async function handleBuild() {
@@ -285,8 +290,8 @@ function AIPageInner() {
       const data: GenerateSiteResponse = await res.json();
       setOutput(data);
       if (data.files?.length) setActiveFile(data.files[0]);
+      if (data.preview_html) setActiveTab("preview");
       const duration = Date.now() - buildStart;
-      setBuildTime(`${(duration / 1000).toFixed(1)}s`);
       // Save to build history
       addHistoryEntry({
         createdAt: Date.now(),
@@ -310,6 +315,26 @@ function AIPageInner() {
     clearTimeout(stepTimer2);
     setLoading(false);
     setLoadingStep(0);
+  }
+
+  async function handlePlan() {
+    if (!prompt.trim()) return;
+    setPlanLoading(true);
+    setPlanResult(null);
+    setPlanOpen(true);
+    try {
+      const res = await fetch("/api/builder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, planOnly: true }),
+      });
+      const data = await res.json();
+      if (data.error) { setPlanResult(`**Error:** ${data.error}`); }
+      else { setPlanResult(data.plan ?? "No plan returned."); }
+    } catch {
+      setPlanResult("**Error:** Failed to generate plan.");
+    }
+    setPlanLoading(false);
   }
 
   const applyVisualEditOverlay = useCallback((active: boolean) => {
@@ -782,30 +807,113 @@ function AIPageInner() {
               {mode === "code" && (<>
 
               {/* Header */}
-              <div style={{ marginBottom: "1.25rem" }}>
-                <h1 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Build full-stack apps with AI</h1>
-                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe what you want — ZIVO generates the code instantly</p>
+              <div style={{ marginBottom: "1.25rem", textAlign: "center" }}>
+                <h1 style={{ fontSize: "1.375rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>What will you build today?</h1>
+                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates the code instantly</p>
               </div>
 
-              {/* Prompt Section */}
-              <div style={{ marginBottom: "1rem" }}>
-                <div style={{ position: "relative" }}>
-                  <textarea
-                    className="zivo-textarea"
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={(e) => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                        e.preventDefault();
-                        handleBuild();
-                      }
-                    }}
-                    placeholder="Describe the app you want to build... (e.g. A todo app with Supabase auth and dark mode)"
-                    maxLength={2000}
-                    style={{ width: "100%", minHeight: "120px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", resize: "vertical", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, transition: "border-color 0.2s" }}
-                  />
-                  <span style={{ position: "absolute", bottom: "0.5rem", right: "0.75rem", fontSize: "0.7rem", color: COLORS.textMuted }}>{prompt.length} / 2000</span>
+              {/* Unified Prompt Box */}
+              <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "14px", overflow: "hidden" }}>
+                {/* Textarea */}
+                <textarea
+                  className="zivo-textarea"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                      e.preventDefault();
+                      handleBuild();
+                    }
+                  }}
+                  placeholder="Describe the app you want to build..."
+                  maxLength={2000}
+                  style={{ width: "100%", minHeight: "100px", background: "transparent", border: "none", borderRadius: 0, padding: "0.875rem 0.875rem 0.25rem", resize: "none", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }}
+                />
+                {/* Toolbar row */}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.5rem 0.625rem 0.625rem", borderTop: `1px solid ${COLORS.border}` }}>
+                  {/* Attachment button */}
+                  <button
+                    className="zivo-btn"
+                    title="Attach file (coming soon)"
+                    style={{ width: "30px", height: "30px", borderRadius: "7px", background: "transparent", border: `1px solid ${COLORS.border}`, color: COLORS.textMuted, cursor: "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "1rem" }}
+                  >
+                    +
+                  </button>
+                  {/* Model selector */}
+                  <div style={{ position: "relative", flexShrink: 0 }}>
+                    <select
+                      className="zivo-select"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      style={{ appearance: "none", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "20px", color: COLORS.accent, padding: "0.25rem 1.5rem 0.25rem 0.625rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer" }}
+                    >
+                      {MODELS.map((m) => (
+                        <option key={m.value} value={m.value} style={{ background: COLORS.bgPanel }}>{m.label}</option>
+                      ))}
+                    </select>
+                    <span style={{ position: "absolute", right: "0.45rem", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: "0.6rem", color: COLORS.accent }}>▾</span>
+                  </div>
+                  {/* Voice input */}
+                  <button
+                    className="zivo-btn"
+                    onClick={handleVoiceInput}
+                    title={isRecording ? "Stop recording" : "Voice input"}
+                    style={{ width: "30px", height: "30px", borderRadius: "7px", background: isRecording ? "rgba(239,68,68,0.15)" : "transparent", border: `1px solid ${isRecording ? "rgba(239,68,68,0.4)" : COLORS.border}`, color: isRecording ? "#ef4444" : COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", animation: isRecording ? "recordPulse 1.5s infinite" : "none", flexShrink: 0 }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                  </button>
+                  <div style={{ flex: 1 }} />
+                  {/* Char count */}
+                  <span style={{ fontSize: "0.68rem", color: COLORS.textMuted, flexShrink: 0 }}>{prompt.length}/2000</span>
+                  {/* Plan button */}
+                  <button
+                    className="zivo-btn"
+                    onClick={handlePlan}
+                    disabled={planLoading || !prompt.trim()}
+                    title="Generate a plan before building"
+                    style={{ padding: "0.3rem 0.65rem", borderRadius: "20px", background: planLoading ? "rgba(139,92,246,0.2)" : "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)", color: "#8b5cf6", cursor: planLoading || !prompt.trim() ? "not-allowed" : "pointer", fontSize: "0.75rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}
+                  >
+                    {planLoading ? (
+                      <span style={{ display: "inline-block", width: "11px", height: "11px", border: "2px solid rgba(139,92,246,0.3)", borderTop: "2px solid #8b5cf6", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    ) : (
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                    )}
+                    Plan
+                  </button>
+                  {/* Build Now button */}
+                  <button
+                    className="zivo-btn"
+                    onClick={handleBuild}
+                    disabled={loading || !prompt.trim()}
+                    style={{ padding: "0.3rem 0.875rem", borderRadius: "20px", background: loading || !prompt.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, color: "#fff", border: "none", cursor: loading || !prompt.trim() ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}
+                  >
+                    {loading ? (
+                      <span style={{ display: "inline-block", width: "11px", height: "11px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    ) : (
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    )}
+                    {loading ? "Building…" : "Build now ▶"}
+                  </button>
                 </div>
+              </div>
+
+              {/* or start from row */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.875rem", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, flexShrink: 0 }}>or start from</span>
+                {[
+                  { emoji: "🎨", label: "Figma" },
+                  { emoji: "🐙", label: "GitHub" },
+                  { emoji: "📋", label: "Team template" },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    className="zivo-chip"
+                    title={`${item.label} import (coming soon)`}
+                    style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.6rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textSecondary, cursor: "default", fontSize: "0.75rem" }}
+                  >
+                    {item.emoji} {item.label}
+                  </button>
+                ))}
               </div>
 
               {/* Prompt Suggestions */}
@@ -841,53 +949,47 @@ function AIPageInner() {
                 ))}
               </div>
 
-              {/* Controls Row */}
-              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", alignItems: "center" }}>
-                <select
-                  className="zivo-select"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  style={{ flex: 1, background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.45rem 0.65rem", fontSize: "0.8125rem", cursor: "pointer", transition: "border-color 0.2s" }}
-                >
-                  {MODELS.map((m) => (
-                    <option key={m.value} value={m.value} style={{ background: COLORS.bgPanel }}>{m.label}</option>
-                  ))}
-                </select>
-
-                <button
-                  className="zivo-btn"
-                  onClick={handleVoiceInput}
-                  title={isRecording ? "Stop recording" : "Voice input"}
-                  style={{ width: "36px", height: "36px", borderRadius: "8px", background: isRecording ? "rgba(239,68,68,0.15)" : COLORS.bgCard, border: `1px solid ${isRecording ? "rgba(239,68,68,0.4)" : COLORS.border}`, color: isRecording ? "#ef4444" : COLORS.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", animation: isRecording ? "recordPulse 1.5s infinite" : "none", flexShrink: 0 }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-                </button>
-
-                <button
-                  className="zivo-btn"
-                  onClick={() => { setPrompt(""); setOutput(null); setDeployResult(null); setDeployError(null); setActiveFile(null); }}
-                  style={{ padding: "0.45rem 0.75rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", flexShrink: 0 }}
-                >
-                  Clear
-                </button>
-              </div>
-
-              {/* Build Button */}
-              <button
-                className="zivo-btn"
-                onClick={handleBuild}
-                disabled={loading || !prompt.trim()}
-                style={{ width: "100%", padding: "0.7rem", background: loading || !prompt.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, color: "#fff", borderRadius: "10px", border: "none", cursor: loading || !prompt.trim() ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.9375rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", marginBottom: "1.25rem" }}
-              >
-                {loading ? (
-                  <>
-                    <span style={{ display: "inline-block", width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    Building…
-                  </>
-                ) : (
-                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Build</>
-                )}
-              </button>
+              {/* Plan Panel */}
+              {planOpen && (
+                <div style={{ marginBottom: "1rem", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.65rem 0.875rem", borderBottom: "1px solid rgba(139,92,246,0.15)" }}>
+                    <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#8b5cf6", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                      Build Plan
+                    </span>
+                    <button
+                      className="zivo-btn"
+                      onClick={() => setPlanOpen(false)}
+                      style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", padding: "0 0.25rem" }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div style={{ padding: "0.875rem" }}>
+                    {planLoading ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: COLORS.textSecondary, fontSize: "0.8125rem" }}>
+                        <span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(139,92,246,0.3)", borderTop: "2px solid #8b5cf6", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        Generating plan…
+                      </div>
+                    ) : planResult ? (
+                      <>
+                        <pre style={{ margin: 0, fontSize: "0.8125rem", color: COLORS.textPrimary, fontFamily: "inherit", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.7 }}>
+                          {planResult}
+                        </pre>
+                        <button
+                          className="zivo-btn"
+                          onClick={() => { setPlanOpen(false); handleBuild(); }}
+                          disabled={loading}
+                          style={{ marginTop: "0.875rem", width: "100%", padding: "0.55rem", background: COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: loading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.875rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                          Build from Plan ▶
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              )}
 
               {/* Connected Project Panel */}
               <div style={{ marginBottom: "1rem" }}>
@@ -1499,11 +1601,11 @@ function AIPageInner() {
               </button>
 
               {/* Refresh */}
-              {previewSrc && (
+              {output?.preview_html && (
                 <button
                   className="zivo-btn"
-                  onClick={() => { if (iframeRef.current) iframeRef.current.src = iframeRef.current.src; }}
-                  title="Refresh"
+                  onClick={() => { if (iframeRef.current) { const html = output?.preview_html ?? ""; iframeRef.current.srcdoc = html; } }}
+                  title="Refresh preview"
                   style={{ width: "30px", height: "30px", borderRadius: "6px", border: "none", background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "16px" }}
                 >
                   ↻
@@ -1576,14 +1678,14 @@ function AIPageInner() {
               {/* Preview Tab */}
               {!loading && output && activeTab === "preview" && (
                 <div style={{ width: iframeWidth, height: "100%", position: "relative", transition: "width 0.3s ease" }}>
-                  {previewSrc ? (
+                  {output?.preview_html ? (
                     <>
                       <iframe
                         ref={iframeRef}
-                        src={previewSrc}
+                        srcDoc={output.preview_html}
                         title="Live Preview"
                         style={{ width: "100%", height: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
-                        sandbox="allow-scripts allow-same-origin"
+                        sandbox="allow-scripts"
                         onLoad={() => applyVisualEditOverlay(visualEdit)}
                       />
                       {popover && (
