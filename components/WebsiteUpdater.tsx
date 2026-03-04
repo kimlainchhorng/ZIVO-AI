@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 
 interface GeneratedFile {
   path: string;
@@ -74,7 +74,7 @@ export default function WebsiteUpdater({ currentFiles, onUpdate }: WebsiteUpdate
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       handleUpdate();
     }
@@ -100,7 +100,7 @@ export default function WebsiteUpdater({ currentFiles, onUpdate }: WebsiteUpdate
           {loading ? "Updating…" : "Apply Changes"}
         </button>
       </div>
-      <p className="text-xs text-gray-400">Tip: Press ⌘+Enter to apply changes</p>
+      <p className="text-xs text-gray-400">Tip: Press ⌘+Enter (Mac) or Ctrl+Enter (Windows/Linux) to apply changes</p>
 
       {error && (
         <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>

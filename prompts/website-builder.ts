@@ -25,12 +25,12 @@ Return a valid JSON object with this structure:
     { "path": "components/Navbar.tsx", "content": "...", "action": "create" },
     { "path": "components/Footer.tsx", "content": "...", "action": "create" },
     { "path": "components/ui/Button.tsx", "content": "...", "action": "create" },
-    { "path": "styles/globals.css", "content": "...", "action": "create" },
+    { "path": "app/globals.css", "content": "...", "action": "create" },
     { "path": "tailwind.config.ts", "content": "...", "action": "create" },
     { "path": "package.json", "content": "...", "action": "create" }
   ],
   "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
-  "description": "Brief description of what was built"
+  "summary": "Brief description of what was built"
 }
 
 Rules:

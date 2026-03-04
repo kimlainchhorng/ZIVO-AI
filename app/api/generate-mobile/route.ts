@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { MOBILE_BUILDER_PROMPTS, MOBILE_BUILDER_BASE_INSTRUCTIONS } from "../../../prompts/mobile-builder";
 
 export const runtime = "nodejs";
 
@@ -41,69 +42,6 @@ function parseJSON(text: string): GenerateMobileResponse {
   }
 }
 
-const PLATFORM_PROMPTS: Record<MobilePlatform, string> = {
-  flutter: `You are an expert Flutter/Dart developer. Generate a complete Flutter app scaffold with:
-- lib/main.dart (app entry point with MaterialApp)
-- lib/screens/ (at least 2 screens)
-- lib/widgets/ (reusable widgets)
-- lib/services/ (API/data services)
-- pubspec.yaml (with dependencies)
-- README.md
-
-Use Material 3, proper state management with Provider or Riverpod, and responsive layouts.`,
-
-  "react-native": `You are an expert React Native developer. Generate a complete React Native app scaffold with:
-- App.tsx (entry point with navigation)
-- src/screens/ (at least 2 screens)
-- src/components/ (reusable components)
-- src/services/ (API/data services)
-- src/navigation/ (React Navigation setup)
-- package.json (with all dependencies)
-- README.md
-
-Use TypeScript, React Navigation, and responsive StyleSheet layouts.`,
-
-  kotlin: `You are an expert Android/Kotlin developer. Generate a complete Android app scaffold with:
-- app/src/main/java/.../MainActivity.kt
-- app/src/main/java/.../ui/ (Composable screens)
-- app/src/main/java/.../viewmodel/ (ViewModels)
-- app/src/main/java/.../data/ (Repository and models)
-- app/src/main/res/layout/ or Compose UI
-- build.gradle.kts (with dependencies)
-- README.md
-
-Use Jetpack Compose, MVVM architecture, and Kotlin Coroutines.`,
-
-  swift: `You are an expert iOS/Swift developer. Generate a complete iOS app scaffold with:
-- Sources/App/ContentView.swift (main SwiftUI view)
-- Sources/App/Views/ (SwiftUI views)
-- Sources/App/ViewModels/ (ObservableObject view models)
-- Sources/App/Models/ (data models)
-- Sources/App/Services/ (networking/data services)
-- Package.swift or project structure info
-- README.md
-
-Use SwiftUI, MVVM architecture, and Swift Concurrency (async/await).`,
-};
-
-const BASE_INSTRUCTIONS = `
-Return ONLY a valid JSON object with this structure:
-{
-  "files": [
-    { "path": "relative/path/to/file", "content": "complete file content", "action": "create" }
-  ],
-  "commands": ["flutter pub get", "flutter run"],
-  "summary": "Brief description of what was generated",
-  "platform": "<platform>"
-}
-
-Rules:
-- Return ONLY the JSON object, no markdown fences, no extra text.
-- Generate complete, working code (not stubs).
-- Include all necessary configuration files.
-- Add clear comments in the code.
-- The "platform" field must match the requested platform exactly.`;
-
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -114,7 +52,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const description: string = body?.description || "";
+    const description = typeof body?.description === "string" ? body.description : "";
     const platform: MobilePlatform = ["flutter", "react-native", "kotlin", "swift"].includes(
       body?.platform
     )
@@ -125,7 +63,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing description" }, { status: 400 });
     }
 
-    const systemPrompt = `${PLATFORM_PROMPTS[platform]}\n${BASE_INSTRUCTIONS}`;
+    const systemPrompt = `${MOBILE_BUILDER_PROMPTS[platform]}\n${MOBILE_BUILDER_BASE_INSTRUCTIONS}`;
 
     let parsed: GenerateMobileResponse | null = null;
     let lastError = "";

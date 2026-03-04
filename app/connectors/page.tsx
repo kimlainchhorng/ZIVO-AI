@@ -34,9 +34,14 @@ function loadConnectorState(): ConnectorState {
 function saveConnectorState(state: ConnectorState): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem('connectorState', JSON.stringify(state));
-  } catch {
-    // ignore storage errors
+    // Do not persist secrets like tokens/keys to localStorage.
+    // Only store non-sensitive fields so that credentials remain in-memory only.
+    const { modalToken, supabaseAnonKey, ...nonSensitiveState } = state;
+    void modalToken;
+    void supabaseAnonKey;
+    localStorage.setItem('connectorState', JSON.stringify(nonSensitiveState));
+  } catch (err) {
+    console.error('[connectors] Failed to save state to localStorage:', err);
   }
 }
 

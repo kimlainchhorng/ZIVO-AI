@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { UPDATE_SITE_SYSTEM_PROMPT } from "../../../prompts/update-site";
 
 export const runtime = "nodejs";
 
@@ -38,34 +39,6 @@ function parseJSON(text: string): UpdateSiteResponse {
   }
 }
 
-const SYSTEM_PROMPT = `You are ZIVO AI, an expert full-stack developer. The user has an existing website and wants to make specific changes.
-
-You will receive:
-1. The current files of the website
-2. The user's update request
-
-Your job is to apply ONLY the requested changes surgically. Do not regenerate everything — only modify what the user asked for.
-
-Return ONLY a valid JSON object with this structure:
-{
-  "files": [
-    {
-      "path": "path/to/changed/file",
-      "content": "complete updated file content",
-      "action": "create" | "update" | "delete"
-    }
-  ],
-  "preview_html": "<!DOCTYPE html>...(updated self-contained HTML preview if applicable)...",
-  "summary": "Brief description of what was changed"
-}
-
-Rules:
-- Return ONLY the JSON object, no markdown fences, no extra text.
-- Only include files that were actually changed.
-- For the preview_html, regenerate it only if the visible UI changed.
-- Keep all unchanged files as-is (do not include them in the response).
-- Make the changes clean and consistent with the existing code style.`;
-
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
@@ -76,7 +49,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const updateRequest: string = body?.updateRequest || "";
+    const updateRequest = typeof body?.updateRequest === "string" ? body.updateRequest : "";
     const currentFiles: GeneratedFile[] = Array.isArray(body?.currentFiles)
       ? body.currentFiles
       : [];
@@ -101,7 +74,7 @@ export async function POST(req: Request) {
       const r = await getClient().chat.completions.create({
         model: "gpt-4o",
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: UPDATE_SITE_SYSTEM_PROMPT },
           { role: "user", content: userMessage },
         ],
         temperature: 0.3,

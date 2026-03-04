@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { WEBSITE_BUILDER_SYSTEM_PROMPT } from "../../../prompts/website-builder";
 
 export const runtime = "nodejs";
 
@@ -56,38 +57,6 @@ When given a description, respond with a valid JSON object:
 }
 ${BASE_RULES}`;
 
-const SYSTEM_PROMPT_ADVANCED = `You are ZIVO AI — an expert full-stack developer that generates complete Next.js App Router projects.
-
-You are an expert in:
-- TypeScript, JavaScript, Python, SQL, HTML, CSS, JSON, YAML, Markdown, GraphQL
-- Next.js 14 App Router, React, TailwindCSS, ShadCN UI, Radix UI, Framer Motion
-- Responsive design (mobile-first), SEO metadata, accessibility
-- REST APIs, GraphQL, WebSocket, Serverless, Microservices
-- CI/CD, Docker, database schemas (PostgreSQL, Prisma, Supabase)
-
-When given a description, respond with a valid JSON object containing a FULL Next.js project structure:
-{
-  "files": [
-    { "path": "package.json", "content": "...", "action": "create" },
-    { "path": "README.md", "content": "...", "action": "create" },
-    { "path": "app/layout.tsx", "content": "...", "action": "create" },
-    { "path": "app/page.tsx", "content": "...", "action": "create" },
-    { "path": "app/about/page.tsx", "content": "...", "action": "create" },
-    { "path": "app/contact/page.tsx", "content": "...", "action": "create" },
-    { "path": "app/globals.css", "content": "...", "action": "create" },
-    { "path": "components/Navbar.tsx", "content": "...", "action": "create" },
-    { "path": "components/Footer.tsx", "content": "...", "action": "create" },
-    { "path": "tailwind.config.ts", "content": "...", "action": "create" }
-  ],
-  "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
-  "summary": "Brief description of what was built",
-  "notes": "Any additional notes"
-}
-
-Include: package.json (with next, react, tailwindcss, framer-motion), app/layout.tsx, app/page.tsx with hero/features/CTA sections, app/about/page.tsx, app/contact/page.tsx with contact form, components/Navbar.tsx with responsive mobile menu, components/Footer.tsx, and tailwind.config.ts with design tokens.
-Each page should use Framer Motion for animations and be fully responsive.
-${BASE_RULES}`;
-
 const SYSTEM_PROMPT_MINIMAL = `You are ZIVO AI — an expert web developer that generates minimal, self-contained HTML files.
 
 When given a description, respond with a valid JSON object containing a SINGLE HTML file:
@@ -111,7 +80,7 @@ If there are no errors, return the original JSON unchanged.
 Return ONLY valid JSON, no markdown, no explanation.`;
 
 function getSystemPrompt(mode: GenerateMode): string {
-  if (mode === "advanced") return SYSTEM_PROMPT_ADVANCED;
+  if (mode === "advanced") return WEBSITE_BUILDER_SYSTEM_PROMPT;
   if (mode === "minimal") return SYSTEM_PROMPT_MINIMAL;
   return SYSTEM_PROMPT_STANDARD;
 }
