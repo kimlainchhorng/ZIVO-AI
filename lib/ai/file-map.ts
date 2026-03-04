@@ -81,18 +81,23 @@ export function summarizeFileMap(map: FileMap): string {
   return `${map.totalFiles} files in ${map.directories.length} directories. Languages: ${langSummary}`;
 }
 
+/** Characters shown per file in the context window snippet. */
+const MAX_FILE_SNIPPET_CHARS = 200;
+
+/** Approximate characters per token (GPT-4 tokenizer average). */
+const CHARS_PER_TOKEN = 4;
+
 export function getProjectContext(
   map: FileMap,
   maxTokens = 4000
 ): string {
-  const charsPerToken = 4;
-  const maxChars = maxTokens * charsPerToken;
+  const maxChars = maxTokens * CHARS_PER_TOKEN;
   let context = `Project: ${summarizeFileMap(map)}\n\nFiles:\n`;
   let charCount = context.length;
 
   for (const file of map.files) {
-    const snippet = file.content?.slice(0, 200) ?? "";
-    const line = `- ${file.path} (${file.language}): ${snippet}${(file.content?.length ?? 0) > 200 ? "…" : ""}\n`;
+    const snippet = file.content?.slice(0, MAX_FILE_SNIPPET_CHARS) ?? "";
+    const line = `- ${file.path} (${file.language}): ${snippet}${(file.content?.length ?? 0) > MAX_FILE_SNIPPET_CHARS ? "…" : ""}\n`;
     if (charCount + line.length > maxChars) break;
     context += line;
     charCount += line.length;

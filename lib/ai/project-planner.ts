@@ -39,7 +39,9 @@ Return ONLY valid JSON matching this schema:
 }`;
 
 function getClient(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY environment variable is not set");
+  return new OpenAI({ apiKey });
 }
 
 export async function createProjectPlan(

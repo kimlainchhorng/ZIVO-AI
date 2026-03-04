@@ -18,7 +18,9 @@ export interface FilePatch {
 }
 
 function getClient(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY environment variable is not set");
+  return new OpenAI({ apiKey });
 }
 
 export function applyPatch(original: string, patch: FilePatch): string {
@@ -58,6 +60,9 @@ export function generateDiffSummary(patches: FilePatch[]): string {
   return parts.join(", ") || "No changes";
 }
 
+/** Max characters of each file's content included in the patch prompt context. */
+const MAX_FILE_PREVIEW_CHARS = 300;
+
 const PATCH_SYSTEM_PROMPT = `You are a code patch generator. Given a prompt and existing files, generate minimal patches.
 Return ONLY valid JSON:
 {
@@ -80,7 +85,7 @@ export async function generatePatchesFromPrompt(
 ): Promise<{ patches: FilePatch[]; thinking: string; summary: string }> {
   const filesContext =
     existingFiles.length > 0
-      ? `\n\nExisting files:\n${existingFiles.map((f) => `// ${f.path}\n${f.content.slice(0, 300)}`).join("\n\n")}`
+      ? `\n\nExisting files:\n${existingFiles.map((f) => `// ${f.path}\n${f.content.slice(0, MAX_FILE_PREVIEW_CHARS)}`).join("\n\n")}`
       : "";
 
   const response = await getClient().chat.completions.create({
