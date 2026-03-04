@@ -23,18 +23,31 @@ const DEFAULT_STATE: ConnectorState = {
 function loadConnectorState(): ConnectorState {
   if (typeof window === 'undefined') return DEFAULT_STATE;
   try {
-    const raw = localStorage.getItem('connectorState');
-    return raw ? (JSON.parse(raw) as ConnectorState) : DEFAULT_STATE;
-  } catch {
-    return DEFAULT_STATE;
+    const stored = localStorage.getItem('connectorState');
+    if (stored) return { ...DEFAULT_STATE, ...JSON.parse(stored) };
+  } catch (err) {
+    console.error('[connectors] Failed to load state from localStorage:', err);
   }
+  return DEFAULT_STATE;
 }
 
 function saveConnectorState(state: ConnectorState): void {
+  if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem('connectorState', JSON.stringify(state));
+    // Do not persist secrets in connectorState; only store non-sensitive fields.
+    const { modalToken, supabaseAnonKey, ...nonSensitiveState } = state;
+    void supabaseAnonKey;
+    localStorage.setItem('connectorState', JSON.stringify(nonSensitiveState));
+    // Write/clear the dedicated keys that other parts of the app (e.g. app/ai/page.tsx) read.
+    if (state.githubConnected && modalToken) {
+      localStorage.setItem('zivo_github_token', modalToken);
+      localStorage.setItem('zivo_github_repo', state.modalRepo);
+    } else if (!state.githubConnected) {
+      localStorage.removeItem('zivo_github_token');
+      localStorage.removeItem('zivo_github_repo');
+    }
   } catch (err) {
-    console.warn('ConnectorState: could not persist to localStorage', err);
+    console.error('[connectors] Failed to save state to localStorage:', err);
   }
 }
 

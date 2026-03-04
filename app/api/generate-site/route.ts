@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { WEBSITE_BUILDER_SYSTEM_PROMPT } from "../../../prompts/website-builder";
 
 export const runtime = "nodejs";
 
@@ -70,59 +71,6 @@ When given a description, respond with a valid JSON object:
 }
 ${BASE_RULES}`;
 
-const SYSTEM_PROMPT_ADVANCED = `You are ZIVO AI — an expert full-stack developer that generates complete, production-grade Next.js App Router projects.
-
-You are proficient in: TypeScript, JavaScript, Python, SQL, PL/pgSQL, HTML, CSS, JSON, YAML, Markdown, Bash, Dockerfile, GraphQL, WebAssembly, Rust, Go, OpenAPI, ProtoBuf.
-Architectures: CI/CD, REST API, WebSocket, Serverless, Microservices, full-stack web, mobile backends, real-time, cloud deployment.
-UI Libraries: ShadCN UI, Radix UI, Material UI, Chakra UI (buttons, modals, forms, dashboards, navbars).
-Layout: Flexbox, CSS Grid, responsive/mobile-first design.
-Design: colors, spacing, typography, shadows, border-radius design tokens.
-UX Patterns: Dashboard, Sidebar nav, Card layouts, Search bars, Forms, Responsive layouts.
-Mobile: Flutter/Dart, Kotlin (Android), Swift (iOS), React Native.
-Animation: Framer Motion, Lottie, CSS animations.
-
-When given a description, respond with a valid JSON object containing a FULL multi-page Next.js App Router project.
-You MUST generate ALL of the following files at minimum:
-- package.json (with next, react, typescript, tailwindcss, framer-motion dependencies)
-- tailwind.config.ts (with design tokens: colors, fonts, spacing)
-- next.config.ts
-- tsconfig.json
-- app/layout.tsx (root layout importing Navbar and Footer, with metadata)
-- app/page.tsx (homepage with hero section, features grid, and CTA — use Framer Motion)
-- app/about/page.tsx (about page with team/mission section)
-- app/contact/page.tsx (contact page with validated form)
-- app/globals.css (global styles with CSS variables)
-- components/Navbar.tsx (responsive navbar with mobile hamburger menu)
-- components/Footer.tsx (footer with links and social icons)
-
-Response format:
-{
-  "files": [
-    { "path": "package.json", "content": "...", "action": "create" },
-    { "path": "tailwind.config.ts", "content": "...", "action": "create" },
-    { "path": "next.config.ts", "content": "...", "action": "create" },
-    { "path": "tsconfig.json", "content": "...", "action": "create" },
-    { "path": "app/layout.tsx", "content": "...", "action": "create" },
-    { "path": "app/page.tsx", "content": "...(hero, features, CTA with Framer Motion)...", "action": "create" },
-    { "path": "app/about/page.tsx", "content": "...", "action": "create" },
-    { "path": "app/contact/page.tsx", "content": "...(contact form with validation)...", "action": "create" },
-    { "path": "app/globals.css", "content": "...", "action": "create" },
-    { "path": "components/Navbar.tsx", "content": "...(responsive with mobile hamburger menu)...", "action": "create" },
-    { "path": "components/Footer.tsx", "content": "...(footer with links and copyright)...", "action": "create" }
-  ],
-  "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
-  "summary": "Brief description of what was built",
-  "notes": "Any additional notes"
-}
-
-Requirements:
-- ALWAYS include app/layout.tsx wrapping all pages with Navbar and Footer.
-- ALWAYS include components/Navbar.tsx with a responsive mobile hamburger menu.
-- ALWAYS include components/Footer.tsx.
-- Add Framer Motion animations on app/page.tsx (hero entrance, feature cards stagger).
-- Use TailwindCSS for all styling with consistent design tokens.
-${BASE_RULES}`;
-
 const SYSTEM_PROMPT_MINIMAL = `You are ZIVO AI — an expert web developer that generates minimal, self-contained HTML files.
 
 You are proficient in: TypeScript, JavaScript, HTML, CSS, JSON — with deep knowledge of modern CSS patterns, Flexbox, Grid, responsive design, and CSS animations.
@@ -148,7 +96,7 @@ If there are no errors, return the original JSON unchanged.
 Return ONLY valid JSON, no markdown, no explanation.`;
 
 function getSystemPrompt(mode: GenerateMode): string {
-  if (mode === "advanced") return SYSTEM_PROMPT_ADVANCED;
+  if (mode === "advanced") return WEBSITE_BUILDER_SYSTEM_PROMPT;
   if (mode === "minimal") return SYSTEM_PROMPT_MINIMAL;
   return SYSTEM_PROMPT_STANDARD;
 }
