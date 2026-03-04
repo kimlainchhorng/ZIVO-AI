@@ -1,6 +1,8 @@
-openai>=2.24.0
-openai-agents>=0.0.14
 streamlit>=1.54.0
-python-dotenv>=1.0.1
+openai>=2.24.0
 pydantic>=2.10.0
+python-dotenv>=1.0.1
+langchain>=1.2.0
+langchain-openai>=0.3.0
+openai-agents>=0.0.14
 mcp>=1.0.0
