@@ -5,6 +5,23 @@ import { useSearchParams, usePathname } from "next/navigation";
 import { Suspense } from "react";
 import { addHistoryEntry } from "../history/page";
 
+interface SecurityIssue {
+  id: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  title: string;
+  description: string;
+  line?: number;
+  cwe?: string;
+  recommendation: string;
+}
+
+interface SecurityScanResult {
+  issues: SecurityIssue[];
+  score: number;
+  summary: string;
+  language: string;
+}
+
 interface GeneratedFile {
   path: string;
   content: string;
@@ -149,7 +166,7 @@ function AIPageInner() {
   const [githubPushError, setGithubPushError] = useState<string | null>(null);
 
   // Mode switcher
-  const [mode, setMode] = useState<"code" | "website" | "mobile" | "image" | "video" | "3d">("code");
+  const [mode, setMode] = useState<"code" | "security" | "website" | "mobile" | "image" | "video" | "3d">("code");
 
   // Website generation state
   const [websitePrompt, setWebsitePrompt] = useState("");
@@ -189,6 +206,17 @@ function AIPageInner() {
   const [threeDLoading, setThreeDLoading] = useState(false);
   const [threeDError, setThreeDError] = useState<string | null>(null);
   const [threeDShowSource, setThreeDShowSource] = useState(false);
+
+  // Security scan state
+  const [securityCode, setSecurityCode] = useState("");
+  const [securityLanguage, setSecurityLanguage] = useState("typescript");
+  const [securityScanResult, setSecurityScanResult] = useState<SecurityScanResult | null>(null);
+  const [securityScanning, setSecurityScanning] = useState(false);
+  const [securityFixing, setSecurityFixing] = useState(false);
+  const [securityError, setSecurityError] = useState<string | null>(null);
+  const [securityFixedCode, setSecurityFixedCode] = useState<string | null>(null);
+  const [securityActiveTab, setSecurityActiveTab] = useState<"scan" | "fixed">("scan");
+  const [securityCopyLabel, setSecurityCopyLabel] = useState<"copy" | "copied">("copy");
 
   // Read ?prompt= from URL
   const searchParams = useSearchParams();
@@ -494,6 +522,45 @@ function AIPageInner() {
     setThreeDLoading(false);
   }
 
+  async function handleSecurityScan() {
+    if (!securityCode.trim()) return;
+    setSecurityScanning(true);
+    setSecurityError(null);
+    setSecurityScanResult(null);
+    setSecurityFixedCode(null);
+    try {
+      const res = await fetch("/api/security-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: securityCode, language: securityLanguage, mode: "scan" }),
+      });
+      const data = await res.json() as SecurityScanResult & { error?: string };
+      if (data.error) { setSecurityError(data.error); }
+      else { setSecurityScanResult(data); setSecurityActiveTab("scan"); }
+    } catch { setSecurityError("Scan failed. Please try again."); }
+    setSecurityScanning(false);
+  }
+
+  async function handleSecurityFix() {
+    if (!securityCode.trim() || !securityScanResult) return;
+    setSecurityFixing(true);
+    setSecurityError(null);
+    try {
+      const issuesSummary = securityScanResult.issues
+        .map((i) => `[${i.severity.toUpperCase()}] ${i.title}: ${i.description}`)
+        .join("\n");
+      const res = await fetch("/api/security-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: securityCode, language: securityLanguage, mode: "fix", issues: issuesSummary }),
+      });
+      const data = await res.json() as { fixedCode?: string; error?: string };
+      if (data.error) { setSecurityError(data.error); }
+      else { setSecurityFixedCode(data.fixedCode ?? ""); setSecurityActiveTab("fixed"); }
+    } catch { setSecurityError("Fix failed. Please try again."); }
+    setSecurityFixing(false);
+  }
+
   function handleVoiceInput() {
     if (isRecording) {
       recognitionRef.current?.stop();
@@ -672,6 +739,7 @@ function AIPageInner() {
               <div style={{ display: "flex", gap: "4px", marginBottom: "1.25rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "4px" }}>
                 {([
                   ["code", "Code Builder"],
+                  ["security", "Security"],
                   ["website", "Website"],
                   ["mobile", "Mobile App"],
                   ["image", "Image"],
@@ -682,7 +750,7 @@ function AIPageInner() {
                     key={m}
                     className="zivo-btn"
                     onClick={() => setMode(m)}
-                    style={{ flex: 1, padding: "0.35rem 0.5rem", borderRadius: "7px", border: "none", background: mode === m ? COLORS.accentGradient : "transparent", color: mode === m ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: mode === m ? 600 : 400, transition: "background 0.2s, color 0.2s" }}
+                    style={{ flex: 1, padding: "0.35rem 0.5rem", borderRadius: "7px", border: "none", background: mode === m ? (m === "security" ? "linear-gradient(135deg,#f97316,#ef4444)" : COLORS.accentGradient) : "transparent", color: mode === m ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: mode === m ? 600 : 400, transition: "background 0.2s, color 0.2s" }}
                   >
                     {label}
                   </button>
@@ -881,6 +949,90 @@ function AIPageInner() {
                 </div>
               )}
               </>)}
+
+              {/* ── Security Mode ── */}
+              {mode === "security" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Security Scanner</h2>
+                    </div>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Paste code → scan → auto-fix vulnerabilities</p>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Language</label>
+                    <select
+                      className="zivo-select"
+                      value={securityLanguage}
+                      onChange={(e) => setSecurityLanguage(e.target.value)}
+                      style={{ width: "100%", padding: "0.45rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", cursor: "pointer" }}
+                    >
+                      {["typescript", "javascript", "python", "go", "rust", "java", "php", "other"].map((lang) => (
+                        <option key={lang} value={lang} style={{ background: COLORS.bgPanel }}>{lang.charAt(0).toUpperCase() + lang.slice(1)}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Code</label>
+                    <textarea
+                      className="zivo-textarea"
+                      value={securityCode}
+                      onChange={(e) => setSecurityCode(e.target.value)}
+                      placeholder="Paste your code here to scan for vulnerabilities..."
+                      style={{ width: "100%", minHeight: "160px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.8125rem", fontFamily: "'JetBrains Mono','Fira Code',monospace" }}
+                    />
+                  </div>
+                  {securityError && (
+                    <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{securityError}</div>
+                  )}
+                  <button
+                    className="zivo-btn"
+                    onClick={handleSecurityScan}
+                    disabled={securityScanning || !securityCode.trim()}
+                    style={{ width: "100%", padding: "0.65rem", background: securityScanning || !securityCode.trim() ? "rgba(249,115,22,0.3)" : "linear-gradient(135deg,#f97316,#ef4444)", color: "#fff", borderRadius: "8px", border: "none", cursor: securityScanning || !securityCode.trim() ? "not-allowed" : "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
+                  >
+                    {securityScanning ? (
+                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Scanning…</>
+                    ) : (
+                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Scan for Vulnerabilities</>
+                    )}
+                  </button>
+                  {securityScanResult && (
+                    <>
+                      <div style={{ padding: "0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                          <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textPrimary }}>Security Score</span>
+                          <span style={{ fontSize: "0.875rem", fontWeight: 700, color: securityScanResult.score >= 90 ? COLORS.success : securityScanResult.score >= 70 ? "#3b82f6" : securityScanResult.score >= 40 ? COLORS.warning : COLORS.error }}>{securityScanResult.score}/100</span>
+                        </div>
+                        <div style={{ height: "6px", background: COLORS.border, borderRadius: "3px", overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${securityScanResult.score}%`, borderRadius: "3px", background: securityScanResult.score >= 90 ? COLORS.success : securityScanResult.score >= 70 ? "#3b82f6" : securityScanResult.score >= 40 ? COLORS.warning : COLORS.error, transition: "width 0.6s ease" }} />
+                        </div>
+                        <div style={{ marginTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                          {(["critical","high","medium","low","info"] as const).map((sev) => {
+                            const count = securityScanResult.issues.filter((i) => i.severity === sev).length;
+                            if (!count) return null;
+                            const sevColors: Record<string,string> = { critical:"#ef4444", high:"#f97316", medium:"#f59e0b", low:"#3b82f6", info:"#94a3b8" };
+                            return <span key={sev} style={{ fontSize: "0.75rem", padding: "1px 6px", borderRadius: "4px", background: `${sevColors[sev]}22`, color: sevColors[sev], fontWeight: 600 }}>{count} {sev}</span>;
+                          })}
+                        </div>
+                      </div>
+                      <button
+                        className="zivo-btn"
+                        onClick={handleSecurityFix}
+                        disabled={securityFixing}
+                        style={{ width: "100%", padding: "0.65rem", background: securityFixing ? "rgba(16,185,129,0.3)" : "linear-gradient(135deg,#10b981,#059669)", color: "#fff", borderRadius: "8px", border: "none", cursor: securityFixing ? "not-allowed" : "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
+                      >
+                        {securityFixing ? (
+                          <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Fixing…</>
+                        ) : (
+                          <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Auto-Fix All Issues</>
+                        )}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* ── Website Mode ── */}
               {mode === "website" && (
@@ -1653,6 +1805,113 @@ function AIPageInner() {
                     <pre style={{ margin: 0, fontSize: "0.8125rem", lineHeight: 1.7, color: COLORS.textPrimary, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                       {threeDResult.html}
                     </pre>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Security Right Panel ── */}
+            {mode === "security" && (
+              <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", padding: "1.5rem", gap: "1rem" }}>
+                {/* Sub-tabs */}
+                {securityScanResult && (
+                  <div style={{ display: "flex", gap: "4px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px", flexShrink: 0 }}>
+                    {(["scan", "fixed"] as const).map((t) => (
+                      <button
+                        key={t}
+                        className="zivo-btn"
+                        onClick={() => setSecurityActiveTab(t)}
+                        style={{ flex: 1, padding: "0.35rem 0.5rem", borderRadius: "6px", border: "none", background: securityActiveTab === t ? "linear-gradient(135deg,#f97316,#ef4444)" : "transparent", color: securityActiveTab === t ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: securityActiveTab === t ? 600 : 400, transition: "background 0.2s, color 0.2s" }}
+                      >
+                        {t === "scan" ? "Scan Report" : "Fixed Code"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {!securityScanResult && !securityScanning && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center" }}>
+                    <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(249,115,22,0.1)", border: "1px solid rgba(249,115,22,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <p style={{ fontSize: "0.875rem" }}>Paste code on the left and click scan to see the security report</p>
+                  </div>
+                )}
+
+                {/* Scanning state */}
+                {securityScanning && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem" }}>
+                    <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(249,115,22,0.2)", borderTop: "3px solid #f97316", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Analyzing code for vulnerabilities…</p>
+                  </div>
+                )}
+
+                {/* Scan Report */}
+                {securityScanResult && securityActiveTab === "scan" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", animation: "fadeIn 0.3s ease" }}>
+                    <div style={{ padding: "0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px" }}>
+                      <p style={{ margin: "0 0 0.35rem", fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textPrimary }}>Summary</p>
+                      <p style={{ margin: 0, fontSize: "0.8125rem", color: COLORS.textSecondary, lineHeight: 1.6 }}>{securityScanResult.summary}</p>
+                      <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>Detected language: {securityScanResult.language}</div>
+                    </div>
+                    {securityScanResult.issues.length === 0 ? (
+                      <div style={{ padding: "1rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px", textAlign: "center", color: COLORS.success, fontSize: "0.875rem" }}>
+                        ✓ No vulnerabilities found!
+                      </div>
+                    ) : securityScanResult.issues.map((issue) => {
+                      const sevColors: Record<string,string> = { critical:"#ef4444", high:"#f97316", medium:"#f59e0b", low:"#3b82f6", info:"#94a3b8" };
+                      const c = sevColors[issue.severity] ?? "#94a3b8";
+                      return (
+                        <div key={issue.id} style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", overflow: "hidden" }}>
+                          <div style={{ height: "3px", background: c }} />
+                          <div style={{ padding: "0.75rem 1rem" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.4rem" }}>
+                              <span style={{ fontSize: "0.7rem", fontWeight: 700, padding: "2px 6px", borderRadius: "4px", background: `${c}22`, color: c, textTransform: "uppercase" }}>{issue.severity}</span>
+                              <span style={{ fontSize: "0.875rem", fontWeight: 600, color: COLORS.textPrimary, flex: 1 }}>{issue.title}</span>
+                              {issue.cwe && <span style={{ fontSize: "0.7rem", color: COLORS.textMuted, background: COLORS.bgPanel, padding: "1px 6px", borderRadius: "4px" }}>{issue.cwe}</span>}
+                            </div>
+                            <p style={{ margin: "0 0 0.4rem", fontSize: "0.8125rem", color: COLORS.textSecondary, lineHeight: 1.6 }}>{issue.description}</p>
+                            {issue.line && <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, marginBottom: "0.35rem" }}>Line: {issue.line}</div>}
+                            <div style={{ padding: "0.5rem 0.65rem", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.15)", borderRadius: "6px", fontSize: "0.8125rem", color: COLORS.textSecondary }}>
+                              <span style={{ color: COLORS.success, marginRight: "0.35rem" }}>💡</span>{issue.recommendation}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Fixed Code */}
+                {securityActiveTab === "fixed" && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", animation: "fadeIn 0.3s ease", flex: 1 }}>
+                    {securityFixing && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem" }}>
+                        <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(16,185,129,0.2)", borderTop: "3px solid #10b981", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Generating fixed code…</p>
+                      </div>
+                    )}
+                    {securityFixedCode !== null && !securityFixing && (
+                      <>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.success }}>✓ All vulnerabilities fixed</span>
+                          <button
+                            className="zivo-btn"
+                            onClick={() => navigator.clipboard.writeText(securityFixedCode).then(() => { setSecurityCopyLabel("copied"); setTimeout(() => setSecurityCopyLabel("copy"), 2000); }).catch(() => {})}
+                            style={{ padding: "0.3rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem" }}
+                          >
+                            {securityCopyLabel === "copied" ? "✓ Copied!" : "Copy"}
+                          </button>
+                        </div>
+                        <pre style={{ background: "#000", borderRadius: "10px", padding: "1rem", fontSize: "0.8125rem", color: COLORS.textPrimary, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, fontFamily: "'JetBrains Mono','Fira Code',monospace", border: `1px solid ${COLORS.border}`, flex: 1 }}>{securityFixedCode}</pre>
+                      </>
+                    )}
+                    {!securityFixedCode && !securityFixing && (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: COLORS.textMuted, fontSize: "0.875rem", textAlign: "center" }}>
+                        Click &ldquo;Auto-Fix All Issues&rdquo; to generate the fixed code.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
