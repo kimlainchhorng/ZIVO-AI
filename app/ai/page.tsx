@@ -8,8 +8,11 @@ import PlanViewer from "@/components/PlanViewer";
 import BuildOutputPanel from "@/components/BuildOutputPanel";
 import DiffViewer from "@/components/DiffViewer";
 import ModelSelector from "@/components/ModelSelector";
+import CommandPalette from "@/components/CommandPalette";
+import DesignSystemPanel from "@/components/DesignSystemPanel";
 import type { ProjectPlan } from "@/lib/ai/project-planner";
 import type { BuildError, BuildWarning } from "@/lib/ai/fix-loop";
+import type { ArchitecturePlan } from "@/app/api/plan/route";
 
 interface SecurityIssue {
   id: string;
@@ -240,6 +243,18 @@ function AIPageInner() {
     setConnectedGithubRepo(token && repo ? repo : null);
   }, []);
 
+  // Ctrl+K / Cmd+K command palette
+  useEffect(() => {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
+
   // Scroll chat to bottom
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -276,10 +291,17 @@ function AIPageInner() {
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const [buildIteration, setBuildIteration] = useState(0);
   const [isBuildRunning, setIsBuildRunning] = useState(false);
-  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan">("prompt");
+  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "files">("prompt");
   const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
   const [showDiff, setShowDiff] = useState(false);
   const [diffFileIndex, setDiffFileIndex] = useState(0);
+  // Architecture plan from /api/plan
+  const [planData, setPlanData] = useState<ArchitecturePlan | null>(null);
+  // Command palette + design system panel
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [designSystemOpen, setDesignSystemOpen] = useState(false);
+  // Abort controller for streaming build
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
@@ -314,11 +336,16 @@ function AIPageInner() {
     const stepTimer1 = setTimeout(() => setLoadingStep(1), LOADING_STEP1_DELAY);
     const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
 
+    // Create abort controller for this build
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const res = await fetch("/api/generate-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt, model }),
+        signal: controller.signal,
       });
       const data: GenerateSiteResponse = await res.json();
       setOutput(data);
@@ -345,11 +372,16 @@ function AIPageInner() {
         ...fileLogs,
         { text: `> Build complete in ${duration}ms ✓`, type: "success" },
       ]);
-    } catch {
-      setOutput({ error: "Request failed" });
-      setConsoleLogs((prev) => [...prev, { text: "> Error: Request failed", type: "error" }]);
+    } catch (err: unknown) {
+      if ((err as Error)?.name === "AbortError") {
+        setConsoleLogs((prev) => [...prev, { text: "> Build stopped by user.", type: "error" }]);
+      } else {
+        setOutput({ error: "Request failed" });
+        setConsoleLogs((prev) => [...prev, { text: "> Error: Request failed", type: "error" }]);
+      }
     }
 
+    abortControllerRef.current = null;
     clearTimeout(stepTimer1);
     clearTimeout(stepTimer2);
     setLoading(false);
@@ -357,20 +389,30 @@ function AIPageInner() {
     setIsBuildRunning(false);
   }
 
+  function handleStopBuild() {
+    abortControllerRef.current?.abort();
+  }
+
   async function handlePlan() {
     if (!prompt.trim()) return;
     setPlanLoading(true);
     setPlanResult(null);
+    setPlanData(null);
     setPlanOpen(true);
+    setActiveLeftTab("plan");
     try {
-      const res = await fetch("/api/builder", {
+      const res = await fetch("/api/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, planOnly: true }),
+        body: JSON.stringify({ prompt, model }),
       });
-      const data = await res.json();
-      if (data.error) { setPlanResult(`**Error:** ${data.error}`); }
-      else { setPlanResult(data.plan ?? "No plan returned."); }
+      const data = await res.json() as ArchitecturePlan & { error?: string };
+      if (data.error) {
+        setPlanResult(`**Error:** ${data.error}`);
+      } else {
+        setPlanData(data);
+        setPlanResult(null);
+      }
     } catch {
       setPlanResult("**Error:** Failed to generate plan.");
     }
@@ -853,17 +895,167 @@ function AIPageInner() {
                 <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
-              {/* Prompt / Plan Tabs */}
+              {/* Prompt / Plan / Files Tabs */}
               <div style={{ display: "flex", gap: "4px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px" }}>
-                {(["prompt", "plan"] as const).map((tab) => (
-                  <button key={tab} className="zivo-btn" onClick={() => setActiveLeftTab(tab)} style={{ flex: 1, padding: "0.35rem 0.5rem", borderRadius: "6px", border: "none", background: activeLeftTab === tab ? COLORS.accentGradient : "transparent", color: activeLeftTab === tab ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: activeLeftTab === tab ? 600 : 400, textTransform: "capitalize" }}>
-                    {tab === "prompt" ? "Prompt" : "Plan"}
+                {([
+                  ["prompt", "Prompt"],
+                  ["plan", "Plan"],
+                  ["files", "Files"],
+                ] as const).map(([tab, label]) => (
+                  <button
+                    key={tab}
+                    className="zivo-btn"
+                    onClick={() => setActiveLeftTab(tab)}
+                    style={{ flex: 1, padding: "0.35rem 0.5rem", borderRadius: "6px", border: "none", background: activeLeftTab === tab ? COLORS.accentGradient : "transparent", color: activeLeftTab === tab ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: activeLeftTab === tab ? 600 : 400, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem" }}
+                  >
+                    {tab === "files" && output?.files?.length ? (
+                      <><span>{label}</span><span style={{ background: "rgba(255,255,255,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.7rem", fontWeight: 700 }}>{output.files.length}</span></>
+                    ) : label}
                   </button>
                 ))}
               </div>
 
-              {/* Plan Viewer */}
-              {activeLeftTab === "plan" && <PlanViewer plan={plan} isLoading={isPlanLoading} />}
+              {/* Plan Viewer (structured ArchitecturePlan) */}
+              {activeLeftTab === "plan" && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  {(isPlanLoading || planLoading) && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "1rem", color: COLORS.textSecondary, fontSize: "0.8125rem" }}>
+                      <span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(139,92,246,0.3)", borderTop: "2px solid #8b5cf6", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                      Generating architecture plan…
+                    </div>
+                  )}
+                  {planData && !isPlanLoading && !planLoading && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      {/* Project type badge */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
+                        <span style={{ padding: "0.25rem 0.75rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.8125rem", fontWeight: 700, color: COLORS.accent }}>{planData.projectType}</span>
+                        <span style={{ padding: "0.2rem 0.6rem", background: planData.complexity === "complex" ? "rgba(239,68,68,0.12)" : planData.complexity === "medium" ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)", border: `1px solid ${planData.complexity === "complex" ? "rgba(239,68,68,0.3)" : planData.complexity === "medium" ? "rgba(245,158,11,0.3)" : "rgba(16,185,129,0.3)"}`, borderRadius: "20px", fontSize: "0.75rem", fontWeight: 600, color: planData.complexity === "complex" ? COLORS.error : planData.complexity === "medium" ? COLORS.warning : COLORS.success, textTransform: "capitalize" }}>{planData.complexity}</span>
+                        <span style={{ fontSize: "0.75rem", color: COLORS.textMuted }}>~{planData.estimatedFiles} files</span>
+                      </div>
+
+                      {/* Tech stack */}
+                      {planData.techStack.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.35rem" }}>Tech Stack</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                            {planData.techStack.map((t, i) => (
+                              <span key={i} title={t.purpose} style={{ padding: "0.2rem 0.55rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", fontSize: "0.75rem", color: COLORS.textSecondary }}>{t.name}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pages */}
+                      {planData.pages.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.35rem" }}>Pages ({planData.pages.length})</div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                            {planData.pages.map((p, i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.35rem 0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px" }}>
+                                <code style={{ fontSize: "0.7rem", color: COLORS.accent, fontFamily: "monospace", flexShrink: 0, marginTop: "1px" }}>{p.path}</code>
+                                <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{p.description}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Auth */}
+                      {planData.auth.required && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.6rem", background: "rgba(99,102,241,0.06)", border: `1px solid rgba(99,102,241,0.15)`, borderRadius: "6px", fontSize: "0.75rem" }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                          <span style={{ color: COLORS.textSecondary }}>Auth: <strong style={{ color: COLORS.textPrimary }}>{planData.auth.provider}</strong></span>
+                          {planData.auth.methods.map((m) => <span key={m} style={{ padding: "0 5px", background: "rgba(255,255,255,0.06)", borderRadius: "4px", color: COLORS.textMuted }}>{m}</span>)}
+                        </div>
+                      )}
+
+                      {/* Third-party services */}
+                      {planData.thirdPartyServices.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.35rem" }}>Services</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                            {planData.thirdPartyServices.map((s, i) => (
+                              <span key={i} style={{ padding: "0.2rem 0.55rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.success }}>{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Build This Plan button */}
+                      <button
+                        className="zivo-btn"
+                        onClick={() => { setActiveLeftTab("prompt"); handleBuild(); }}
+                        disabled={loading}
+                        style={{ width: "100%", padding: "0.55rem", background: COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: loading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.875rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", marginTop: "0.25rem" }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        Build This Plan ▶
+                      </button>
+                    </div>
+                  )}
+                  {!planData && !isPlanLoading && !planLoading && (
+                    <div style={{ textAlign: "center", padding: "1.5rem", color: COLORS.textMuted, fontSize: "0.8125rem" }}>
+                      Click <strong style={{ color: COLORS.textSecondary }}>Plan</strong> to generate an architecture plan for your project.
+                    </div>
+                  )}
+                  {/* Legacy PlanViewer fallback for older plan type */}
+                  {!planData && !isPlanLoading && !planLoading && plan && <PlanViewer plan={plan} isLoading={isPlanLoading} />}
+                </div>
+              )}
+
+              {/* Files Explorer Tab */}
+              {activeLeftTab === "files" && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  {!output?.files?.length ? (
+                    <div style={{ textAlign: "center", padding: "2rem 1rem", color: COLORS.textMuted, fontSize: "0.8125rem" }}>
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ margin: "0 auto 0.75rem", display: "block" }}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                      Build a project to see files here.
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                        <span style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Files</span>
+                        <span style={{ fontSize: "0.75rem", color: COLORS.textMuted }}>{output.files.length} files · {Math.round(output.files.reduce((acc, f) => acc + f.content.length, 0) / 1024)}KB</span>
+                      </div>
+                      {(() => {
+                        // Build folder groups
+                        const groups: Record<string, GeneratedFile[]> = {};
+                        for (const f of output.files) {
+                          const parts = f.path.split("/");
+                          const folder = parts.length > 1 ? parts.slice(0, -1).join("/") : ".";
+                          if (!groups[folder]) groups[folder] = [];
+                          groups[folder].push(f);
+                        }
+                        return Object.entries(groups).map(([folder, files]) => (
+                          <div key={folder} style={{ marginBottom: "0.5rem" }}>
+                            {folder !== "." && (
+                              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.2rem 0.5rem", marginBottom: "2px" }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                                <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, fontFamily: "monospace" }}>{folder}/</span>
+                              </div>
+                            )}
+                            {files.map((f, i) => {
+                              const filename = f.path.split("/").pop() ?? f.path;
+                              return (
+                                <div
+                                  key={i}
+                                  className="zivo-file"
+                                  onClick={() => { setActiveFile(f); setActiveTab("code"); }}
+                                  style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0.5rem", paddingLeft: folder !== "." ? "1.5rem" : "0.5rem", borderRadius: "6px", cursor: "pointer", background: activeFile?.path === f.path ? "rgba(99,102,241,0.12)" : "transparent", border: activeFile?.path === f.path ? "1px solid rgba(99,102,241,0.25)" : "1px solid transparent" }}
+                                >
+                                  <span>{getFileIcon(f.path)}</span>
+                                  <span style={{ flex: 1, fontSize: "0.8125rem", color: activeFile?.path === f.path ? COLORS.textPrimary : COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{filename}</span>
+                                  <span style={{ fontSize: "0.65rem", color: COLORS.textMuted }}>{Math.round(f.content.length / 1024 * 10) / 10}k</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ));
+                      })()}
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Unified Prompt Box */}
               {activeLeftTab === "prompt" && (
@@ -1685,6 +1877,28 @@ function AIPageInner() {
                   ↻
                 </button>
               )}
+
+              {/* Design System button */}
+              <button
+                className="zivo-btn"
+                onClick={() => setDesignSystemOpen(true)}
+                title="Design System Generator"
+                style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/></svg>
+                <span>Design</span>
+              </button>
+
+              {/* Cmd+K button */}
+              <button
+                className="zivo-btn"
+                onClick={() => setCommandPaletteOpen(true)}
+                title="Command Palette (Ctrl+K)"
+                style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.3rem" }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>
+                <kbd style={{ fontSize: "0.65rem", opacity: 0.6 }}>⌘K</kbd>
+              </button>
             </div>
             )}
 
@@ -1851,18 +2065,39 @@ function AIPageInner() {
               )}
 
               {/* Console Tab */}
-              {!loading && output && activeTab === "console" && (
-                <div style={{ width: "100%", height: "100%", padding: "1rem", animation: "fadeIn 0.3s ease", overflow: "auto", background: "#000" }}>
-                  <div style={{ fontFamily: "'Fira Code', 'SF Mono', 'Monaco', 'Consolas', monospace", fontSize: "0.8125rem", lineHeight: 1.8 }}>
-                    {consoleLogs.map((log, i) => (
-                      <div key={i} style={{ color: log.type === "error" ? COLORS.error : log.type === "success" ? COLORS.success : "#4ade80" }}>
-                        {log.text}
-                      </div>
-                    ))}
-                    {consoleLogs.length === 0 && (
-                      <div style={{ color: COLORS.textMuted }}>No console output yet.</div>
+              {activeTab === "console" && (
+                <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", background: "#000", animation: "fadeIn 0.3s ease" }}>
+                  {/* Console header with iteration info and stop button */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 1rem", borderBottom: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      {loading && (
+                        <><span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid rgba(99,241,118,0.3)", borderTop: "2px solid #4ade80", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /><span style={{ fontSize: "0.75rem", color: "#4ade80" }}>Building…</span></>
+                      )}
+                      {buildIteration > 0 && (
+                        <span style={{ fontSize: "0.7rem", color: COLORS.textMuted }}>Validation pass {buildIteration}/8</span>
+                      )}
+                    </div>
+                    {loading && (
+                      <button
+                        onClick={handleStopBuild}
+                        style={{ padding: "0.2rem 0.6rem", background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: "5px", color: "#ef4444", cursor: "pointer", fontSize: "0.7rem", fontWeight: 600 }}
+                      >
+                        ■ Stop Build
+                      </button>
                     )}
-                    <div ref={consoleEndRef} />
+                  </div>
+                  <div style={{ flex: 1, overflow: "auto", padding: "0.75rem 1rem" }}>
+                    <div style={{ fontFamily: "'Fira Code', 'SF Mono', 'Monaco', 'Consolas', monospace", fontSize: "0.8125rem", lineHeight: 1.8 }}>
+                      {consoleLogs.map((log, i) => (
+                        <div key={i} style={{ color: log.type === "error" ? COLORS.error : log.type === "success" ? COLORS.success : "#4ade80" }}>
+                          {log.text}
+                        </div>
+                      ))}
+                      {consoleLogs.length === 0 && (
+                        <div style={{ color: COLORS.textMuted }}>No console output yet. Start a build to see logs.</div>
+                      )}
+                      <div ref={consoleEndRef} />
+                    </div>
                   </div>
                 </div>
               )}
@@ -2254,6 +2489,27 @@ function AIPageInner() {
           <span style={{ color: COLORS.textMuted }}>{model} · {prompt.length} chars</span>
         </div>
       </div>
+
+      {/* Command Palette */}
+      {commandPaletteOpen && (
+        <CommandPalette
+          onClose={() => setCommandPaletteOpen(false)}
+          onSetPrompt={(p) => { setPrompt(p); setActiveLeftTab("prompt"); }}
+          onOpenFiles={() => setActiveLeftTab("files")}
+          onOpenDesignSystem={() => setDesignSystemOpen(true)}
+        />
+      )}
+
+      {/* Design System Panel */}
+      {designSystemOpen && (
+        <DesignSystemPanel
+          onClose={() => setDesignSystemOpen(false)}
+          onApply={(css) => {
+            setConsoleLogs((prev) => [...prev, { text: `> Design system applied (${css.length} chars of CSS variables)`, type: "success" }]);
+            setDesignSystemOpen(false);
+          }}
+        />
+      )}
     </>
   );
 }
