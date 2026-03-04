@@ -6,7 +6,7 @@ function getClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-export type WorkflowStepType = "Generate Code" | "Ask AI" | "Transform" | "Summarize" | "Scrape URL" | "Deploy";
+export type WorkflowStepType = "Generate Code" | "Ask AI" | "Transform" | "Summarize" | "Scrape URL" | "Deploy" | "Security Scan";
 
 export interface WorkflowStep {
   id: string;
@@ -55,6 +55,11 @@ async function runStep(step: WorkflowStep, previousOutput: string): Promise<Work
       "Ask AI": "You are ZIVO AI — a helpful assistant. Answer the user's question clearly and concisely.",
       "Transform": "You are ZIVO AI — a code transformation expert. Transform or refactor the provided code/content as requested.",
       "Summarize": "You are ZIVO AI — a summarization expert. Summarize the provided content clearly and concisely.",
+      "Security Scan": `You are ZIVO AI — a world-class application security expert.
+Analyze the provided code or description for security vulnerabilities.
+Identify: injection flaws, XSS, CSRF, exposed secrets, auth issues, insecure dependencies, path traversal, and other OWASP Top 10 issues.
+For each vulnerability found, provide: severity level, description, affected line/area, and specific remediation steps.
+Format your response as a structured security report with severity-categorized findings.`,
     };
 
     const systemPrompt = systemPrompts[step.type] ?? "You are ZIVO AI — a helpful assistant.";

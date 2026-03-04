@@ -19,7 +19,7 @@ const COLORS = {
   textMuted: "#475569",
 };
 
-type StepType = "Generate Code" | "Ask AI" | "Transform" | "Summarize" | "Scrape URL" | "Deploy";
+type StepType = "Generate Code" | "Ask AI" | "Transform" | "Summarize" | "Scrape URL" | "Deploy" | "Security Scan";
 type StepStatus = "pending" | "running" | "done" | "error";
 
 interface WorkflowStep {
@@ -38,8 +38,24 @@ interface SavedWorkflow {
   savedAt: number;
 }
 
-const STEP_TYPES: StepType[] = ["Generate Code", "Ask AI", "Transform", "Summarize", "Scrape URL", "Deploy"];
+interface RunStats {
+  completed: number;
+  failed: number;
+  elapsed: number;
+}
+
+interface RunHistoryEntry {
+  id: string;
+  name: string;
+  ranAt: number;
+  completed: number;
+  failed: number;
+  elapsed: number;
+}
+
+const STEP_TYPES: StepType[] = ["Generate Code", "Ask AI", "Transform", "Summarize", "Scrape URL", "Deploy", "Security Scan"];
 const WORKFLOWS_KEY = "zivo_workflows";
+const RUN_HISTORY_KEY = "zivo_workflow_runs";
 
 function genId() {
   return `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -55,6 +71,16 @@ function saveWorkflows(wfs: SavedWorkflow[]): void {
   localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(wfs));
 }
 
+function loadRunHistory(): RunHistoryEntry[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(RUN_HISTORY_KEY) ?? "[]"); } catch { return []; }
+}
+
+function saveRunHistory(entries: RunHistoryEntry[]): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(RUN_HISTORY_KEY, JSON.stringify(entries.slice(0, 5)));
+}
+
 const STEP_COLORS: Record<StepType, string> = {
   "Generate Code": "#6366f1",
   "Ask AI": "#8b5cf6",
@@ -62,7 +88,54 @@ const STEP_COLORS: Record<StepType, string> = {
   "Summarize": "#10b981",
   "Scrape URL": "#f59e0b",
   "Deploy": "#ef4444",
+  "Security Scan": "#f97316",
 };
+
+function StepIcon({ type }: { type: StepType }) {
+  const color = STEP_COLORS[type];
+  const s: React.CSSProperties = { display: "inline-block", flexShrink: 0 };
+  if (type === "Generate Code")
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>;
+  if (type === "Ask AI")
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="6" r="3" fill={color} stroke="none"/></svg>;
+  if (type === "Transform")
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>;
+  if (type === "Summarize")
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><line x1="8" x2="21" y1="6" y2="6"/><line x1="8" x2="21" y1="12" y2="12"/><line x1="8" x2="21" y1="18" y2="18"/><line x1="3" x2="3.01" y1="6" y2="6"/><line x1="3" x2="3.01" y1="12" y2="12"/><line x1="3" x2="3.01" y1="18" y2="18"/></svg>;
+  if (type === "Scrape URL")
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>;
+  if (type === "Deploy")
+    return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>;
+  // Security Scan
+  return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>;
+}
+
+const WORKFLOW_TEMPLATES = [
+  {
+    name: "Code → Review → Deploy",
+    steps: [
+      { type: "Generate Code" as StepType, input: "Build a React component for a login form with validation" },
+      { type: "Ask AI" as StepType, input: "Review the code above for best practices, type safety, and potential bugs" },
+      { type: "Deploy" as StepType, input: "Deploy the reviewed component to Vercel" },
+    ],
+  },
+  {
+    name: "Scrape → Summarize → Report",
+    steps: [
+      { type: "Scrape URL" as StepType, input: "https://news.ycombinator.com" },
+      { type: "Summarize" as StepType, input: "Summarize the top 5 stories from the scraped content" },
+      { type: "Transform" as StepType, input: "Format the summary as a professional daily digest email" },
+    ],
+  },
+  {
+    name: "Security Scan → Fix → Report",
+    steps: [
+      { type: "Security Scan" as StepType, input: "Scan the codebase for SQL injection, XSS, CSRF, and exposed secrets" },
+      { type: "Generate Code" as StepType, input: "Fix all critical and high severity vulnerabilities found in the scan" },
+      { type: "Summarize" as StepType, input: "Generate a security audit report with fixed issues and recommendations" },
+    ],
+  },
+];
 
 export default function WorkflowPage() {
   const [steps, setSteps] = useState<WorkflowStep[]>([]);
@@ -71,6 +144,9 @@ export default function WorkflowPage() {
   const [savedWorkflows, setSavedWorkflows] = useState<SavedWorkflow[]>(() => loadWorkflows());
   const [showSaved, setShowSaved] = useState(false);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [runStats, setRunStats] = useState<RunStats | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   function addStep(type: StepType = "Ask AI") {
     setSteps((prev) => [...prev, { id: genId(), type, input: "", status: "pending" }]);
@@ -84,17 +160,50 @@ export default function WorkflowPage() {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
 
+  function moveStepUp(id: string) {
+    setSteps((prev) => {
+      const i = prev.findIndex((s) => s.id === id);
+      if (i <= 0) return prev;
+      const next = [...prev];
+      [next[i - 1], next[i]] = [next[i], next[i - 1]];
+      return next;
+    });
+  }
+
+  function moveStepDown(id: string) {
+    setSteps((prev) => {
+      const i = prev.findIndex((s) => s.id === id);
+      if (i >= prev.length - 1) return prev;
+      const next = [...prev];
+      [next[i], next[i + 1]] = [next[i + 1], next[i]];
+      return next;
+    });
+  }
+
+  function duplicateStep(id: string) {
+    setSteps((prev) => {
+      const step = prev.find((s) => s.id === id);
+      if (!step) return prev;
+      const idx = prev.findIndex((s) => s.id === id);
+      const clone: WorkflowStep = { ...step, id: genId(), status: "pending", output: undefined, error: undefined };
+      const next = [...prev];
+      next.splice(idx + 1, 0, clone);
+      return next;
+    });
+  }
+
   async function runWorkflow() {
     if (steps.length === 0 || running) return;
 
-    // Reset statuses
     setSteps((prev) => prev.map((s) => ({ ...s, status: "pending", output: undefined, error: undefined })));
     setRunning(true);
+    setRunStats(null);
+    setProgress(0);
 
     const stepsToRun = steps.map((s) => ({ id: s.id, type: s.type, input: s.input }));
-
-    // Set first step to running
     setSteps((prev) => prev.map((s, i) => (i === 0 ? { ...s, status: "running" } : s)));
+
+    const startTime = Date.now();
 
     try {
       const res = await fetch("/api/workflow", {
@@ -105,18 +214,25 @@ export default function WorkflowPage() {
       const data = await res.json();
 
       if (data.results && Array.isArray(data.results)) {
+        const results = data.results as Array<{ id: string; output: string; status: string; error?: string }>;
         setSteps((prev) =>
           prev.map((s) => {
-            const result = (data.results as Array<{ id: string; output: string; status: string; error?: string }>).find((r) => r.id === s.id);
+            const result = results.find((r) => r.id === s.id);
             if (!result) return s;
-            return {
-              ...s,
-              status: result.status as StepStatus,
-              output: result.output,
-              error: result.error,
-            };
+            return { ...s, status: result.status as StepStatus, output: result.output, error: result.error };
           })
         );
+        const completed = results.filter((r) => r.status === "done").length;
+        const failed = results.filter((r) => r.status === "error").length;
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        const stats: RunStats = { completed, failed, elapsed };
+        setRunStats(stats);
+        setProgress(100);
+
+        // Save to run history
+        const histEntry: RunHistoryEntry = { id: genId(), name: workflowName, ranAt: Date.now(), ...stats };
+        const hist = loadRunHistory();
+        saveRunHistory([histEntry, ...hist]);
       }
     } catch {
       setSteps((prev) => prev.map((s) => ({ ...s, status: "error", error: "Request failed" })));
@@ -141,12 +257,20 @@ export default function WorkflowPage() {
     setWorkflowName(wf.name);
     setSteps(wf.steps.map((s) => ({ ...s, status: "pending" })));
     setShowSaved(false);
+    setRunStats(null);
   }
 
   function deleteWorkflow(id: string) {
     const updated = savedWorkflows.filter((w) => w.id !== id);
     saveWorkflows(updated);
     setSavedWorkflows(updated);
+  }
+
+  function loadTemplate(tpl: typeof WORKFLOW_TEMPLATES[number]) {
+    setWorkflowName(tpl.name);
+    setSteps(tpl.steps.map((s) => ({ id: genId(), ...s, status: "pending" as StepStatus })));
+    setShowTemplates(false);
+    setRunStats(null);
   }
 
   const statusIcon: Record<StepStatus, string> = {
@@ -168,18 +292,118 @@ export default function WorkflowPage() {
       <style>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes progressBar { from { width: 0%; } to { width: 100%; } }
+        @keyframes connectorPulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
         * { box-sizing: border-box; }
         ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
         .zwf-btn:hover { opacity: 0.85; }
-        .zwf-step:hover { border-color: rgba(255,255,255,0.16) !important; }
+        .zwf-step-card { transition: box-shadow 0.2s, border-color 0.2s, transform 0.15s; }
+        .zwf-step-card:hover { box-shadow: 0 4px 24px rgba(99,102,241,0.12); transform: translateY(-1px); }
         .zwf-remove:hover { color: #ef4444 !important; }
+        .zwf-icon-btn:hover { background: rgba(255,255,255,0.08) !important; }
+        .severity-critical { color: #ef4444; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }
+        .severity-high { color: #f97316; background: rgba(249,115,22,0.1); border-color: rgba(249,115,22,0.3); }
+        .severity-medium { color: #f59e0b; background: rgba(245,158,11,0.1); border-color: rgba(245,158,11,0.3); }
+        .severity-low { color: #3b82f6; background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.3); }
+        .severity-info { color: #94a3b8; background: rgba(148,163,184,0.1); border-color: rgba(148,163,184,0.3); }
       `}</style>
       <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: COLORS.bg, color: COLORS.textPrimary, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}>
         <NavBar />
-        <div style={{ flex: 1, display: 'flex', gap: '1.5rem', padding: '2rem', maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
 
-          {/* Main workflow area */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1.25rem', animation: 'fadeIn 0.4s ease' }}>
+        {/* Progress Bar */}
+        {running && (
+          <div style={{ height: '3px', background: COLORS.border, position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', background: COLORS.accentGradient, transition: 'width 0.5s ease', width: `${progress}%` }} />
+          </div>
+        )}
+
+        <div style={{ flex: 1, display: 'flex', gap: 0, maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+
+          {/* Left Sidebar */}
+          <div style={{ width: '280px', flexShrink: 0, borderRight: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: '1.25rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+            {/* Add Steps */}
+            <div>
+              <p style={{ margin: '0 0 0.6rem', fontSize: '0.75rem', fontWeight: 600, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Add Step</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                {STEP_TYPES.map((type) => (
+                  <button
+                    key={type}
+                    className="zwf-btn"
+                    onClick={() => addStep(type)}
+                    style={{ padding: '0.45rem 0.75rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textSecondary, cursor: 'pointer', fontSize: '0.8125rem', transition: 'opacity 0.15s', display: 'flex', alignItems: 'center', gap: '0.5rem', textAlign: 'left' }}
+                  >
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: STEP_COLORS[type], flexShrink: 0 }} />
+                    <StepIcon type={type} />
+                    {type}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Templates */}
+            <div>
+              <button
+                className="zwf-btn"
+                onClick={() => setShowTemplates(!showTemplates)}
+                style={{ width: '100%', padding: '0.45rem 0.75rem', background: 'transparent', border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textSecondary, cursor: 'pointer', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'opacity 0.15s' }}
+              >
+                <span style={{ fontWeight: 600, color: COLORS.textPrimary, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Templates</span>
+                <span style={{ fontSize: '0.75rem' }}>{showTemplates ? '▲' : '▼'}</span>
+              </button>
+              {showTemplates && (
+                <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', animation: 'slideDown 0.2s ease' }}>
+                  {WORKFLOW_TEMPLATES.map((tpl) => (
+                    <button
+                      key={tpl.name}
+                      className="zwf-btn"
+                      onClick={() => loadTemplate(tpl)}
+                      style={{ padding: '0.6rem 0.75rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textPrimary, cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left', transition: 'opacity 0.15s' }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>{tpl.name}</div>
+                      <div style={{ fontSize: '0.75rem', color: COLORS.textMuted }}>{tpl.steps.length} steps</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Saved Workflows */}
+            <div>
+              <button
+                className="zwf-btn"
+                onClick={() => setShowSaved(!showSaved)}
+                style={{ width: '100%', padding: '0.45rem 0.75rem', background: 'transparent', border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textSecondary, cursor: 'pointer', fontSize: '0.8125rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', transition: 'opacity 0.15s' }}
+              >
+                <span style={{ fontWeight: 600, color: COLORS.textPrimary, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Saved ({savedWorkflows.length})</span>
+                <span style={{ fontSize: '0.75rem' }}>{showSaved ? '▲' : '▼'}</span>
+              </button>
+              {showSaved && (
+                <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', animation: 'slideDown 0.2s ease' }}>
+                  {savedWorkflows.length === 0 ? (
+                    <p style={{ fontSize: '0.8125rem', color: COLORS.textMuted, margin: '0.35rem 0' }}>No saved workflows yet.</p>
+                  ) : savedWorkflows.map((wf) => (
+                    <div key={wf.id} style={{ padding: '0.5rem 0.75rem', background: COLORS.bgCard, borderRadius: '8px', border: `1px solid ${COLORS.border}` }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                        <span style={{ fontSize: '0.8125rem', color: COLORS.textPrimary, fontWeight: 500 }}>{wf.name}</span>
+                        <span style={{ fontSize: '0.7rem', color: COLORS.textMuted }}>{wf.steps.length} steps</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.35rem' }}>
+                        <button onClick={() => loadWorkflow(wf)} style={{ flex: 1, padding: '0.2rem 0.5rem', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '5px', color: COLORS.accent, cursor: 'pointer', fontSize: '0.75rem' }}>Load</button>
+                        <button onClick={() => deleteWorkflow(wf.id)} style={{ padding: '0.2rem 0.5rem', background: 'transparent', border: `1px solid ${COLORS.border}`, borderRadius: '5px', color: COLORS.error, cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Main Area */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '1.5rem 2rem', gap: '1.25rem', overflowY: 'auto', animation: 'fadeIn 0.4s ease' }}>
+
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
               <input
@@ -188,9 +412,6 @@ export default function WorkflowPage() {
                 style={{ background: 'transparent', border: 'none', fontSize: '1.5rem', fontWeight: 700, color: COLORS.textPrimary, outline: 'none', minWidth: '200px', letterSpacing: '-0.02em' }}
               />
               <div style={{ flex: 1 }} />
-              <button className="zwf-btn" onClick={() => setShowSaved(!showSaved)} style={{ padding: '0.45rem 0.85rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textSecondary, cursor: 'pointer', fontSize: '0.8125rem', transition: 'opacity 0.15s' }}>
-                {showSaved ? 'Hide Saved' : `Saved (${savedWorkflows.length})`}
-              </button>
               <button className="zwf-btn" onClick={saveWorkflow} disabled={steps.length === 0} style={{ padding: '0.45rem 0.85rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textSecondary, cursor: steps.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.8125rem', opacity: steps.length === 0 ? 0.5 : 1, transition: 'opacity 0.15s' }}>
                 Save
               </button>
@@ -206,49 +427,45 @@ export default function WorkflowPage() {
               </button>
             </div>
 
-            {/* Saved workflows panel */}
-            {showSaved && (
-              <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '12px', padding: '1rem', animation: 'fadeIn 0.3s ease' }}>
-                <h3 style={{ margin: '0 0 0.75rem', fontSize: '0.875rem', fontWeight: 600, color: COLORS.textSecondary }}>Saved Workflows</h3>
-                {savedWorkflows.length === 0 ? (
-                  <p style={{ fontSize: '0.8125rem', color: COLORS.textMuted, margin: 0 }}>No saved workflows yet.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {savedWorkflows.map((wf) => (
-                      <div key={wf.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', background: COLORS.bgPanel, borderRadius: '8px', border: `1px solid ${COLORS.border}` }}>
-                        <span style={{ flex: 1, fontSize: '0.875rem', color: COLORS.textPrimary }}>{wf.name}</span>
-                        <span style={{ fontSize: '0.75rem', color: COLORS.textMuted }}>{wf.steps.length} steps</span>
-                        <button onClick={() => loadWorkflow(wf)} style={{ padding: '0.25rem 0.65rem', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '6px', color: COLORS.accent, cursor: 'pointer', fontSize: '0.75rem' }}>Load</button>
-                        <button onClick={() => deleteWorkflow(wf.id)} style={{ padding: '0.25rem 0.65rem', background: 'transparent', border: `1px solid ${COLORS.border}`, borderRadius: '6px', color: COLORS.error, cursor: 'pointer', fontSize: '0.75rem' }}>Delete</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {/* Stats Bar */}
+            {runStats && (
+              <div style={{ display: 'flex', gap: '1rem', padding: '0.65rem 1rem', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '10px', animation: 'slideDown 0.3s ease', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.8125rem', color: COLORS.success }}><strong>{runStats.completed}</strong> completed</span>
+                {runStats.failed > 0 && <span style={{ fontSize: '0.8125rem', color: COLORS.error }}><strong>{runStats.failed}</strong> failed</span>}
+                <span style={{ fontSize: '0.8125rem', color: COLORS.textMuted }}>Elapsed: <strong style={{ color: COLORS.textSecondary }}>{runStats.elapsed}s</strong></span>
               </div>
             )}
 
             {/* Steps */}
             {steps.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem', textAlign: 'center', color: COLORS.textMuted, border: `2px dashed ${COLORS.border}`, borderRadius: '16px' }}>
-                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚡</div>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="rgba(99,102,241,0.4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem', animation: 'pulse 2s infinite' }}><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 <p style={{ fontSize: '1rem', marginBottom: '0.5rem', color: COLORS.textSecondary }}>No steps yet</p>
-                <p style={{ fontSize: '0.875rem' }}>Add steps below to build your workflow</p>
+                <p style={{ fontSize: '0.875rem' }}>Add steps from the left panel or pick a template to get started</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
                 {steps.map((step, index) => (
                   <div key={step.id}>
                     {index > 0 && (
-                      <div style={{ display: 'flex', justifyContent: 'center', margin: '0.25rem 0' }}>
-                        <div style={{ width: '2px', height: '20px', background: COLORS.border }} />
+                      <div style={{ display: 'flex', justifyContent: 'center', margin: '0', position: 'relative', height: '28px', alignItems: 'center' }}>
+                        <div style={{ width: '2px', height: '28px', background: `linear-gradient(to bottom, ${STEP_COLORS[steps[index-1]?.type] ?? COLORS.border}44, ${STEP_COLORS[step.type]}44)`, position: 'relative' }}>
+                          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '6px', height: '6px', borderRadius: '50%', background: STEP_COLORS[step.type], animation: 'connectorPulse 1.5s infinite' }} />
+                        </div>
                       </div>
                     )}
                     <div
-                      className="zwf-step"
-                      style={{ background: COLORS.bgCard, border: `1px solid ${step.status === 'running' ? COLORS.warning : step.status === 'done' ? 'rgba(16,185,129,0.3)' : step.status === 'error' ? 'rgba(239,68,68,0.3)' : COLORS.border}`, borderRadius: '12px', overflow: 'hidden', transition: 'border-color 0.2s' }}
+                      className="zwf-step-card"
+                      style={{ background: COLORS.bgCard, border: `1px solid ${step.status === 'running' ? COLORS.warning : step.status === 'done' ? 'rgba(16,185,129,0.3)' : step.status === 'error' ? 'rgba(239,68,68,0.3)' : COLORS.border}`, borderRadius: '12px', overflow: 'hidden', position: 'relative' }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', cursor: 'pointer' }} onClick={() => setExpandedStep(expandedStep === step.id ? null : step.id)}>
-                        <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: `${STEP_COLORS[step.type]}22`, border: `1px solid ${STEP_COLORS[step.type]}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700, color: STEP_COLORS[step.type], flexShrink: 0 }}>{index + 1}</div>
+                      {/* Color bar */}
+                      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: '3px', background: STEP_COLORS[step.type], borderRadius: '12px 0 0 12px' }} />
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem 0.75rem 1.25rem', cursor: 'pointer' }} onClick={() => setExpandedStep(expandedStep === step.id ? null : step.id)}>
+                        <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: `${STEP_COLORS[step.type]}22`, border: `1px solid ${STEP_COLORS[step.type]}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <StepIcon type={step.type} />
+                        </div>
+                        <span style={{ fontSize: '0.7rem', fontWeight: 700, color: COLORS.textMuted, flexShrink: 0 }}>#{index + 1}</span>
                         <select
                           value={step.type}
                           onChange={(e) => { e.stopPropagation(); updateStep(step.id, { type: e.target.value as StepType }); }}
@@ -258,11 +475,33 @@ export default function WorkflowPage() {
                           {STEP_TYPES.map((t) => <option key={t} value={t} style={{ background: COLORS.bgPanel }}>{t}</option>)}
                         </select>
                         <div style={{ flex: 1 }} />
+                        {/* Move buttons */}
+                        <button
+                          className="zwf-icon-btn"
+                          onClick={(e) => { e.stopPropagation(); moveStepUp(step.id); }}
+                          title="Move up"
+                          style={{ background: 'transparent', border: 'none', color: COLORS.textMuted, cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.3rem', borderRadius: '4px', transition: 'background 0.15s', opacity: index === 0 ? 0.3 : 1 }}
+                          disabled={index === 0}
+                        >▲</button>
+                        <button
+                          className="zwf-icon-btn"
+                          onClick={(e) => { e.stopPropagation(); moveStepDown(step.id); }}
+                          title="Move down"
+                          style={{ background: 'transparent', border: 'none', color: COLORS.textMuted, cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.3rem', borderRadius: '4px', transition: 'background 0.15s', opacity: index === steps.length - 1 ? 0.3 : 1 }}
+                          disabled={index === steps.length - 1}
+                        >▼</button>
+                        {/* Duplicate */}
+                        <button
+                          className="zwf-icon-btn"
+                          onClick={(e) => { e.stopPropagation(); duplicateStep(step.id); }}
+                          title="Duplicate"
+                          style={{ background: 'transparent', border: 'none', color: COLORS.textMuted, cursor: 'pointer', fontSize: '0.75rem', padding: '0.2rem 0.3rem', borderRadius: '4px', transition: 'background 0.15s' }}
+                        >□</button>
                         <span style={{ fontSize: '0.875rem', color: statusColor[step.status], fontWeight: step.status === 'running' ? 700 : 400, animation: step.status === 'running' ? 'spin 1s linear infinite' : 'none', display: 'inline-block' }}>{statusIcon[step.status]}</span>
                         <button className="zwf-remove" onClick={(e) => { e.stopPropagation(); removeStep(step.id); }} style={{ background: 'transparent', border: 'none', color: COLORS.textMuted, cursor: 'pointer', fontSize: '1.1rem', transition: 'color 0.15s' }}>×</button>
                       </div>
                       {expandedStep === step.id && (
-                        <div style={{ padding: '0 1rem 0.75rem', borderTop: `1px solid ${COLORS.border}` }}>
+                        <div style={{ padding: '0 1rem 0.75rem 1.25rem', borderTop: `1px solid ${COLORS.border}`, animation: 'slideDown 0.2s ease' }}>
                           <textarea
                             value={step.input}
                             onChange={(e) => updateStep(step.id, { input: e.target.value })}
@@ -273,7 +512,7 @@ export default function WorkflowPage() {
                           {step.output && (
                             <div style={{ marginTop: '0.75rem' }}>
                               <p style={{ margin: '0 0 0.35rem', fontSize: '0.75rem', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Output</p>
-                              <div style={{ background: COLORS.bgPanel, border: `1px solid rgba(16,185,129,0.2)`, borderRadius: '8px', padding: '0.6rem 0.75rem', fontSize: '0.8125rem', color: COLORS.textPrimary, maxHeight: '200px', overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{step.output}</div>
+                              <pre style={{ background: COLORS.bgPanel, border: `1px solid rgba(16,185,129,0.2)`, borderRadius: '8px', padding: '0.75rem', fontSize: '0.8125rem', color: COLORS.textPrimary, maxHeight: '240px', overflow: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: "'JetBrains Mono', 'Fira Code', monospace" }}>{step.output}</pre>
                             </div>
                           )}
                           {step.error && (
@@ -286,20 +525,6 @@ export default function WorkflowPage() {
                 ))}
               </div>
             )}
-
-            {/* Add step */}
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              {STEP_TYPES.map((type) => (
-                <button
-                  key={type}
-                  className="zwf-btn"
-                  onClick={() => addStep(type)}
-                  style={{ padding: '0.4rem 0.85rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '20px', color: COLORS.textSecondary, cursor: 'pointer', fontSize: '0.8125rem', transition: 'opacity 0.15s', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                >
-                  <span style={{ color: STEP_COLORS[type], fontSize: '0.7rem' }}>●</span> + {type}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
       </div>
