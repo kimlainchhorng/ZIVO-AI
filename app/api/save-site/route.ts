@@ -145,7 +145,7 @@ async function supabaseDeleteOldestVersions(
   });
   if (!res.ok) return;
   const rows = await res.json().catch(() => []) as Array<{ id: string }>;
-  const toDelete = rows.slice(0, Math.max(0, rows.length - keepCount + 1));
+  const toDelete = rows.slice(0, Math.max(0, rows.length - keepCount));
   for (const row of toDelete) {
     await supabaseDeleteVersion(config, row.id);
   }

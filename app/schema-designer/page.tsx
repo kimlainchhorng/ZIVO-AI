@@ -292,7 +292,7 @@ export default function SchemaDesignerPage() {
           primaryKey: decorators?.includes("@id") ?? false,
         });
       }
-      newTables.push({ id: Date.now().toString() + newTables.length, name: modelName, fields });
+      newTables.push({ id: `${Date.now()}-${newTables.length}`, name: modelName, fields });
     }
     if (newTables.length > 0) {
       setTables(newTables);

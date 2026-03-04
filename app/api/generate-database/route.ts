@@ -49,7 +49,7 @@ Always generate:
 - Migration commands in the commands array
 
 Follow best practices:
-- Use cuid2() or uuid() for ID generation
+- Use cuid2() for ID generation (via @paralleldrive/cuid2 package)
 - Add proper indexes on foreign keys and frequently queried fields
 - Include created_at/updated_at timestamps
 - Add cascade delete where appropriate
@@ -75,7 +75,7 @@ export async function POST(req: Request) {
     }: GenerateDatabaseRequest = body;
 
     const ormInstructions: Record<string, string> = {
-      prisma: "Use Prisma ORM. Generate prisma/schema.prisma with all models, relations, and @@index directives. Include lib/prisma.ts singleton client. Use @default(cuid()) for IDs.",
+      prisma: "Use Prisma ORM. Generate prisma/schema.prisma with all models, relations, and @@index directives. Include lib/prisma.ts singleton client. Use @default(cuid2()) for IDs.",
       drizzle: "Use Drizzle ORM. Generate drizzle/schema.ts with all tables using pgTable/mysqlTable/sqliteTable as appropriate. Include drizzle.config.ts and lib/db.ts client. Use cuid2 for IDs.",
       typeorm: "Use TypeORM. Generate entity files in src/entities/ with decorators. Include data-source.ts config and repository classes in src/repositories/. Use UUID for IDs.",
     };

@@ -15,12 +15,17 @@ export default function StreamingOutput({
   onComplete,
   className = "",
 }: StreamingOutputProps) {
+  const onCompleteRef = useRef(onComplete);
   const [output, setOutput] = useState("");
   const [status, setStatus] = useState<StreamStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLPreElement>(null);
   const fullTextRef = useRef("");
   const prevStreamRef = useRef<ReadableStream<string> | null>(null);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  });
 
   useEffect(() => {
     // Only start a new stream read if the stream reference changed
@@ -55,7 +60,7 @@ export default function StreamingOutput({
         }
         if (!cancelled) {
           setStatus("done");
-          onComplete?.(fullTextRef.current);
+          onCompleteRef.current?.(fullTextRef.current);
         }
       } catch (err: unknown) {
         if (!cancelled) {
@@ -70,7 +75,6 @@ export default function StreamingOutput({
     return () => {
       cancelled = true;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream]);
 
   const handleCopy = () => {
