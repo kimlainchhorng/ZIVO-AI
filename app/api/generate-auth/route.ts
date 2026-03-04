@@ -14,8 +14,8 @@ export interface AuthFile {
 }
 
 export interface GenerateAuthRequest {
-  provider?: "supabase" | "next-auth" | "both";
-  oauthProviders?: string[];
+  provider?: "clerk" | "supabase" | "nextauth" | "lucia";
+  features?: string[];
   appName?: string;
 }
 
@@ -23,11 +23,13 @@ export interface GenerateAuthResponse {
   files: AuthFile[];
   summary: string;
   setupInstructions: string;
+  envVars: string[];
+  commands: string[];
 }
 
-const AUTH_SYSTEM_PROMPT = `You are ZIVO AI — an expert full-stack developer specializing in authentication systems.
+const AUTH_SYSTEM_PROMPT = `You are ZIVO AI — an expert full-stack developer specializing in authentication systems for Next.js App Router.
 
-Generate a complete, production-ready authentication system for a Next.js App Router project.
+Generate a complete, production-ready authentication system.
 
 When given a request, respond ONLY with a valid JSON object:
 {
@@ -35,16 +37,18 @@ When given a request, respond ONLY with a valid JSON object:
     { "path": "relative/path", "content": "...", "action": "create" }
   ],
   "summary": "Brief description",
-  "setupInstructions": "Step-by-step setup instructions"
+  "setupInstructions": "Step-by-step setup instructions",
+  "envVars": ["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=..."],
+  "commands": ["npm install @clerk/nextjs"]
 }
 
 Always include:
-- app/login/page.tsx — Login page with email/password form
-- app/register/page.tsx — Registration page
-- middleware.ts — Protected route middleware
+- app/(auth)/login/page.tsx — Login page with styled form
+- app/(auth)/register/page.tsx — Registration page
+- middleware.ts — Protected route middleware with matcher config
 - components/providers/AuthProvider.tsx — Auth context provider
-- lib/auth.ts — Auth utility functions and JWT helpers
-- app/api/auth/[...nextauth]/route.ts — Next-Auth v5 API route (if next-auth selected)
+- lib/auth.ts — Auth utility functions and session helpers
+- hooks/useAuth.ts — Custom React hook for auth state
 
 Use TypeScript, Tailwind CSS, and production best practices.
 Return ONLY valid JSON, no markdown fences, no extra text.`;
@@ -60,24 +64,42 @@ export async function POST(req: Request) {
 
     const body = await req.json();
     const {
-      provider = "both",
-      oauthProviders = ["google", "github"],
+      provider = "nextauth",
+      features = ["oauth-google", "oauth-github"],
       appName = "My App",
     }: GenerateAuthRequest = body;
 
+    const featureList = Array.isArray(features) ? features : ["oauth-google"];
+    const hasOAuth = featureList.some((f) => f.startsWith("oauth-"));
+    const hasMagicLink = featureList.includes("magic-link");
+    const has2FA = featureList.includes("2fa");
+
+    const providerInstructions: Record<string, string> = {
+      clerk: "Use Clerk for authentication. Import from @clerk/nextjs. Include ClerkProvider, SignIn/SignUp components, useUser/useAuth hooks, and route protection via clerkMiddleware.",
+      supabase: "Use Supabase Auth. Import from @supabase/supabase-js and @supabase/ssr. Include createClient helper for server/client, auth callbacks route, and session management.",
+      nextauth: "Use NextAuth.js v5 (Auth.js). Include auth.ts config, app/api/auth/[...nextauth]/route.ts, Session provider, and useSession hook.",
+      lucia: "Use Lucia Auth v3. Include lucia.ts config, session middleware, login/logout action server functions, and validateRequest helper.",
+    };
+
     const userPrompt = `Generate a complete authentication system for a Next.js App Router project called "${appName}".
 Auth provider: ${provider}
-OAuth providers: ${oauthProviders.join(", ")}
+Provider instructions: ${providerInstructions[provider] ?? providerInstructions["nextauth"]}
+Features requested: ${featureList.join(", ")}
 
-Include:
-- Supabase Auth setup (email/password + OAuth: ${oauthProviders.join(", ")})
-- Next-Auth v5 configuration
-- Login page (app/login/page.tsx)
-- Register page (app/register/page.tsx)
+${hasOAuth ? `Include OAuth providers: ${featureList.filter((f) => f.startsWith("oauth-")).map((f) => f.replace("oauth-", "")).join(", ")}` : ""}
+${hasMagicLink ? "Include magic link / passwordless email sign-in flow." : ""}
+${has2FA ? "Include two-factor authentication (TOTP via authenticator app + backup codes)." : ""}
+
+Generate:
+- Auth configuration files
+- Login page (app/(auth)/login/page.tsx) with all enabled auth methods
+- Register page (app/(auth)/register/page.tsx)
 - Protected route middleware (middleware.ts)
 - Auth context provider (components/providers/AuthProvider.tsx)
-- JWT session handling utilities
-- Password reset flow`;
+- Session handling hooks (hooks/useAuth.ts)
+- Auth utilities (lib/auth.ts)
+- Profile page (app/(auth)/profile/page.tsx)
+- Password reset flow (if applicable)`;
 
     const response = await getClient().chat.completions.create({
       model: "gpt-4o",

@@ -17,6 +17,10 @@ export interface GenerateMonetizationRequest {
   appName?: string;
   model?: "subscription" | "one-time" | "usage-based" | "all";
   tiers?: string[];
+  lemonSqueezy?: boolean;
+  usageBasedBilling?: boolean;
+  freemiumFeatureFlags?: boolean;
+  affiliateSystem?: boolean;
 }
 
 export interface GenerateMonetizationResponse {
@@ -26,7 +30,7 @@ export interface GenerateMonetizationResponse {
   requiredEnvVars: string[];
 }
 
-const MONETIZATION_SYSTEM_PROMPT = `You are ZIVO AI — an expert in SaaS monetization and Stripe integration.
+const MONETIZATION_SYSTEM_PROMPT = `You are ZIVO AI — an expert in SaaS monetization, Stripe integration, and LemonSqueezy.
 
 Generate production-ready monetization code for a Next.js App Router project.
 
@@ -41,12 +45,12 @@ Respond ONLY with a valid JSON object:
 }
 
 Always include:
-- components/PricingPage.tsx — Beautiful 3-tier pricing table with Stripe Checkout
+- components/PricingPage.tsx — Beautiful 3-tier pricing table with Checkout integration
 - app/api/stripe/webhook/route.ts — Stripe webhook handler
 - app/api/stripe/create-checkout/route.ts — Create checkout session
 - app/api/stripe/create-portal/route.ts — Customer billing portal
 - lib/stripe.ts — Stripe client and helpers
-- middleware.ts updates for subscription gating
+- middleware.ts — Subscription gating that checks plan tier from Supabase/DB
 
 Return ONLY valid JSON, no markdown fences, no extra text.`;
 
@@ -64,7 +68,33 @@ export async function POST(req: Request) {
       appName = "My App",
       model = "subscription",
       tiers = ["Free", "Pro", "Enterprise"],
+      lemonSqueezy = false,
+      usageBasedBilling = false,
+      freemiumFeatureFlags = false,
+      affiliateSystem = false,
     } = body;
+
+    const extraFeatures: string[] = [];
+    if (lemonSqueezy) {
+      extraFeatures.push(
+        "LemonSqueezy integration: lib/lemonsqueezy.ts, app/api/lemonsqueezy/webhook/route.ts, app/api/lemonsqueezy/checkout/route.ts"
+      );
+    }
+    if (usageBasedBilling) {
+      extraFeatures.push(
+        "Stripe Meter API for usage-based billing: lib/stripe-usage.ts with reportUsage() helper, app/api/stripe/report-usage/route.ts"
+      );
+    }
+    if (freemiumFeatureFlags) {
+      extraFeatures.push(
+        "Feature flag system: lib/feature-flags.ts using Vercel Edge Config or DB-backed approach, hooks/useFeatureFlag.ts React hook, components/FeatureGate.tsx wrapper component"
+      );
+    }
+    if (affiliateSystem) {
+      extraFeatures.push(
+        "Referral/affiliate tracking: lib/affiliate.ts, app/api/affiliate/track/route.ts, app/api/affiliate/dashboard/route.ts, components/AffiliateWidget.tsx"
+      );
+    }
 
     const userPrompt = `Generate monetization infrastructure for "${appName}".
 Billing model: ${model}
@@ -75,8 +105,12 @@ Include Stripe integration with:
 2. Stripe Checkout session creation
 3. Stripe webhook handler (subscription events)
 4. Customer billing portal
-5. Subscription status middleware
-6. Feature gating by plan`;
+5. Subscription status middleware (middleware.ts) with plan tier gating
+6. Feature gating by plan${
+      extraFeatures.length > 0
+        ? `\n\nAdditional features to generate:\n${extraFeatures.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
+        : ""
+    }`;
 
     const response = await getClient().chat.completions.create({
       model: "gpt-4o",

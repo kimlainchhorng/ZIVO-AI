@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { CODE_BUILDER_SYSTEM_PROMPT, CODE_BUILDER_PLAN_PROMPT } from "../../../prompts/code-builder";
+import { stripMarkdownFences } from "../../../lib/code-parser";
+import { buildProjectContext } from "../../../lib/prompt-builder";
 
 export const runtime = "nodejs";
 
@@ -22,13 +24,7 @@ export interface BuilderResponse {
   files: GeneratedFile[];
   commands?: string[];
   summary: string;
-}
-
-function stripMarkdownFences(text: string): string {
-  return text
-    .replace(/^```(?:json)?\s*\n?/i, "")
-    .replace(/\n?```\s*$/i, "")
-    .trim();
+  preview_html?: string;
 }
 
 function parseBuilderJSON(text: string): BuilderResponse {
@@ -55,17 +51,29 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => ({}));
     const prompt = body?.prompt;
     const planOnly = Boolean(body?.planOnly);
+    const stream = Boolean(body?.stream);
+    const selectedModel: string = typeof body?.model === "string" ? body.model : "gpt-4o";
+    const existingFiles: Array<{ path: string; content: string }> = Array.isArray(body?.existingFiles)
+      ? body.existingFiles
+      : [];
+    const generatePreview = Boolean(body?.generatePreview);
 
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
       return NextResponse.json({ error: "Missing or invalid prompt" }, { status: 400 });
     }
 
+    // Build user message — prepend existing file context if provided
+    const projectContext = existingFiles.length > 0
+      ? buildProjectContext(existingFiles) + "\n\n"
+      : "";
+    const userMessage = `${projectContext}${prompt.trim()}`;
+
     if (planOnly) {
       const r = await getClient().chat.completions.create({
-        model: "gpt-4o",
+        model: selectedModel,
         messages: [
           { role: "system", content: CODE_BUILDER_PLAN_PROMPT },
-          { role: "user", content: prompt.trim() },
+          { role: "user", content: userMessage },
         ],
         temperature: 0.3,
         max_tokens: 4096,
@@ -83,24 +91,97 @@ export async function POST(req: Request) {
       return NextResponse.json({ plan: parsed.plan });
     }
 
-    // Full code generation with retry
+    // ── Streaming mode ────────────────────────────────────────────────────────
+    if (stream) {
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream({
+        async start(controller) {
+          try {
+            const streamCompletion = await getClient().chat.completions.create({
+              model: selectedModel,
+              messages: [
+                { role: "system", content: CODE_BUILDER_SYSTEM_PROMPT },
+                { role: "user", content: userMessage },
+              ],
+              temperature: 0.2,
+              max_tokens: 32000,
+              stream: true,
+            });
+
+            for await (const chunk of streamCompletion) {
+              const delta = chunk.choices[0]?.delta?.content ?? "";
+              if (delta) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: delta })}\n\n`));
+              }
+            }
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : "Stream error";
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: message })}\n\n`));
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
+    // ── Non-streaming mode with retry ─────────────────────────────────────────
     let lastError: Error | null = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         const r = await getClient().chat.completions.create({
-          model: "gpt-4o",
+          model: selectedModel,
           messages: [
             { role: "system", content: CODE_BUILDER_SYSTEM_PROMPT },
-            { role: "user", content: prompt.trim() },
+            { role: "user", content: userMessage },
           ],
           temperature: 0.2,
-          max_tokens: 16000,
+          max_tokens: 32000,
         });
         const text = r.choices[0]?.message?.content ?? "";
         const parsed = parseBuilderJSON(text);
         if (!Array.isArray(parsed.files) || parsed.files.length === 0) {
           throw new Error("AI returned no files");
         }
+
+        // ── Optional preview HTML generation ──────────────────────────────────
+        if (generatePreview) {
+          try {
+            const previewPrompt = `Given these generated files, create a single self-contained HTML preview page that visually demonstrates the UI/UX of this project. Include all CSS inline and use placeholder data. Output ONLY the raw HTML starting with <!DOCTYPE html>.
+
+Files summary:
+${parsed.files.map((f) => `${f.path} (${f.language})`).join("\n")}
+
+Project summary: ${parsed.summary}`;
+
+            const previewR = await getClient().chat.completions.create({
+              model: "gpt-4o",
+              messages: [
+                { role: "system", content: "You are a UI developer. Generate a self-contained HTML preview." },
+                { role: "user", content: previewPrompt },
+              ],
+              temperature: 0.4,
+              max_tokens: 8000,
+            });
+            let previewHtml = previewR.choices[0]?.message?.content ?? "";
+            previewHtml = previewHtml.replace(/^```(?:html)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+            if (previewHtml.includes("<!DOCTYPE") || previewHtml.includes("<html")) {
+              parsed.preview_html = previewHtml;
+            }
+          } catch (previewErr) {
+            console.warn("[builder] Preview generation failed:", previewErr);
+            // Non-fatal: return without preview
+          }
+        }
+
         return NextResponse.json(parsed);
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
