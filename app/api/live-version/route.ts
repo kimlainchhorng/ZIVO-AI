@@ -8,7 +8,8 @@ export async function GET() {
     const allVersions = getVersions();
     const latest = allVersions.length > 0 ? allVersions[0] : null;
     return NextResponse.json({ item: latest });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Failed to fetch version" }, { status: 500 });
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : "Failed to fetch version";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

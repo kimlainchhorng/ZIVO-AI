@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 const COLORS = {
   bg: "#0a0b14",
@@ -100,35 +100,43 @@ function ConnectorCard({ connector, onConnect, isConnected }: { connector: Conne
   );
 }
 
+type ConnectorState = {
+  githubConnected: boolean;
+  modalToken: string;
+  modalRepo: string;
+  supabaseConnected: boolean;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+};
+
+function loadConnectorState(): ConnectorState {
+  if (typeof window === "undefined") {
+    return { githubConnected: false, modalToken: "", modalRepo: "", supabaseConnected: false, supabaseUrl: "", supabaseAnonKey: "" };
+  }
+  const token = localStorage.getItem("zivo_github_token") ?? "";
+  const repo  = localStorage.getItem("zivo_github_repo") ?? "";
+  const sbUrl = localStorage.getItem("supabase_url") ?? "";
+  const sbKey = localStorage.getItem("supabase_anon_key") ?? "";
+  return {
+    githubConnected:   Boolean(token && repo),
+    modalToken:        token,
+    modalRepo:         repo,
+    supabaseConnected: Boolean(sbUrl && sbKey),
+    supabaseUrl:       sbUrl,
+    supabaseAnonKey:   sbKey,
+  };
+}
+
 export default function ConnectorsPage() {
   const [search, setSearch] = useState("");
-  const [githubConnected, setGithubConnected] = useState(false);
+  const [connState, setConnState] = useState<ConnectorState>(loadConnectorState);
   const [showModal, setShowModal] = useState(false);
-  const [modalToken, setModalToken] = useState("");
-  const [modalRepo, setModalRepo] = useState("");
   const [modalError, setModalError] = useState("");
 
   // Supabase state
-  const [supabaseConnected, setSupabaseConnected] = useState(false);
   const [showSupabaseModal, setShowSupabaseModal] = useState(false);
-  const [supabaseUrl, setSupabaseUrl] = useState("");
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState("");
   const [supabaseError, setSupabaseError] = useState("");
   const [supabaseTesting, setSupabaseTesting] = useState(false);
-
-  useEffect(() => {
-    const token = localStorage.getItem("zivo_github_token");
-    const repo = localStorage.getItem("zivo_github_repo");
-    setGithubConnected(!!(token && repo));
-    if (token) setModalToken(token);
-    if (repo) setModalRepo(repo);
-
-    const sbUrl = localStorage.getItem("supabase_url");
-    const sbKey = localStorage.getItem("supabase_anon_key");
-    setSupabaseConnected(!!(sbUrl && sbKey));
-    if (sbUrl) setSupabaseUrl(sbUrl);
-    if (sbKey) setSupabaseAnonKey(sbKey);
-  }, []);
 
   function handleConnect(id: string) {
     if (id === "github") setShowModal(true);
@@ -136,11 +144,11 @@ export default function ConnectorsPage() {
   }
 
   function handleSaveGithub() {
-    if (!modalToken.trim()) { setModalError("Personal Access Token is required."); return; }
-    if (!modalRepo.trim() || !/^[^/]+\/[^/]+$/.test(modalRepo.trim())) { setModalError("Repo must be in owner/repo format (e.g. myorg/myrepo)."); return; }
-    localStorage.setItem("zivo_github_token", modalToken.trim());
-    localStorage.setItem("zivo_github_repo", modalRepo.trim());
-    setGithubConnected(true);
+    if (!connState.modalToken.trim()) { setModalError("Personal Access Token is required."); return; }
+    if (!connState.modalRepo.trim() || !/^[^/]+\/[^/]+$/.test(connState.modalRepo.trim())) { setModalError("Repo must be in owner/repo format (e.g. myorg/myrepo)."); return; }
+    localStorage.setItem("zivo_github_token", connState.modalToken.trim());
+    localStorage.setItem("zivo_github_repo", connState.modalRepo.trim());
+    setConnState(s => ({ ...s, githubConnected: true }));
     setShowModal(false);
     setModalError("");
   }
@@ -148,18 +156,16 @@ export default function ConnectorsPage() {
   function handleDisconnect() {
     localStorage.removeItem("zivo_github_token");
     localStorage.removeItem("zivo_github_repo");
-    setGithubConnected(false);
-    setModalToken("");
-    setModalRepo("");
+    setConnState(s => ({ ...s, githubConnected: false, modalToken: "", modalRepo: "" }));
     setShowModal(false);
   }
 
   async function handleSaveSupabase() {
-    if (!supabaseUrl.trim()) {
+    if (!connState.supabaseUrl.trim()) {
       setSupabaseError("Supabase URL is required.");
       return;
     }
-    if (!supabaseAnonKey.trim()) {
+    if (!connState.supabaseAnonKey.trim()) {
       setSupabaseError("Supabase Anon Key is required.");
       return;
     }
@@ -169,13 +175,13 @@ export default function ConnectorsPage() {
       const res = await fetch("/api/supabase-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ supabaseUrl: supabaseUrl.trim(), supabaseAnonKey: supabaseAnonKey.trim() }),
+        body: JSON.stringify({ supabaseUrl: connState.supabaseUrl.trim(), supabaseAnonKey: connState.supabaseAnonKey.trim() }),
       });
       const data = await res.json();
       if (data.connected) {
-        localStorage.setItem("supabase_url", supabaseUrl.trim());
-        localStorage.setItem("supabase_anon_key", supabaseAnonKey.trim());
-        setSupabaseConnected(true);
+        localStorage.setItem("supabase_url", connState.supabaseUrl.trim());
+        localStorage.setItem("supabase_anon_key", connState.supabaseAnonKey.trim());
+        setConnState(s => ({ ...s, supabaseConnected: true }));
         setShowSupabaseModal(false);
         setSupabaseError("");
       } else {
@@ -191,9 +197,7 @@ export default function ConnectorsPage() {
   function handleDisconnectSupabase() {
     localStorage.removeItem("supabase_url");
     localStorage.removeItem("supabase_anon_key");
-    setSupabaseConnected(false);
-    setSupabaseUrl("");
-    setSupabaseAnonKey("");
+    setConnState(s => ({ ...s, supabaseConnected: false, supabaseUrl: "", supabaseAnonKey: "" }));
     setShowSupabaseModal(false);
   }
 
@@ -264,10 +268,10 @@ export default function ConnectorsPage() {
               <a href="/connectors" style={{ fontSize: "0.8rem", color: COLORS.accent, background: "rgba(99,102,241,0.1)", padding: "0.35rem 0.5rem", borderRadius: "6px", display: "block", fontWeight: 600, textDecoration: "none" }}>Connectors</a>
               <div
                 onClick={() => setShowModal(true)}
-                style={{ fontSize: "0.8rem", color: githubConnected ? COLORS.success : COLORS.textSecondary, padding: "0.35rem 0.5rem", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
+                style={{ fontSize: "0.8rem", color: connState.githubConnected ? COLORS.success : COLORS.textSecondary, padding: "0.35rem 0.5rem", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", gap: "0.4rem" }}
               >
                 GitHub
-                {githubConnected && <span style={{ fontSize: "0.65rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "1px 5px", borderRadius: "3px" }}>●</span>}
+                {connState.githubConnected && <span style={{ fontSize: "0.65rem", fontWeight: 600, color: COLORS.success, background: "rgba(16,185,129,0.12)", padding: "1px 5px", borderRadius: "3px" }}>●</span>}
               </div>
             </div>
           </div>
@@ -303,7 +307,7 @@ export default function ConnectorsPage() {
                       key={c.id}
                       connector={c}
                       onConnect={handleConnect}
-                      isConnected={c.id === "github" ? githubConnected : c.id === "supabase" ? supabaseConnected : false}
+                      isConnected={c.id === "github" ? connState.githubConnected : c.id === "supabase" ? connState.supabaseConnected : false}
                     />
                   ))}
                 </div>
@@ -356,8 +360,8 @@ export default function ConnectorsPage() {
                 className="zivo-input"
                 type="password"
                 placeholder="ghp_xxxxxxxxxxxx"
-                value={modalToken}
-                onChange={(e) => { setModalToken(e.target.value); setModalError(""); }}
+                value={connState.modalToken}
+                onChange={(e) => { setConnState(s => ({ ...s, modalToken: e.target.value })); setModalError(""); }}
                 style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", transition: "border-color 0.2s" }}
               />
               <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, marginTop: "0.35rem" }}>
@@ -374,8 +378,8 @@ export default function ConnectorsPage() {
                 className="zivo-input"
                 type="text"
                 placeholder="owner/repo-name"
-                value={modalRepo}
-                onChange={(e) => { setModalRepo(e.target.value); setModalError(""); }}
+                value={connState.modalRepo}
+                onChange={(e) => { setConnState(s => ({ ...s, modalRepo: e.target.value })); setModalError(""); }}
                 style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", transition: "border-color 0.2s" }}
               />
             </div>
@@ -391,9 +395,9 @@ export default function ConnectorsPage() {
                 onClick={handleSaveGithub}
                 style={{ flex: 1, padding: "0.6rem", background: COLORS.accent, border: "none", borderRadius: "8px", color: "#fff", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
               >
-                {githubConnected ? "Update" : "Connect"}
+                {connState.githubConnected ? "Update" : "Connect"}
               </button>
-              {githubConnected && (
+              {connState.githubConnected && (
                 <button
                   onClick={handleDisconnect}
                   style={{ padding: "0.6rem 1rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", color: "#ef4444", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
@@ -441,8 +445,8 @@ export default function ConnectorsPage() {
                 className="zivo-input"
                 type="text"
                 placeholder="https://xxxxxxxxxxxx.supabase.co"
-                value={supabaseUrl}
-                onChange={(e) => { setSupabaseUrl(e.target.value); setSupabaseError(""); }}
+                value={connState.supabaseUrl}
+                onChange={(e) => { setConnState(s => ({ ...s, supabaseUrl: e.target.value })); setSupabaseError(""); }}
                 style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", transition: "border-color 0.2s" }}
               />
             </div>
@@ -455,8 +459,8 @@ export default function ConnectorsPage() {
                 className="zivo-input"
                 type="password"
                 placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                value={supabaseAnonKey}
-                onChange={(e) => { setSupabaseAnonKey(e.target.value); setSupabaseError(""); }}
+                value={connState.supabaseAnonKey}
+                onChange={(e) => { setConnState(s => ({ ...s, supabaseAnonKey: e.target.value })); setSupabaseError(""); }}
                 style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", transition: "border-color 0.2s" }}
               />
             </div>
@@ -474,9 +478,9 @@ export default function ConnectorsPage() {
                 style={{ flex: 1, padding: "0.6rem", background: supabaseTesting ? "rgba(99,102,241,0.4)" : COLORS.accent, border: "none", borderRadius: "8px", color: "#fff", fontWeight: 600, fontSize: "0.875rem", cursor: supabaseTesting ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}
               >
                 {supabaseTesting && <span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
-                {supabaseTesting ? "Verifying…" : supabaseConnected ? "Update" : "Connect"}
+                {supabaseTesting ? "Verifying…" : connState.supabaseConnected ? "Update" : "Connect"}
               </button>
-              {supabaseConnected && (
+              {connState.supabaseConnected && (
                 <button
                   onClick={handleDisconnectSupabase}
                   style={{ padding: "0.6rem 1rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "8px", color: "#ef4444", fontWeight: 600, fontSize: "0.875rem", cursor: "pointer" }}
