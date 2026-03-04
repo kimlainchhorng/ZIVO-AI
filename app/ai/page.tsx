@@ -317,8 +317,9 @@ function AIPageInner() {
 
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
-  async function handleBuild() {
-    if (!prompt.trim()) return;
+  async function handleBuild(promptOverride?: string) {
+    const buildPrompt = promptOverride ?? prompt;
+    if (!buildPrompt.trim()) return;
     setLoading(true);
     setLoadingStep(0);
     setOutput(null);
@@ -339,7 +340,7 @@ function AIPageInner() {
     fetch("/api/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, model }),
+      body: JSON.stringify({ prompt: buildPrompt, model }),
     }).then((r) => r.json()).then((p: ProjectPlan & { error?: string }) => {
       if (!p.error) setPlan(p);
     }).catch(() => {}).finally(() => setIsPlanLoading(false));
@@ -359,7 +360,7 @@ function AIPageInner() {
       const res = await fetch("/api/generate-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, model }),
+        body: JSON.stringify({ prompt: buildPrompt, model }),
         signal: controller.signal,
       });
       const data: GenerateSiteResponse = await res.json();
@@ -376,7 +377,7 @@ function AIPageInner() {
       // Save to build history
       addHistoryEntry({
         createdAt: Date.now(),
-        prompt,
+        prompt: buildPrompt,
         model,
         files: (data.files ?? []).map((f) => ({ path: f.path, action: f.action })),
         buildTimeMs: duration,
@@ -1048,7 +1049,7 @@ function AIPageInner() {
                           </button>
                           <button
                             className="zivo-btn"
-                            onClick={(e) => { e.stopPropagation(); setPrompt(tpl.prompt); setActiveLeftTab("prompt"); setTimeout(() => handleBuild(), 100); }}
+                            onClick={(e) => { e.stopPropagation(); setPrompt(tpl.prompt); setActiveLeftTab("prompt"); handleBuild(tpl.prompt); }}
                             style={{ padding: "0.25rem 0.6rem", background: COLORS.accentGradient, border: "none", borderRadius: "20px", color: "#fff", cursor: "pointer", fontSize: "0.7rem", fontWeight: 600 }}
                           >
                             Build Now
@@ -1160,7 +1161,7 @@ function AIPageInner() {
                   {/* Build Now button */}
                   <button
                     className="zivo-btn"
-                    onClick={handleBuild}
+                    onClick={() => handleBuild()}
                     disabled={loading || !prompt.trim()}
                     style={{ padding: "0.3rem 0.875rem", borderRadius: "20px", background: loading || !prompt.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, color: "#fff", border: "none", cursor: loading || !prompt.trim() ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}
                   >

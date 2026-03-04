@@ -57,8 +57,10 @@ export async function POST(req: Request): Promise<Response> {
 
     // Build description for the generator
     const effectiveDescription = description || `${appName} — ${validStyle} design system with ${primaryColor} as primary color`;
-    const effectiveMood = (mood as "modern" | "playful" | "minimal" | "bold" | "elegant") ??
-      (validStyle === "bold" ? "bold" : validStyle === "minimal" ? "minimal" : "modern");
+
+    type Mood = "modern" | "playful" | "minimal" | "bold" | "elegant";
+    const MOOD_MAP: Record<StyleOption, Mood> = { bold: "bold", minimal: "minimal", modern: "modern" };
+    const effectiveMood: Mood = (mood as Mood) ?? MOOD_MAP[validStyle];
 
     const system = await generateDesignSystem(effectiveDescription, effectiveMood);
 

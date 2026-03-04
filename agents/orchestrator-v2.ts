@@ -169,7 +169,7 @@ export async function runOrchestratorV2(
       }
 
       // Pass full project context to the fixer alongside individual file issues
-      const projectContext = files
+      const fixContext = files
         .map((f) => `// ${f.path}\n${f.content.slice(0, FIX_CONTEXT_TRUNCATE_LENGTH)}`)
         .join("\n\n");
 
@@ -179,7 +179,7 @@ export async function runOrchestratorV2(
           file: filePath,
           content: fileObj?.content ?? "",
           issues,
-          projectContext,
+          projectContext: fixContext,
         };
       });
 
