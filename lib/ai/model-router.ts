@@ -69,6 +69,22 @@ export const SUPPORTED_MODELS: Record<string, ModelConfig> = {
     speed: "fast",
     quality: "medium",
   },
+  "gemini-1.5-pro": {
+    id: "gemini-1.5-pro",
+    name: "Gemini 1.5 Pro",
+    provider: "google",
+    costPer1kTokens: 0.00125,
+    speed: "medium",
+    quality: "high",
+  },
+  "gemini-1.5-flash": {
+    id: "gemini-1.5-flash",
+    name: "Gemini 1.5 Flash",
+    provider: "google",
+    costPer1kTokens: 0.000075,
+    speed: "fast",
+    quality: "economy",
+  },
   "llama-3": {
     id: "llama-3",
     name: "Llama 3",
@@ -115,4 +131,58 @@ export function trackUsage(
   const rate = config?.costPer1kTokens ?? 0;
   const cost = ((inputTokens + outputTokens) / 1000) * rate;
   return { inputTokens, outputTokens, cost, modelId };
+}
+
+export interface ModelUsageStats {
+  modelId: string;
+  calls: number;
+  totalTokens: number;
+  totalCost: number;
+  lastUsed: Date;
+}
+
+// NOTE: usageStore is in-memory and resets on server restart.
+// For production persistence, replace with a database-backed store.
+const usageStore = new Map<string, ModelUsageStats>();
+
+export function recordUsage(modelId: string, tokens: number): void {
+  const config = SUPPORTED_MODELS[modelId];
+  const rate = config?.costPer1kTokens ?? 0;
+  const cost = (tokens / 1000) * rate;
+  const existing = usageStore.get(modelId);
+  if (existing) {
+    existing.calls += 1;
+    existing.totalTokens += tokens;
+    existing.totalCost += cost;
+    existing.lastUsed = new Date();
+  } else {
+    usageStore.set(modelId, {
+      modelId,
+      calls: 1,
+      totalTokens: tokens,
+      totalCost: cost,
+      lastUsed: new Date(),
+    });
+  }
+}
+
+export function getUsageStats(): ModelUsageStats[] {
+  return Array.from(usageStore.values()).sort((a, b) => b.totalCost - a.totalCost);
+}
+
+export function getTotalCost(): number {
+  return Array.from(usageStore.values()).reduce((sum, s) => sum + s.totalCost, 0);
+}
+
+export function getCheapestModel(task: TaskType): string {
+  const chain = MODEL_ROUTING[task];
+  return chain.reduce((cheapest, id) => {
+    const cost = SUPPORTED_MODELS[id]?.costPer1kTokens ?? Infinity;
+    const cheapestCost = SUPPORTED_MODELS[cheapest]?.costPer1kTokens ?? Infinity;
+    return cost < cheapestCost ? id : cheapest;
+  });
+}
+
+export function getBestModel(task: TaskType): string {
+  return MODEL_ROUTING[task][0];
 }

@@ -4,6 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { Suspense } from "react";
 import { addHistoryEntry } from "../history/page";
+import PlanViewer from "@/components/PlanViewer";
+import BuildOutputPanel from "@/components/BuildOutputPanel";
+import DiffViewer from "@/components/DiffViewer";
+import ModelSelector from "@/components/ModelSelector";
+import type { ProjectPlan } from "@/lib/ai/project-planner";
+import type { BuildError, BuildWarning } from "@/lib/ai/fix-loop";
 
 interface SecurityIssue {
   id: string;
@@ -131,7 +137,7 @@ function AIPageInner() {
   const [popover, setPopover] = useState<{ x: number; y: number; text: string } | null>(null);
   const [popoverInput, setPopoverInput] = useState("");
   const [activeFile, setActiveFile] = useState<GeneratedFile | null>(null);
-  const [activeTab, setActiveTab] = useState<"preview" | "code" | "console">("preview");
+  const [activeTab, setActiveTab] = useState<"preview" | "code" | "console" | "diff">("preview");
   const [deviceMode, setDeviceMode] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [model, setModel] = useState("gpt-4o");
   const [isRecording, setIsRecording] = useState(false);
@@ -263,6 +269,17 @@ function AIPageInner() {
   const [planResult, setPlanResult] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [planOpen, setPlanOpen] = useState(false);
+  const [plan, setPlan] = useState<ProjectPlan | null>(null);
+  const [isPlanLoading, setIsPlanLoading] = useState(false);
+  const [buildErrors, setBuildErrors] = useState<BuildError[]>([]);
+  const [buildWarnings, setBuildWarnings] = useState<BuildWarning[]>([]);
+  const [buildLogs, setBuildLogs] = useState<string[]>([]);
+  const [buildIteration, setBuildIteration] = useState(0);
+  const [isBuildRunning, setIsBuildRunning] = useState(false);
+  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan">("prompt");
+  const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
+  const [showDiff, setShowDiff] = useState(false);
+  const [diffFileIndex, setDiffFileIndex] = useState(0);
 
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
@@ -276,6 +293,22 @@ function AIPageInner() {
     setDownloadError(null);
     setActiveFile(null);
     setConsoleLogs([{ text: "> Building project...", type: "info" }]);
+    setIsBuildRunning(true);
+    setBuildErrors([]);
+    setBuildWarnings([]);
+    setBuildLogs([]);
+    setBuildIteration(0);
+    setShowDiff(false);
+
+    // Fetch plan in parallel (non-blocking)
+    setIsPlanLoading(true);
+    fetch("/api/plan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, model }),
+    }).then((r) => r.json()).then((p: ProjectPlan & { error?: string }) => {
+      if (!p.error) setPlan(p);
+    }).catch(() => {}).finally(() => setIsPlanLoading(false));
 
     const buildStart = Date.now();
     const stepTimer1 = setTimeout(() => setLoadingStep(1), LOADING_STEP1_DELAY);
@@ -289,7 +322,12 @@ function AIPageInner() {
       });
       const data: GenerateSiteResponse = await res.json();
       setOutput(data);
-      if (data.files?.length) setActiveFile(data.files[0]);
+      if (data.files?.length) {
+        setActiveFile(data.files[0]);
+        setDiffFiles(data.files.map((f) => ({ path: f.path, oldContent: "", newContent: f.content })));
+        setDiffFileIndex(0);
+        setShowDiff(true);
+      }
       if (data.preview_html) setActiveTab("preview");
       const duration = Date.now() - buildStart;
       setBuildTime(`${(duration / 1000).toFixed(1)}s`);
@@ -316,6 +354,7 @@ function AIPageInner() {
     clearTimeout(stepTimer2);
     setLoading(false);
     setLoadingStep(0);
+    setIsBuildRunning(false);
   }
 
   async function handlePlan() {
@@ -810,10 +849,24 @@ function AIPageInner() {
               {/* Header */}
               <div style={{ marginBottom: "1.25rem", textAlign: "center" }}>
                 <h1 style={{ fontSize: "1.375rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>What will you build today?</h1>
-                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates the code instantly</p>
+                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 0.75rem" }}>Describe your app — ZIVO generates the code instantly</p>
+                <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
+              {/* Prompt / Plan Tabs */}
+              <div style={{ display: "flex", gap: "4px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px" }}>
+                {(["prompt", "plan"] as const).map((tab) => (
+                  <button key={tab} className="zivo-btn" onClick={() => setActiveLeftTab(tab)} style={{ flex: 1, padding: "0.35rem 0.5rem", borderRadius: "6px", border: "none", background: activeLeftTab === tab ? COLORS.accentGradient : "transparent", color: activeLeftTab === tab ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: activeLeftTab === tab ? 600 : 400, textTransform: "capitalize" }}>
+                    {tab === "prompt" ? "Prompt" : "Plan"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Plan Viewer */}
+              {activeLeftTab === "plan" && <PlanViewer plan={plan} isLoading={isPlanLoading} />}
+
               {/* Unified Prompt Box */}
+              {activeLeftTab === "prompt" && (
               <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "14px", overflow: "hidden" }}>
                 {/* Textarea */}
                 <textarea
@@ -897,7 +950,7 @@ function AIPageInner() {
                   </button>
                 </div>
               </div>
-
+              )}
               {/* or start from row */}
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.875rem", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, flexShrink: 0 }}>or start from</span>
@@ -1573,6 +1626,15 @@ function AIPageInner() {
                     {tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
+                {showDiff && diffFiles.length > 0 && (
+                  <button
+                    className="zivo-tab"
+                    onClick={() => setActiveTab("diff")}
+                    style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeTab === "diff" ? "rgba(99,102,241,0.15)" : "transparent", color: activeTab === "diff" ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, transition: "color 0.15s" }}
+                  >
+                    Diff
+                  </button>
+                )}
               </div>
 
               {/* URL bar */}
@@ -1804,7 +1866,44 @@ function AIPageInner() {
                   </div>
                 </div>
               )}
+
+              {/* Diff Tab */}
+              {!loading && activeTab === "diff" && showDiff && diffFiles.length > 0 && (
+                <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  {diffFiles.length > 1 && (
+                    <div style={{ display: "flex", gap: "4px", padding: "0.5rem 1rem", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0, overflowX: "auto" }}>
+                      {diffFiles.map((df, i) => (
+                        <button
+                          key={i}
+                          className="zivo-btn"
+                          onClick={() => setDiffFileIndex(i)}
+                          style={{ padding: "0.25rem 0.65rem", borderRadius: "6px", border: `1px solid ${diffFileIndex === i ? "rgba(99,102,241,0.4)" : COLORS.border}`, background: diffFileIndex === i ? "rgba(99,102,241,0.15)" : "transparent", color: diffFileIndex === i ? COLORS.accent : COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", fontFamily: "monospace", whiteSpace: "nowrap" }}
+                        >
+                          {df.path}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ flex: 1, overflow: "auto" }}>
+                    <DiffViewer
+                      filePath={diffFiles[diffFileIndex]?.path ?? ""}
+                      oldContent={diffFiles[diffFileIndex]?.oldContent ?? ""}
+                      newContent={diffFiles[diffFileIndex]?.newContent ?? ""}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
+            )}
+            {mode === "code" && (
+              <BuildOutputPanel
+                errors={buildErrors}
+                warnings={buildWarnings}
+                logs={buildLogs}
+                isRunning={isBuildRunning}
+                iteration={buildIteration}
+                maxIterations={8}
+              />
             )}
 
             {/* ── Image Right Panel ── */}
