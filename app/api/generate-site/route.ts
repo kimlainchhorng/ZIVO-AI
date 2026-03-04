@@ -19,6 +19,7 @@ export interface GeneratedFile {
 }
 
 export interface GenerateSiteResponse {
+  thinking?: string;
   files: GeneratedFile[];
   preview_html?: string;
   summary?: string;
@@ -119,8 +120,8 @@ async function generateFiles(
 
   const response = await getClient().chat.completions.create({
     model: "gpt-4o",
-    temperature: Number(process.env.OPENAI_TEMPERATURE ?? "0.4"),
-    max_tokens: mode === "advanced" ? 8000 : 4000,
+    temperature: 0.3,
+    max_tokens: mode === "advanced" ? 16000 : 4000,
     messages,
   });
 
