@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 type Category = 'All' | 'Coding' | 'Writing' | 'Analysis' | 'Creative';
 
@@ -30,22 +30,22 @@ const CATEGORY_COLORS: Record<Exclude<Category, 'All'>, string> = {
 };
 
 export default function PromptTemplatesPage() {
-  const [templates, setTemplates] = useState<PromptTemplate[]>(SAMPLE_TEMPLATES);
+  const [templates, setTemplates] = useState<PromptTemplate[]>(() => {
+    if (typeof window === 'undefined') return SAMPLE_TEMPLATES;
+    const stored = localStorage.getItem('zivo_prompt_templates');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as PromptTemplate[];
+        return [...SAMPLE_TEMPLATES, ...parsed];
+      } catch { /* ignore */ }
+    }
+    return SAMPLE_TEMPLATES;
+  });
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<Category>('All');
   const [showModal, setShowModal] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [newTemplate, setNewTemplate] = useState({ title: '', category: 'Coding' as Exclude<Category, 'All'>, content: '' });
-
-  useEffect(() => {
-    const stored = localStorage.getItem('zivo_prompt_templates');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as PromptTemplate[];
-        setTemplates([...SAMPLE_TEMPLATES, ...parsed]);
-      } catch { /* ignore */ }
-    }
-  }, []);
 
   const filteredTemplates = templates.filter(t => {
     const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase()) || t.preview.toLowerCase().includes(search.toLowerCase());
