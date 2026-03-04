@@ -81,18 +81,34 @@ UX Patterns: Dashboard, Sidebar nav, Card layouts, Search bars, Forms, Responsiv
 Mobile: Flutter/Dart, Kotlin (Android), Swift (iOS), React Native.
 Animation: Framer Motion, Lottie, CSS animations.
 
-When given a description, respond with a valid JSON object containing a FULL multi-page Next.js App Router project:
+When given a description, respond with a valid JSON object containing a FULL multi-page Next.js App Router project.
+You MUST generate ALL of the following files at minimum:
+- package.json (with next, react, typescript, tailwindcss, framer-motion dependencies)
+- tailwind.config.ts (with design tokens: colors, fonts, spacing)
+- next.config.ts
+- tsconfig.json
+- app/layout.tsx (root layout importing Navbar and Footer, with metadata)
+- app/page.tsx (homepage with hero section, features grid, and CTA — use Framer Motion)
+- app/about/page.tsx (about page with team/mission section)
+- app/contact/page.tsx (contact page with validated form)
+- app/globals.css (global styles with CSS variables)
+- components/Navbar.tsx (responsive navbar with mobile hamburger menu)
+- components/Footer.tsx (footer with links and social icons)
+
+Response format:
 {
   "files": [
     { "path": "package.json", "content": "...", "action": "create" },
     { "path": "tailwind.config.ts", "content": "...", "action": "create" },
+    { "path": "next.config.ts", "content": "...", "action": "create" },
+    { "path": "tsconfig.json", "content": "...", "action": "create" },
     { "path": "app/layout.tsx", "content": "...", "action": "create" },
     { "path": "app/page.tsx", "content": "...(hero, features, CTA with Framer Motion)...", "action": "create" },
     { "path": "app/about/page.tsx", "content": "...", "action": "create" },
-    { "path": "app/contact/page.tsx", "content": "...(contact form)...", "action": "create" },
+    { "path": "app/contact/page.tsx", "content": "...(contact form with validation)...", "action": "create" },
     { "path": "app/globals.css", "content": "...", "action": "create" },
-    { "path": "components/Navbar.tsx", "content": "...(responsive with mobile menu)...", "action": "create" },
-    { "path": "components/Footer.tsx", "content": "...", "action": "create" }
+    { "path": "components/Navbar.tsx", "content": "...(responsive with mobile hamburger menu)...", "action": "create" },
+    { "path": "components/Footer.tsx", "content": "...(footer with links and copyright)...", "action": "create" }
   ],
   "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
   "summary": "Brief description of what was built",
@@ -100,9 +116,11 @@ When given a description, respond with a valid JSON object containing a FULL mul
 }
 
 Requirements:
-- Include app/layout.tsx (root layout), app/page.tsx (homepage with hero/features/CTA), app/about/page.tsx, app/contact/page.tsx (with form), components/Navbar.tsx (responsive mobile menu), components/Footer.tsx, tailwind.config.ts with design tokens.
-- Add Framer Motion animations on all pages.
-- Use TailwindCSS for all styling.
+- ALWAYS include app/layout.tsx wrapping all pages with Navbar and Footer.
+- ALWAYS include components/Navbar.tsx with a responsive mobile hamburger menu.
+- ALWAYS include components/Footer.tsx.
+- Add Framer Motion animations on app/page.tsx (hero entrance, feature cards stagger).
+- Use TailwindCSS for all styling with consistent design tokens.
 ${BASE_RULES}`;
 
 const SYSTEM_PROMPT_MINIMAL = `You are ZIVO AI — an expert web developer that generates minimal, self-contained HTML files.
@@ -162,11 +180,16 @@ async function generateFiles(
   return parseJSON(text);
 }
 
+function stripMarkdownFences(text: string): string {
+  return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+}
+
 function parseJSON(text: string): GenerateSiteResponse {
+  const clean = stripMarkdownFences(text);
   try {
-    return JSON.parse(text);
+    return JSON.parse(clean);
   } catch {
-    const match = text.match(/\{[\s\S]*\}/);
+    const match = clean.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
     throw new Error("AI did not return valid JSON");
   }
