@@ -13,6 +13,26 @@ type DeleteFile = {
   message?: string;
 };
 
+interface GithubApiResponse {
+  sha?: string;
+  commit?: { sha: string };
+  message?: string;
+  [key: string]: unknown;
+}
+
+interface UpsertPayload {
+  message: string;
+  content: string;
+  branch: string;
+  sha?: string;
+}
+
+interface DeletePayload {
+  message: string;
+  sha: string;
+  branch: string;
+}
+
 async function gh<T>(url: string, init?: RequestInit): Promise<T> {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("Missing GITHUB_TOKEN");
@@ -29,7 +49,7 @@ async function gh<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   const text = await res.text();
-  let data: any = null;
+  let data: unknown = null;
   try {
     data = text ? JSON.parse(text) : null;
   } catch {
@@ -37,7 +57,7 @@ async function gh<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    const msg = typeof data === "string" ? data : data?.message || "GitHub API error";
+    const msg = typeof data === "string" ? data : (data as GithubApiResponse)?.message || "GitHub API error";
     throw new Error(`${res.status} ${res.statusText}: ${msg}`);
   }
   return data as T;
@@ -55,9 +75,9 @@ async function getFileSha(owner: string, repo: string, path: string, branch: str
   try {
     const data = await gh<{ sha: string }>(url, { method: "GET" });
     return data.sha;
-  } catch (e: any) {
+  } catch (e: unknown) {
     // 404 means file doesn't exist (OK for create)
-    if (String(e.message).includes("404")) return null;
+    if (String(e instanceof Error ? e.message : e).includes("404")) return null;
     throw e;
   }
 }
@@ -67,7 +87,7 @@ export async function POST(req: Request) {
     const {
       mode, // "upsert" | "delete"
       files, // UpsertFile[] for upsert, DeleteFile[] for delete
-    } = (await req.json()) as { mode: "upsert" | "delete"; files: any[] };
+    } = (await req.json()) as { mode: "upsert" | "delete"; files: UpsertFile[] | DeleteFile[] };
 
     const owner = process.env.GITHUB_OWNER!;
     const repo = process.env.GITHUB_REPO!;
@@ -84,7 +104,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "mode and files[] required" }, { status: 400 });
     }
 
-    const results: any[] = [];
+    const results: { path: string; action: string; commit?: string }[] = [];
 
     for (const f of files) {
       const path = f.path?.trim();
@@ -95,36 +115,38 @@ export async function POST(req: Request) {
       )}`;
 
       if (mode === "upsert") {
-        const content = String(f.content ?? "");
+        const upsertFile = f as UpsertFile;
+        const content = String(upsertFile.content ?? "");
         const sha = await getFileSha(owner, repo, path, branch);
 
-        const payload: any = {
-          message: f.message || `AI update: ${path}`,
+        const payload: UpsertPayload = {
+          message: upsertFile.message || `AI update: ${path}`,
           content: b64(content),
           branch,
         };
         if (sha) payload.sha = sha; // update existing
 
-        const r = await gh<any>(apiUrl, {
+        const r = await gh<GithubApiResponse>(apiUrl, {
           method: "PUT",
           body: JSON.stringify(payload),
         });
 
         results.push({ path, action: sha ? "updated" : "created", commit: r?.commit?.sha });
       } else if (mode === "delete") {
+        const deleteFile = f as DeleteFile;
         const sha = await getFileSha(owner, repo, path, branch);
         if (!sha) {
           results.push({ path, action: "skipped (not found)" });
           continue;
         }
 
-        const payload: any = {
-          message: f.message || `AI delete: ${path}`,
+        const payload: DeletePayload = {
+          message: deleteFile.message || `AI delete: ${path}`,
           sha,
           branch,
         };
 
-        const r = await gh<any>(apiUrl, {
+        const r = await gh<GithubApiResponse>(apiUrl, {
           method: "DELETE",
           body: JSON.stringify(payload),
         });
@@ -136,7 +158,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ ok: true, results });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || "Server error" }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Server error" }, { status: 500 });
   }
 }

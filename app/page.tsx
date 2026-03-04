@@ -11,7 +11,7 @@ export default function BuilderPage() {
   const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
   const [copied, setCopied] = useState(false);
   const [filter, setFilter] = useState<string>("all");
-  const [files, setFiles] = useState<any[]>([]);
+  const [files, setFiles] = useState<GeneratedFile[]>([]);
 
   const handleBuild = async () => {
     const res = await fetch("/api/generate-site", {

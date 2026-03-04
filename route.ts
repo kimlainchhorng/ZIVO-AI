@@ -31,9 +31,9 @@ export async function POST(req: Request) {
       ],
     });
 
-    const text = (r as any).output_text ?? "";
+    const text = (r as { output_text?: string }).output_text ?? "";
     return NextResponse.json({ result: text });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "Server error" }, { status: 500 });
   }
 }

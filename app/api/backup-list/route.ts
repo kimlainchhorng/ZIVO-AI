@@ -7,7 +7,7 @@ export async function GET() {
   try {
     const allVersions = getVersions();
     return NextResponse.json({ items: allVersions });
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Failed to fetch versions" }, { status: 500 });
+  } catch (e: unknown) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Failed to fetch versions" }, { status: 500 });
   }
 }
