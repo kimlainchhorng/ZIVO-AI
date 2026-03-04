@@ -166,6 +166,16 @@ function AIPageInner() {
   const [githubPushError, setGithubPushError] = useState<string | null>(null);
   const [connectedGithubRepo, setConnectedGithubRepo] = useState<string | null>(null);
 
+  // Plan feature state
+  const [planMode, setPlanMode] = useState(false);
+  const [planResult, setPlanResult] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planOpen, setPlanOpen] = useState(false);
+
+  // GitHub import (start from) modal state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importRepoUrl, setImportRepoUrl] = useState("");
+
   // Mode switcher
   const [mode, setMode] = useState<"code" | "security" | "website" | "mobile" | "image" | "video" | "3d">("code");
 
@@ -310,6 +320,31 @@ function AIPageInner() {
     clearTimeout(stepTimer2);
     setLoading(false);
     setLoadingStep(0);
+  }
+
+  async function handlePlan() {
+    if (!prompt.trim()) return;
+    setPlanLoading(true);
+    setPlanResult(null);
+    setPlanOpen(true);
+    try {
+      const planPrompt = `Create a detailed plan for the following app in Markdown format. List: 1) Pages to build, 2) Key components, 3) APIs/data needed, 4) Estimated complexity (Low/Medium/High). Do NOT generate code — only the plan.\n\nApp description: ${prompt}`;
+      const res = await fetch("/api/generate-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: planPrompt, model, planOnly: true }),
+      });
+      const data = await res.json();
+      setPlanResult(data.summary ?? data.notes ?? data.preview_html ?? "Plan generated. Click 'Build from Plan' to proceed.");
+    } catch {
+      setPlanResult("Failed to generate plan. Please try again.");
+    }
+    setPlanLoading(false);
+  }
+
+  function handleBuildFromPlan() {
+    setPlanOpen(false);
+    handleBuild();
   }
 
   const applyVisualEditOverlay = useCallback((active: boolean) => {
@@ -781,15 +816,12 @@ function AIPageInner() {
               {/* ── Code Builder Mode ── */}
               {mode === "code" && (<>
 
-              {/* Header */}
-              <div style={{ marginBottom: "1.25rem" }}>
-                <h1 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Build full-stack apps with AI</h1>
-                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe what you want — ZIVO generates the code instantly</p>
-              </div>
-
-              {/* Prompt Section */}
+              {/* Hero Prompt Area */}
               <div style={{ marginBottom: "1rem" }}>
-                <div style={{ position: "relative" }}>
+                <h1 style={{ fontSize: "1.1rem", fontWeight: 700, margin: "0 0 0.75rem", letterSpacing: "-0.02em", color: COLORS.textPrimary }}>What will you build today?</h1>
+
+                {/* Prompt box container */}
+                <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "12px", overflow: "hidden", transition: "border-color 0.2s" }}>
                   <textarea
                     className="zivo-textarea"
                     value={prompt}
@@ -800,11 +832,62 @@ function AIPageInner() {
                         handleBuild();
                       }
                     }}
-                    placeholder="Describe the app you want to build... (e.g. A todo app with Supabase auth and dark mode)"
+                    placeholder="Describe the app you want to build… (e.g. A todo app with Supabase auth and dark mode)"
                     maxLength={2000}
-                    style={{ width: "100%", minHeight: "120px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", resize: "vertical", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, transition: "border-color 0.2s" }}
+                    style={{ width: "100%", minHeight: "160px", background: "transparent", border: "none", padding: "0.9rem 1rem 0.5rem", resize: "vertical", color: COLORS.textPrimary, fontSize: "0.9rem", lineHeight: 1.65 }}
                   />
-                  <span style={{ position: "absolute", bottom: "0.5rem", right: "0.75rem", fontSize: "0.7rem", color: COLORS.textMuted }}>{prompt.length} / 2000</span>
+
+                  {/* Inline toolbar */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.5rem 0.75rem", borderTop: `1px solid ${COLORS.border}` }}>
+                    {/* Model selector chip */}
+                    <select
+                      className="zivo-select"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "20px", color: COLORS.accent, padding: "0.25rem 0.55rem", fontSize: "0.75rem", cursor: "pointer", fontWeight: 500 }}
+                    >
+                      {MODELS.map((m) => (
+                        <option key={m.value} value={m.value} style={{ background: COLORS.bgPanel }}>{m.label}</option>
+                      ))}
+                    </select>
+
+                    {/* Plan button */}
+                    <button
+                      className="zivo-btn"
+                      onClick={() => { setPlanMode((v) => !v); }}
+                      title="Plan before building"
+                      style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.6rem", background: planMode ? "rgba(245,158,11,0.15)" : "transparent", border: `1px solid ${planMode ? "rgba(245,158,11,0.4)" : COLORS.border}`, borderRadius: "20px", color: planMode ? "#f59e0b" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", fontWeight: 500, transition: "all 0.15s" }}
+                    >
+                      💡 Plan
+                    </button>
+
+                    <div style={{ flex: 1 }} />
+
+                    {/* Char count */}
+                    <span style={{ fontSize: "0.7rem", color: COLORS.textMuted }}>{prompt.length}/2000</span>
+
+                    {/* Voice input */}
+                    <button
+                      className="zivo-btn"
+                      onClick={handleVoiceInput}
+                      title={isRecording ? "Stop recording" : "Voice input"}
+                      style={{ width: "30px", height: "30px", borderRadius: "6px", background: isRecording ? "rgba(239,68,68,0.15)" : "transparent", border: `1px solid ${isRecording ? "rgba(239,68,68,0.4)" : COLORS.border}`, color: isRecording ? "#ef4444" : COLORS.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", animation: isRecording ? "recordPulse 1.5s infinite" : "none", flexShrink: 0 }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                    </button>
+
+                    {/* Clear */}
+                    {prompt && (
+                      <button
+                        className="zivo-btn"
+                        onClick={() => { setPrompt(""); setOutput(null); setDeployResult(null); setDeployError(null); setActiveFile(null); setPlanResult(null); }}
+                        style={{ width: "30px", height: "30px", borderRadius: "6px", background: "transparent", border: `1px solid ${COLORS.border}`, color: COLORS.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "14px" }}
+                        title="Clear"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -826,14 +909,69 @@ function AIPageInner() {
                 </div>
               )}
 
+              {/* Build now button */}
+              <button
+                className="zivo-btn"
+                onClick={planMode ? handlePlan : handleBuild}
+                disabled={loading || planLoading || !prompt.trim()}
+                style={{ width: "100%", padding: "0.75rem 1.5rem", background: loading || planLoading || !prompt.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, color: "#fff", borderRadius: "50px", border: "none", cursor: loading || planLoading || !prompt.trim() ? "not-allowed" : "pointer", fontWeight: 700, fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", marginBottom: "0.75rem", letterSpacing: "-0.01em" }}
+              >
+                {loading ? (
+                  <><span style={{ display: "inline-block", width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Building…</>
+                ) : planLoading ? (
+                  <><span style={{ display: "inline-block", width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Planning…</>
+                ) : planMode ? (
+                  <>💡 Plan this build</>
+                ) : (
+                  <>Build now <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></>
+                )}
+              </button>
+
+              {/* or start from row */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
+                <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, whiteSpace: "nowrap" }}>or start from</span>
+                <div style={{ height: "1px", background: COLORS.border, flex: 1 }} />
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  {/* Figma - placeholder */}
+                  <button
+                    className="zivo-chip"
+                    disabled
+                    style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.6rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textMuted, cursor: "not-allowed", fontSize: "0.75rem", opacity: 0.6 }}
+                    title="Figma import (coming soon)"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 38 57" fill="currentColor"><path d="M19 28.5a9.5 9.5 0 1 1 19 0 9.5 9.5 0 0 1-19 0z"/><path d="M0 47.5A9.5 9.5 0 0 1 9.5 38H19v9.5a9.5 9.5 0 0 1-19 0z"/><path d="M19 0v19h9.5a9.5 9.5 0 0 0 0-19H19z"/><path d="M0 9.5A9.5 9.5 0 0 0 9.5 19H19V0H9.5A9.5 9.5 0 0 0 0 9.5z"/><path d="M0 28.5A9.5 9.5 0 0 0 9.5 38H19V19H9.5A9.5 9.5 0 0 0 0 28.5z"/></svg>
+                    Figma
+                  </button>
+                  {/* GitHub import */}
+                  <button
+                    className="zivo-chip"
+                    onClick={() => setShowImportModal(true)}
+                    style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.6rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem" }}
+                    title="Import from GitHub"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.929.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                    GitHub
+                  </button>
+                  {/* Team template - placeholder */}
+                  <button
+                    className="zivo-chip"
+                    disabled
+                    style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.6rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textMuted, cursor: "not-allowed", fontSize: "0.75rem", opacity: 0.6 }}
+                    title="Team templates (coming soon)"
+                  >
+                    📋 Template
+                  </button>
+                </div>
+              </div>
+
               {/* Quick Prompts */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem", marginBottom: "1rem" }}>
                 {QUICK_PROMPTS.map((qp) => (
                   <button
                     key={qp.label}
                     className="zivo-chip"
                     onClick={() => setPrompt(qp.prompt)}
-                    style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.3rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", transition: "background 0.15s, border-color 0.15s" }}
+                    style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.6rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", transition: "background 0.15s, border-color 0.15s" }}
                   >
                     {qp.icon}
                     <span>{qp.label}</span>
@@ -841,53 +979,37 @@ function AIPageInner() {
                 ))}
               </div>
 
-              {/* Controls Row */}
-              <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem", alignItems: "center" }}>
-                <select
-                  className="zivo-select"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  style={{ flex: 1, background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.45rem 0.65rem", fontSize: "0.8125rem", cursor: "pointer", transition: "border-color 0.2s" }}
-                >
-                  {MODELS.map((m) => (
-                    <option key={m.value} value={m.value} style={{ background: COLORS.bgPanel }}>{m.label}</option>
-                  ))}
-                </select>
-
-                <button
-                  className="zivo-btn"
-                  onClick={handleVoiceInput}
-                  title={isRecording ? "Stop recording" : "Voice input"}
-                  style={{ width: "36px", height: "36px", borderRadius: "8px", background: isRecording ? "rgba(239,68,68,0.15)" : COLORS.bgCard, border: `1px solid ${isRecording ? "rgba(239,68,68,0.4)" : COLORS.border}`, color: isRecording ? "#ef4444" : COLORS.textSecondary, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", animation: isRecording ? "recordPulse 1.5s infinite" : "none", flexShrink: 0 }}
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-                </button>
-
-                <button
-                  className="zivo-btn"
-                  onClick={() => { setPrompt(""); setOutput(null); setDeployResult(null); setDeployError(null); setActiveFile(null); }}
-                  style={{ padding: "0.45rem 0.75rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", flexShrink: 0 }}
-                >
-                  Clear
-                </button>
-              </div>
-
-              {/* Build Button */}
-              <button
-                className="zivo-btn"
-                onClick={handleBuild}
-                disabled={loading || !prompt.trim()}
-                style={{ width: "100%", padding: "0.7rem", background: loading || !prompt.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, color: "#fff", borderRadius: "10px", border: "none", cursor: loading || !prompt.trim() ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.9375rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem", marginBottom: "1.25rem" }}
-              >
-                {loading ? (
-                  <>
-                    <span style={{ display: "inline-block", width: "16px", height: "16px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    Building…
-                  </>
-                ) : (
-                  <><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Build</>
-                )}
-              </button>
+              {/* Plan Panel */}
+              {planOpen && (planLoading || planResult) && (
+                <div style={{ marginBottom: "1rem", background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: "10px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.65rem 0.85rem", borderBottom: "1px solid rgba(245,158,11,0.15)" }}>
+                    <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#f59e0b", display: "flex", alignItems: "center", gap: "0.35rem" }}>💡 Build Plan</span>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      {planResult && !planLoading && (
+                        <button
+                          className="zivo-btn"
+                          onClick={handleBuildFromPlan}
+                          disabled={loading}
+                          style={{ padding: "0.3rem 0.75rem", background: COLORS.accentGradient, border: "none", borderRadius: "6px", color: "#fff", cursor: loading ? "not-allowed" : "pointer", fontSize: "0.75rem", fontWeight: 600 }}
+                        >
+                          Build from Plan ▶
+                        </button>
+                      )}
+                      <button onClick={() => setPlanOpen(false)} style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1rem" }}>×</button>
+                    </div>
+                  </div>
+                  <div style={{ padding: "0.75rem 0.85rem", maxHeight: "240px", overflowY: "auto" }}>
+                    {planLoading ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: COLORS.textSecondary, fontSize: "0.8125rem" }}>
+                        <span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(245,158,11,0.3)", borderTop: "2px solid #f59e0b", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        Generating plan…
+                      </div>
+                    ) : (
+                      <pre style={{ margin: 0, fontSize: "0.8rem", color: COLORS.textSecondary, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "'Inter', sans-serif", lineHeight: 1.7 }}>{planResult}</pre>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Connected Project Panel */}
               <div style={{ marginBottom: "1rem" }}>
@@ -2025,6 +2147,48 @@ function AIPageInner() {
                   style={{ padding: "0.45rem 0.75rem", background: chatLoading || !chatInput.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600 }}
                 >
                   {chatLoading ? "…" : "→"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* GitHub Import Modal */}
+        {showImportModal && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => setShowImportModal(false)}>
+            <div style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "16px", padding: "1.5rem", width: "420px", maxWidth: "90vw", animation: "fadeIn 0.2s ease" }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
+                <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: "#1e1e1e", border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.textPrimary }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.929.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "1rem" }}>Import from GitHub</div>
+                  <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary }}>Use a repo URL as context for your build</div>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Repository URL</label>
+                <input
+                  value={importRepoUrl}
+                  onChange={(e) => setImportRepoUrl(e.target.value)}
+                  placeholder="https://github.com/owner/repo"
+                  style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}>
+                <button onClick={() => setShowImportModal(false)} style={{ flex: 1, padding: "0.5rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem" }}>Cancel</button>
+                <button
+                  onClick={() => {
+                    const trimmed = importRepoUrl.trim();
+                    const isGithubUrl = /^https?:\/\/github\.com\/[^/\s]+\/[^/\s]+/.test(trimmed);
+                    if (isGithubUrl) {
+                      setPrompt((prev) => (prev ? prev + `\n\nReference this GitHub repo: ${trimmed}` : `Build an app inspired by this GitHub repo: ${trimmed}`));
+                    }
+                    setShowImportModal(false);
+                  }}
+                  style={{ flex: 1, padding: "0.5rem", background: COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600 }}
+                >
+                  Use as Context
                 </button>
               </div>
             </div>

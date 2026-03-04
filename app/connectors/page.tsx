@@ -214,7 +214,174 @@ export default function ConnectorsPage() {
   const shared = CONNECTORS.filter((c) => !c.personal && c.name.toLowerCase().includes(search.toLowerCase()));
   const personal = CONNECTORS.filter((c) => c.personal && c.name.toLowerCase().includes(search.toLowerCase()));
 
+  if (!mounted) return null;
+
   return (
-    <>  {/* ...rest of component unchanged... */}  {/* (No changes needed elsewhere; only constructor/init logic modified) */}  </>
+    <div style={{ minHeight: "100vh", background: COLORS.bg, color: COLORS.textPrimary, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}>
+      <style>{`* { box-sizing: border-box; } ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }`}</style>
+
+      {/* Top Nav */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0 1.5rem", height: "52px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel }}>
+        <div style={{ width: "28px", height: "28px", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700, color: "#fff", flexShrink: 0 }}>Z</div>
+        <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>ZIVO AI</span>
+        <div style={{ width: "1px", height: "20px", background: COLORS.border, margin: "0 0.25rem" }} />
+        <nav style={{ display: "flex", gap: "0.25rem" }}>
+          {([["Builder", "/ai"], ["Workflow", "/workflow"], ["Templates", "/templates"], ["History", "/history"], ["Connectors", "/connectors"]] as const).map(([label, href]) => {
+            const isActive = href === "/connectors";
+            return (
+              <a key={href} href={href} style={{ padding: "0.25rem 0.75rem", background: isActive ? "rgba(99,102,241,0.15)" : "transparent", color: isActive ? COLORS.accent : COLORS.textSecondary, borderRadius: "6px", border: isActive ? "1px solid rgba(99,102,241,0.3)" : "1px solid transparent", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textDecoration: "none", display: "inline-flex", alignItems: "center", transition: "color 0.15s" }}>
+                {label}
+              </a>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* Main Content */}
+      <div style={{ maxWidth: "960px", margin: "0 auto", padding: "2rem 1.5rem" }}>
+        <div style={{ marginBottom: "1.75rem" }}>
+          <h1 style={{ fontSize: "1.75rem", fontWeight: 700, margin: "0 0 0.4rem", letterSpacing: "-0.02em" }}>Connectors</h1>
+          <p style={{ fontSize: "0.9rem", color: COLORS.textSecondary, margin: 0 }}>Connect external services to enhance your ZIVO AI experience</p>
+        </div>
+
+        {/* Search */}
+        <div style={{ marginBottom: "1.75rem" }}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search connectors…"
+            style={{ width: "100%", maxWidth: "360px", padding: "0.5rem 1rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
+          />
+        </div>
+
+        {/* Shared / Project Connectors */}
+        {shared.length > 0 && (
+          <div style={{ marginBottom: "2rem" }}>
+            <h2 style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.textSecondary, marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Project Connectors</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "0.75rem" }}>
+              {shared.map((c) => (
+                <ConnectorCard
+                  key={c.id}
+                  connector={c}
+                  onConnect={handleConnect}
+                  isConnected={c.id === "github" ? connState.githubConnected : c.id === "supabase" ? connState.supabaseConnected : false}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Personal Connectors */}
+        {personal.length > 0 && (
+          <div>
+            <h2 style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.textSecondary, marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Personal Connectors</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "0.75rem" }}>
+              {personal.map((c) => (
+                <ConnectorCard
+                  key={c.id}
+                  connector={c}
+                  onConnect={handleConnect}
+                  isConnected={false}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* GitHub Modal */}
+      {showModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => { setShowModal(false); setModalError(""); }}>
+          <div style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "16px", padding: "1.5rem", width: "420px", maxWidth: "90vw", animation: "fadeIn 0.2s ease" }} onClick={(e) => e.stopPropagation()}>
+            <style>{`@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }`}</style>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "1.25rem" }}>
+              <div style={{ width: "40px", height: "40px", borderRadius: "10px", background: "#1e1e1e", border: "1px solid rgba(255,255,255,0.08)", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.textPrimary }}>
+                <GithubIcon />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: "1rem" }}>{connState.githubConnected ? "GitHub Connected" : "Connect GitHub"}</div>
+                <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary }}>Push generated code to your repository</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div>
+                <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Personal Access Token</label>
+                <input
+                  type="password"
+                  value={connState.modalToken}
+                  onChange={(e) => setConnState((s) => ({ ...s, modalToken: e.target.value }))}
+                  placeholder="ghp_…"
+                  style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Repository (owner/repo)</label>
+                <input
+                  value={connState.modalRepo}
+                  onChange={(e) => setConnState((s) => ({ ...s, modalRepo: e.target.value }))}
+                  placeholder="myorg/myrepo"
+                  style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                />
+              </div>
+            </div>
+            {modalError && (
+              <div style={{ marginTop: "0.75rem", fontSize: "0.8125rem", color: "#ef4444", background: "rgba(239,68,68,0.1)", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid rgba(239,68,68,0.3)" }}>{modalError}</div>
+            )}
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}>
+              {connState.githubConnected && (
+                <button onClick={handleDisconnect} style={{ flex: 1, padding: "0.5rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: "#ef4444", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500 }}>Disconnect</button>
+              )}
+              <button onClick={() => { setShowModal(false); setModalError(""); }} style={{ flex: 1, padding: "0.5rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem" }}>Cancel</button>
+              <button onClick={handleSaveGithub} style={{ flex: 1, padding: "0.5rem", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 600 }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Supabase Modal */}
+      {showSupabaseModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50 }} onClick={() => { setShowSupabaseModal(false); setSupabaseError(""); }}>
+          <div style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "16px", padding: "1.5rem", width: "420px", maxWidth: "90vw", animation: "fadeIn 0.2s ease" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ marginBottom: "1.25rem" }}>
+              <div style={{ fontWeight: 700, fontSize: "1rem", marginBottom: "0.25rem" }}>{connState.supabaseConnected ? "Supabase Connected" : "Connect Supabase"}</div>
+              <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary }}>Add database &amp; auth to your generated apps</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div>
+                <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Supabase Project URL</label>
+                <input
+                  value={connState.supabaseUrl}
+                  onChange={(e) => setConnState((s) => ({ ...s, supabaseUrl: e.target.value }))}
+                  placeholder="https://xxx.supabase.co"
+                  style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Anon Key</label>
+                <input
+                  type="password"
+                  value={connState.supabaseAnonKey}
+                  onChange={(e) => setConnState((s) => ({ ...s, supabaseAnonKey: e.target.value }))}
+                  placeholder="eyJ…"
+                  style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                />
+              </div>
+            </div>
+            {supabaseError && (
+              <div style={{ marginTop: "0.75rem", fontSize: "0.8125rem", color: "#ef4444", background: "rgba(239,68,68,0.1)", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid rgba(239,68,68,0.3)" }}>{supabaseError}</div>
+            )}
+            <div style={{ display: "flex", gap: "0.5rem", marginTop: "1.25rem" }}>
+              {connState.supabaseConnected && (
+                <button onClick={handleDisconnectSupabase} style={{ flex: 1, padding: "0.5rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: "#ef4444", cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500 }}>Disconnect</button>
+              )}
+              <button onClick={() => { setShowSupabaseModal(false); setSupabaseError(""); }} style={{ flex: 1, padding: "0.5rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem" }}>Cancel</button>
+              <button onClick={handleSaveSupabase} disabled={supabaseTesting} style={{ flex: 1, padding: "0.5rem", background: supabaseTesting ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #8b5cf6)", border: "none", borderRadius: "8px", color: "#fff", cursor: supabaseTesting ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600 }}>
+                {supabaseTesting ? "Testing…" : "Connect"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
