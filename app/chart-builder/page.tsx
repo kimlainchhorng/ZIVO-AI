@@ -46,9 +46,9 @@ function LineChart({ data, color }: { data: { labels: string[]; values: number[]
   );
 }
 
-function BarChart({ data, color: _color }: { data: { labels: string[]; values: number[] }; color: string }) {
+function BarChart({ data, color }: { data: { labels: string[]; values: number[] }; color: string }) {
   const max = Math.max(...data.values, 1);
-  const barColors = ['#6366f1', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
+  const barColors = [color, '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
   const bw = 40, gap = (380 - data.values.length * bw) / (data.values.length + 1);
   return (
     <svg viewBox="0 0 500 300" style={{ width: '100%' }}>
@@ -67,9 +67,9 @@ function BarChart({ data, color: _color }: { data: { labels: string[]; values: n
   );
 }
 
-function PieChart({ data, color: _color }: { data: { labels: string[]; values: number[] }; color: string }) {
+function PieChart({ data, color }: { data: { labels: string[]; values: number[] }; color: string }) {
   const total = data.values.reduce((a, b) => a + b, 0) || 1;
-  const sliceColors = ['#6366f1', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
+  const sliceColors = [color, '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
   let startAngle = -Math.PI / 2;
   const slices = data.values.slice(0, 3).map((v, i) => {
     const angle = (v / total) * 2 * Math.PI;
