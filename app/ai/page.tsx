@@ -1261,8 +1261,8 @@ function AIPageInner() {
           }))
         );
         setShowDiff(true);
-      }
 
+        void startWebsiteLivePreview(collectedFiles);
       } else if (!websiteError) {
         setWebsiteError("No files were generated. Try a more specific prompt.");
       }
@@ -4190,6 +4190,7 @@ export default function AIPage() {
     </Suspense>
   );
 }
+
 
 
 
