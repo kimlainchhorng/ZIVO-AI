@@ -149,6 +149,8 @@ const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 // Mobile phone frame dimensions for preview
 const MOBILE_FRAME_WIDTH = 375;
 const MOBILE_FRAME_HEIGHT = 812;
+// Max characters shown in the quick prompt suggestion chip text
+const MAX_PROMPT_SUGGESTION_LENGTH = 72;
 
 // Map SSE stage names (from /api/build) to buildStages array indices:
 // buildStages: [prompt(0), parse(1), blueprint(2), generate(3), validate(4), fix(5), preview(6), deploy(7)]
@@ -1902,10 +1904,7 @@ function AIPageInner() {
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes recordPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
-        @keyframes statusBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-        @keyframes stagePulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(99,102,241,0.4); } 50% { opacity: 0.8; box-shadow: 0 0 0 6px rgba(99,102,241,0); } }
-        @keyframes slideRight { 0% { transform: translateX(-100%); } 100% { transform: translateX(200%); } }
         .zivo-btn:hover { opacity: 0.85; transform: scale(1.02); }
         .zivo-btn { transition: opacity 0.15s, transform 0.15s; }
         .zivo-chip:hover { background: rgba(99,102,241,0.2) !important; border-color: rgba(99,102,241,0.4) !important; }
@@ -2480,7 +2479,7 @@ function AIPageInner() {
                   >
                     <span style={{ color: COLORS.accent, fontWeight: 700, flexShrink: 0 }}>+</span>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical" as const }}>
-                      {ps.length > 72 ? ps.slice(0, 72) + "…" : ps}
+                      {ps.length > MAX_PROMPT_SUGGESTION_LENGTH ? ps.slice(0, MAX_PROMPT_SUGGESTION_LENGTH) + "…" : ps}
                     </span>
                   </button>
                 ))}

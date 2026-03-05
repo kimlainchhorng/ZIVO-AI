@@ -30,9 +30,11 @@ const COLORS = {
   textMuted: '#475569',
 };
 
+const STAGE_ICON_SIZE = 14;
+
 /** Map icon name strings → compact SVG icons */
 function StageIcon({ status, icon }: { status: BuildStageStatus; icon: string }) {
-  const size = 14;
+  const size = STAGE_ICON_SIZE;
   const s: React.CSSProperties = { display: 'inline-block', flexShrink: 0 };
 
   if (status === 'done') {
