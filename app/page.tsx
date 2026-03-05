@@ -2,25 +2,55 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import TemplateSelector from "@/components/TemplateSelector";
+import QuickStartGrid from "@/components/QuickStartGrid";
 import type { GeneratedFile, BuilderResponse } from "@/app/api/builder/route";
 
-const NAV_LINKS = [
-  { label: "Builder", href: "/" },
-  { label: "Workflow", href: "/workflow" },
-  { label: "Templates", href: "/templates" },
-  { label: "History", href: "/history" },
-  { label: "Dashboard", href: "/dashboard" },
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type SidebarTab = "Prompt" | "Plan" | "Templates" | "Workflow";
+type PreviewTab = "Preview" | "Code" | "Console" | "Design";
+type RightTab = "Files" | "Code" | "Diff";
+
+// ─── Nav items ────────────────────────────────────────────────────────────────
+
+const NAV_ITEMS = [
+  { label: "Code Builder", icon: "⚡", active: true },
+  { label: "Security", icon: "🔒", active: false },
+  { label: "Website", icon: "🌐", active: false },
+  { label: "Mobile App", icon: "📱", active: false },
 ];
+
+const MODEL_OPTIONS = [
+  { id: "gpt-4o", label: "GPT-4o", quality: "high", cost: 0.005 },
+  { id: "gpt-4o-mini", label: "GPT-4o Mini", quality: "medium", cost: 0.00015 },
+  { id: "o1-mini", label: "o1-mini", quality: "high", cost: 0.003 },
+  { id: "o1", label: "o1", quality: "high", cost: 0.015 },
+] as const;
+
+const QUALITY_BADGE: Record<string, string> = {
+  high: "bg-green-500/20 text-green-400 border border-green-500/30",
+  medium: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30",
+};
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function BuilderPage() {
   const [prompt, setPrompt] = useState("");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("Prompt");
+  const [previewTab, setPreviewTab] = useState<PreviewTab>("Preview");
+  const [rightTab, setRightTab] = useState<RightTab>("Files");
+  const [selectedModel, setSelectedModel] = useState("gpt-4o");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<BuilderResponse | null>(null);
   const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [filter, setFilter] = useState<string>("all");
   const [files, setFiles] = useState<GeneratedFile[]>([]);
+  const [passCount, setPassCount] = useState(0);
+  const [totalPasses] = useState(8);
+
+  const MAX_PROMPT = 200;
+  const activeModel = MODEL_OPTIONS.find((m) => m.id === selectedModel) ?? MODEL_OPTIONS[0];
 
   const handleBuild = async () => {
     if (!prompt.trim()) return;
@@ -29,13 +59,13 @@ export default function BuilderPage() {
     setFiles([]);
     setResult(null);
     setSelectedFile(null);
+    setPassCount(0);
     try {
       const res = await fetch("/api/generate-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, model: selectedModel }),
       });
-
       const data: unknown = await res.json();
       if (
         data &&
@@ -46,6 +76,8 @@ export default function BuilderPage() {
         const typed = data as BuilderResponse;
         setFiles(typed.files);
         setResult(typed);
+        setPassCount(typed.files.length > 0 ? Math.min(typed.files.length, totalPasses) : 0);
+        setRightTab("Files");
       } else if (data && typeof data === "object" && "error" in data) {
         setError(String((data as { error: unknown }).error));
       } else {
@@ -58,23 +90,18 @@ export default function BuilderPage() {
     }
   };
 
-  async function handleCopy(text: string) {
-    await navigator.clipboard.writeText(text).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  const actionColor: Record<string, string> = {
-    create: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
-    update: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-    delete: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
+  const handleStartFresh = () => {
+    setPrompt("");
+    setFiles([]);
+    setResult(null);
+    setError(null);
+    setSelectedFile(null);
+    setPassCount(0);
   };
 
-  const filteredFiles = filter === "all" ? files : files.filter((f) => f.action === filter);
-
-  // Group files by top-level directory for a tree-style display
+  // Group files by top-level directory
   const fileGroups: Record<string, GeneratedFile[]> = {};
-  for (const file of filteredFiles) {
+  for (const file of files) {
     const parts = file.path.split("/");
     const group = parts.length > 1 ? parts[0] : "root";
     if (!fileGroups[group]) fileGroups[group] = [];
@@ -82,126 +109,287 @@ export default function BuilderPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
-      {/* Header */}
-      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex items-center justify-between px-6 py-3">
-          <h1 className="text-xl font-bold tracking-tight">⚡ ZIVO AI</h1>
-          <nav className="flex items-center gap-1">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50"
-              >
-                {link.label}
-              </Link>
-            ))}
-            <Link
-              href="/ai"
-              className="ml-2 rounded-lg bg-violet-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-violet-700"
-            >
-              🤖 AI Tools
-            </Link>
-          </nav>
+    <div className="zivo-root">
+      {/* ─── Left Sidebar ─────────────────────────────────────────────────── */}
+      <aside className="zivo-sidebar">
+        {/* Logo */}
+        <div className="zivo-logo-row">
+          <div className="zivo-logo-icon">Z</div>
+          <span className="zivo-logo-text">ZIVO AI</span>
         </div>
-        <p className="px-6 pb-3 text-sm text-zinc-500 dark:text-zinc-400">
-          Describe your app and AI will generate the files
-        </p>
-      </header>
 
-      <div className="flex flex-1 flex-col gap-4 p-6 md:flex-row">
-        {/* Left panel: prompt + file list */}
-        <aside className="flex w-full flex-col gap-4 md:w-80">
-          {/* Prompt input */}
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-medium">Prompt</label>
-            <textarea
-              className="h-40 w-full resize-none rounded-lg border border-zinc-300 bg-white p-3 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
-              placeholder="e.g. Create a Next.js TODO app with Tailwind CSS and local storage"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleBuild();
-              }}
-            />
-            <button
-              onClick={handleBuild}
-              disabled={loading || !prompt.trim()}
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+        {/* Nav tabs */}
+        <nav className="zivo-nav">
+          {NAV_ITEMS.map((item) => (
+            <Link
+              key={item.label}
+              href={item.label === "Code Builder" ? "/" : `/${item.label.toLowerCase().replace(" ", "-")}`}
+              className={`zivo-nav-item${item.active ? " active" : ""}`}
             >
-              {loading ? "Building…" : "⚡ Build (⌘↵)"}
-            </button>
+              <span>{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
+          ))}
+        </nav>
+
+        {/* Divider */}
+        <div className="zivo-divider" />
+
+        {/* Section header */}
+        <div className="zivo-section-header">
+          <p className="zivo-section-title">What will you build today?</p>
+          <p className="zivo-section-sub">Describe your idea and let AI do the heavy lifting</p>
+        </div>
+
+        {/* Model selector */}
+        <div className="zivo-model-selector">
+          <label className="zivo-label">Model</label>
+          <select
+            value={selectedModel}
+            onChange={(e) => setSelectedModel(e.target.value)}
+            className="zivo-model-select"
+          >
+            {MODEL_OPTIONS.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.label} · {m.quality} · ${m.cost.toFixed(5)}/1k
+              </option>
+            ))}
+          </select>
+          <div className="zivo-model-info">
+            <span className={`zivo-model-badge ${QUALITY_BADGE[activeModel.quality] ?? ""}`}>
+              {activeModel.quality}
+            </span>
+            <span className="zivo-model-cost">${activeModel.cost.toFixed(5)}/1k tokens</span>
           </div>
+        </div>
 
-          {/* Error */}
-          {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-              {error}
+        {/* Tabs: Prompt | Plan | Templates | Workflow */}
+        <div className="zivo-tabs">
+          {(["Prompt", "Plan", "Templates", "Workflow"] as SidebarTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setSidebarTab(tab)}
+              className={`zivo-tab${sidebarTab === tab ? " zivo-tab-active" : ""}`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="zivo-tab-content">
+          {sidebarTab === "Prompt" && (
+            <div className="zivo-prompt-section">
+              <div className="zivo-textarea-wrapper">
+                <textarea
+                  className="zivo-textarea"
+                  placeholder="Build a complete e-commerce app with product catalog, cart, checkout, and admin panel…"
+                  value={prompt}
+                  maxLength={MAX_PROMPT}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleBuild();
+                  }}
+                  rows={6}
+                />
+                <div className="zivo-char-count">
+                  <span className="zivo-gpt-badge">{activeModel.label}</span>
+                  <span>{prompt.length}/{MAX_PROMPT}</span>
+                </div>
+              </div>
+
+              {/* Source buttons */}
+              <div className="zivo-source-row">
+                <span className="zivo-source-label">or start from</span>
+                <div className="zivo-source-btns">
+                  {["Figma", "GitHub", "Team template"].map((src) => (
+                    <button key={src} className="zivo-source-btn">{src}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* QuickStart grid */}
+              <QuickStartGrid onSelect={(p) => setPrompt(p)} />
             </div>
           )}
 
-          {/* Summary */}
-          {result?.summary && (
-            <p className="text-sm text-zinc-500 dark:text-zinc-400">
-              {result.summary}
-            </p>
+          {sidebarTab === "Templates" && (
+            <TemplateSelector
+              onSelect={(p) => { setPrompt(p); setSidebarTab("Prompt"); }}
+              onSubmit={(p) => { setPrompt(p); handleBuild(); }}
+            />
           )}
 
-          {/* File count badge + filter */}
-          {files.length > 0 && (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                  Files
-                </span>
-                <span className="rounded-full bg-zinc-200 px-2 py-0.5 text-xs font-bold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200">
-                  {files.length}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 text-xs">
-                {['all', 'create', 'update', 'delete'].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilter(f)}
-                    className={`rounded-full px-3 py-1 font-medium transition ${
-                      filter === f
-                        ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                        : "bg-zinc-200 text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-800 dark:text-zinc-300"
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
+          {sidebarTab === "Plan" && (
+            <div className="zivo-plan-placeholder">
+              <span className="zivo-plan-icon">📋</span>
+              <p>Run a build to generate a plan</p>
+            </div>
+          )}
+
+          {sidebarTab === "Workflow" && (
+            <div className="zivo-plan-placeholder">
+              <span className="zivo-plan-icon">⚙️</span>
+              <p>
+                <Link href="/workflow" className="zivo-link">Open Workflow Editor →</Link>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="zivo-action-row">
+          <button onClick={handleStartFresh} className="zivo-btn-fresh">
+            Start Fresh
+          </button>
+          <button
+            onClick={handleBuild}
+            disabled={loading || !prompt.trim()}
+            className="zivo-btn-build"
+          >
+            {loading ? "Building…" : "⚡ Build"}
+          </button>
+        </div>
+
+        {error && (
+          <div className="zivo-error">{error}</div>
+        )}
+      </aside>
+
+      {/* ─── Main Preview Area ─────────────────────────────────────────────── */}
+      <main className="zivo-main">
+        {/* Top toolbar */}
+        <div className="zivo-toolbar">
+          <div className="zivo-toolbar-left">
+            {(["Preview", "Code", "Console", "Design"] as PreviewTab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setPreviewTab(tab)}
+                className={`zivo-toolbar-tab${previewTab === tab ? " active" : ""}`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+          <div className="zivo-toolbar-right">
+            {(["Files", "Code", "Diff"] as RightTab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setRightTab(tab)}
+                className={`zivo-toolbar-tab${rightTab === tab ? " active" : ""}`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Preview content */}
+        <div className="zivo-preview-area">
+          {previewTab === "Preview" && (
+            <div className="zivo-preview-empty">
+              <div className="zivo-preview-logo">Z</div>
+              <h2 className="zivo-preview-title">Your app preview lives here</h2>
+              <p className="zivo-preview-sub">
+                Enter a prompt and click Build to generate your app
+              </p>
+              <div className="zivo-preview-badges">
+                <span className="zivo-badge">⚡ Instant Preview</span>
+                <span className="zivo-badge">🤖 AI-Powered</span>
+                <span className="zivo-badge">✏️ Fully Editable</span>
               </div>
             </div>
           )}
 
-          {/* File tree */}
-          {filteredFiles.length > 0 && (
-            <div className="flex flex-col gap-2 overflow-auto">
-              {Object.entries(fileGroups).map(([group, groupFiles]) => (
-                <div key={group}>
-                  <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-500">
-                    📁 {group}
-                  </p>
-                  <ul className="flex flex-col gap-0.5">
+          {previewTab === "Code" && selectedFile && (
+            <pre className="zivo-code-view">
+              <code>{selectedFile.content}</code>
+            </pre>
+          )}
+
+          {previewTab === "Code" && !selectedFile && (
+            <div className="zivo-preview-empty">
+              <p className="zivo-preview-sub">Select a file from the Files panel to view its code</p>
+            </div>
+          )}
+
+          {previewTab === "Console" && (
+            <div className="zivo-preview-empty">
+              <span className="zivo-plan-icon">🖥️</span>
+              <p className="zivo-preview-sub">Console output will appear here during builds</p>
+            </div>
+          )}
+
+          {previewTab === "Design" && (
+            <div className="zivo-preview-empty">
+              <span className="zivo-plan-icon">🎨</span>
+              <p className="zivo-preview-sub">
+                <Link href="/interaction-builder" className="zivo-link">Open Design Editor →</Link>
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Build Output Panel */}
+        <div className="zivo-build-panel">
+          <div className="zivo-build-panel-header">
+            <div className="zivo-build-status-row">
+              <span className={`zivo-status-dot${passCount > 0 ? " passed" : ""}`} />
+              <span className="zivo-build-label">Build Output</span>
+              <span className="zivo-pass-count">Pass {passCount}/{totalPasses}</span>
+            </div>
+            <span className="zivo-build-status-text">{passCount > 0 ? "Passed" : loading ? "Running…" : "No output yet"}</span>
+          </div>
+          <div className="zivo-build-panel-body">
+            {loading && (
+              <div className="zivo-build-running">
+                <span className="zivo-spinner" />
+                <span>Generating files…</span>
+              </div>
+            )}
+            {!loading && passCount === 0 && (
+              <p className="zivo-build-empty">No builds yet — enter a prompt and click Build.</p>
+            )}
+            {!loading && result?.summary && (
+              <p className="zivo-build-summary">{result.summary}</p>
+            )}
+          </div>
+        </div>
+      </main>
+
+      {/* ─── Right File Panel ──────────────────────────────────────────────── */}
+      <aside className="zivo-file-panel">
+        <div className="zivo-file-panel-header">
+          <input
+            className="zivo-file-search"
+            type="text"
+            placeholder="Search files…"
+            readOnly
+          />
+        </div>
+
+        {rightTab === "Files" && (
+          <div className="zivo-file-tree">
+            {files.length === 0 ? (
+              <div className="zivo-file-empty">
+                <span className="zivo-file-empty-icon">📁</span>
+                <p>Build a project to see files here.</p>
+              </div>
+            ) : (
+              Object.entries(fileGroups).map(([group, groupFiles]) => (
+                <div key={group} className="zivo-file-group">
+                  <p className="zivo-file-group-label">📁 {group}</p>
+                  <ul>
                     {groupFiles.map((file) => (
                       <li key={file.path}>
                         <button
-                          onClick={() => setSelectedFile(file)}
-                          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition ${
-                            selectedFile?.path === file.path
-                              ? "bg-zinc-200 dark:bg-zinc-800"
-                              : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                          }`}
+                          onClick={() => { setSelectedFile(file); setPreviewTab("Code"); }}
+                          className={`zivo-file-item${selectedFile?.path === file.path ? " active" : ""}`}
                         >
-                          <span
-                            className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold ${actionColor[file.action] ?? ""}`}
-                          >
-                            {file.action}
+                          <span className={`zivo-file-action zivo-action-${file.action}`}>
+                            {file.action[0].toUpperCase()}
                           </span>
-                          <span className="truncate font-mono text-xs">
+                          <span className="zivo-file-name">
                             {file.path.split("/").pop() ?? file.path}
                           </span>
                         </button>
@@ -209,88 +397,40 @@ export default function BuilderPage() {
                     ))}
                   </ul>
                 </div>
-              ))}
-            </div>
-          )}
-        </aside>
+              ))
+            )}
+          </div>
+        )}
 
-        {/* Right panel: code preview + post-build actions */}
-        <main className="flex flex-1 flex-col gap-4 overflow-hidden">
-          {selectedFile ? (
-            <>
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-sm font-semibold">{selectedFile.path}</span>
-                <button
-                  onClick={() => handleCopy(selectedFile.content)}
-                  className="rounded-lg border border-zinc-300 px-3 py-1 text-xs font-medium transition hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                >
-                  {copied ? "✓ Copied" : "Copy"}
-                </button>
-              </div>
-              <pre className="flex-1 overflow-auto rounded-xl border border-zinc-200 bg-zinc-900 p-4 text-sm text-zinc-100 dark:border-zinc-700">
-                <code>{selectedFile.content}</code>
-              </pre>
-            </>
-          ) : (
-            <div className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-zinc-300 text-sm text-zinc-400 dark:border-zinc-700">
-              {loading ? "Generating files…" : "Your generated files will appear here"}
-            </div>
-          )}
+        {rightTab === "Code" && selectedFile && (
+          <pre className="zivo-code-panel">
+            <code>{selectedFile.content}</code>
+          </pre>
+        )}
 
-          {/* Post-build "What's Next?" section */}
-          {result && !loading && (
-            <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <h2 className="mb-3 text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                🚀 What&apos;s Next?
-              </h2>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <Link
-                  href="/deploy"
-                  className="flex flex-col items-start gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm transition hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-500"
-                >
-                  <span className="text-base">🚢</span>
-                  <span className="font-medium">Deploy to Vercel</span>
-                </Link>
-                <Link
-                  href="/device-preview"
-                  className="flex flex-col items-start gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm transition hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-500"
-                >
-                  <span className="text-base">📱</span>
-                  <span className="font-medium">Mobile Preview</span>
-                </Link>
-                <Link
-                  href="/ai"
-                  className="flex flex-col items-start gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm transition hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-500"
-                >
-                  <span className="text-base">🖼️</span>
-                  <span className="font-medium">Generate Images</span>
-                </Link>
-                <Link
-                  href="/mobile-pipeline"
-                  className="flex flex-col items-start gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm transition hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-500"
-                >
-                  <span className="text-base">📲</span>
-                  <span className="font-medium">Build Mobile App</span>
-                </Link>
-                <Link
-                  href="/history"
-                  className="flex flex-col items-start gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm transition hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-500"
-                >
-                  <span className="text-base">🕑</span>
-                  <span className="font-medium">View History</span>
-                </Link>
-                <Link
-                  href="/workflow"
-                  className="flex flex-col items-start gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm transition hover:border-zinc-400 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-zinc-500"
-                >
-                  <span className="text-base">⚙️</span>
-                  <span className="font-medium">Workflow</span>
-                </Link>
-              </div>
-            </div>
-          )}
-        </main>
-      </div>
+        {rightTab === "Code" && !selectedFile && (
+          <div className="zivo-file-empty">
+            <p>Select a file to view its code.</p>
+          </div>
+        )}
+
+        {rightTab === "Diff" && (
+          <div className="zivo-file-empty">
+            <span className="zivo-file-empty-icon">±</span>
+            <p>Diff view will show changes after a build.</p>
+          </div>
+        )}
+      </aside>
+
+      {/* ─── Floating Action Button ────────────────────────────────────────── */}
+      <button
+        className="zivo-fab"
+        title="New build"
+        onClick={handleStartFresh}
+        aria-label="Start new build"
+      >
+        +
+      </button>
     </div>
   );
 }
