@@ -39,16 +39,39 @@ export function buildWebsiteManifest(
   // ── Design tokens + global styles ─────────────────────────────────────────
   files.push(
     mf("lib/design/tokens.ts", "style", "Design system tokens (colors, spacing, typography)", [], priority++),
-    mf("lib/assets.ts", "util", "Stable picsum.photos image URLs for hero, features, avatars", [], priority++),
+    mf("lib/assets.ts", "util", "Single source-of-truth: exports brand, brandLogoSvg, images (hero 1600x900, features 800x600, avatars 200x200) using stable picsum.photos/id/N URLs", [], priority++),
     mf("lib/content/site-copy.ts", "util", "All site copy generated from the website plan", [], priority++),
     mf("app/globals.css", "style", "Global CSS with CSS custom properties from design tokens", [], priority++)
+  );
+
+  // ── Brand assets ───────────────────────────────────────────────────────────
+  files.push(
+    mf(
+      "components/brand/Logo.tsx",
+      "component",
+      "Brand Logo component: renders brandLogoSvg from lib/assets via dangerouslySetInnerHTML. Props: size?, className?",
+      ["lib/assets.ts"],
+      priority++
+    )
   );
 
   // ── Layout ─────────────────────────────────────────────────────────────────
   files.push(
     mf("app/layout.tsx", "page", "Root layout with metadata, fonts, and global providers", ["app/globals.css"], priority++),
-    mf("components/site/Header.tsx", "component", "Site header with logo, navigation links, and CTA button", ["lib/design/tokens.ts"], priority++),
-    mf("components/site/Footer.tsx", "component", "Site footer with links, legal pages, and brand info", ["lib/design/tokens.ts"], priority++)
+    mf(
+      "components/site/Header.tsx",
+      "component",
+      'Site header: MUST import Logo from "@/components/brand/Logo" and render <Logo /> beside the brand name. Also includes navigation links and CTA button.',
+      ["lib/design/tokens.ts", "components/brand/Logo.tsx"],
+      priority++
+    ),
+    mf(
+      "components/site/Footer.tsx",
+      "component",
+      'Site footer: MUST import Logo from "@/components/brand/Logo" and render <Logo /> beside the brand name. Also includes links, legal pages, and brand info.',
+      ["lib/design/tokens.ts", "components/brand/Logo.tsx"],
+      priority++
+    )
   );
 
   // ── UI primitives ──────────────────────────────────────────────────────────
@@ -66,13 +89,27 @@ export function buildWebsiteManifest(
     plan.pages.flatMap((p) => p.sections.map((s) => s.type))
   );
 
+  // Descriptions that reinforce image/avatar requirements per section type
+  const sectionImageHints: Partial<Record<string, string>> = {
+    hero: 'MUST import `images` from "@/lib/assets" and render <img src={images.hero} alt="Hero" /> with responsive classes. Use next/image if available.',
+    features: 'MUST import `images` from "@/lib/assets" and render at least 3 feature images from images.features (800x600). Use next/image if available.',
+    testimonials: 'MUST import `images` from "@/lib/assets" and render avatar images from images.avatars (200x200) beside each testimonial. Use next/image if available.',
+  };
+
   for (const sectionType of sectionTypes) {
     const name = capitalize(sectionType);
+    const imageHint = sectionImageHints[sectionType] ?? "";
+    const description = [
+      `${name} section component using design tokens and stable assets`,
+      imageHint,
+    ]
+      .filter(Boolean)
+      .join(". ");
     files.push(
       mf(
         `components/sections/${name}Section.tsx`,
         "component",
-        `${name} section component using design tokens and stable assets`,
+        description,
         ["lib/assets.ts", "lib/design/tokens.ts", "components/ui/Button.tsx"],
         priority++
       )
