@@ -28,6 +28,8 @@ import AgentOrchestrator from "@/components/AgentOrchestrator";
 import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
 import { Icon } from "@/components/icons/Icon";
+import { getWebContainer } from "@/lib/webcontainer";
+import type { FileSystemTree, WebContainerProcess } from "@webcontainer/api";
 
 interface SecurityIssue {
   id: string;
@@ -239,6 +241,12 @@ function AIPageInner() {
   const [, setWebsiteHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   // Website v2 pass counter for SSE progress
   const [websitePassMessage, setWebsitePassMessage] = useState<string | null>(null);
+  const [websiteLivePreviewUrl, setWebsiteLivePreviewUrl] = useState<string | null>(null);
+  const [websiteLivePreviewRunning, setWebsiteLivePreviewRunning] = useState(false);
+  const [websiteLivePreviewStatus, setWebsiteLivePreviewStatus] = useState<string | null>(null);
+  const [websiteLivePreviewError, setWebsiteLivePreviewError] = useState<string | null>(null);
+  const websiteDevProcessRef = useRef<WebContainerProcess | null>(null);
+  const websiteServerUnsubscribeRef = useRef<(() => void) | null>(null);
 
   // Mobile app generation state
   const [mobilePrompt, setMobilePrompt] = useState("");
@@ -891,6 +899,110 @@ function AIPageInner() {
 </html>`;
   }
 
+  async function generatePreviewFromFiles(files: GeneratedFile[]): Promise<string> {
+    if (!files.length) return "";
+    try {
+      const res = await fetch("/api/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { previewHtml?: string };
+        if (typeof data.previewHtml === "string" && data.previewHtml.trim()) {
+          return data.previewHtml;
+        }
+      }
+    } catch {
+      // Ignore preview API failures and fall back to local HTML snapshot.
+    }
+
+    return buildHTMLSnapshot(files);
+  }
+  function toWebContainerTree(files: GeneratedFile[]): FileSystemTree {
+    const tree: FileSystemTree = {};
+
+    for (const file of files) {
+      if (!file.path || file.action === "delete") continue;
+      const parts = file.path.split("/").filter(Boolean);
+      if (parts.length === 0) continue;
+
+      let current = tree;
+      for (let i = 0; i < parts.length; i += 1) {
+        const part = parts[i];
+        const isLeaf = i === parts.length - 1;
+
+        if (isLeaf) {
+          current[part] = { file: { contents: file.content ?? "" } };
+          continue;
+        }
+
+        const existing = current[part];
+        if (!existing || !("directory" in existing)) {
+          current[part] = { directory: {} };
+        }
+
+        current = (current[part] as { directory: FileSystemTree }).directory;
+      }
+    }
+
+    return tree;
+  }
+
+  async function startWebsiteLivePreview(files: GeneratedFile[]): Promise<void> {
+    if (!files.length) return;
+
+    setWebsiteLivePreviewError(null);
+    setWebsiteLivePreviewStatus("Booting live runtime…");
+    setWebsiteLivePreviewRunning(true);
+    setWebsiteLivePreviewUrl(null);
+
+    try {
+      try {
+        websiteServerUnsubscribeRef.current?.();
+      } catch {
+        // ignore
+      }
+      websiteServerUnsubscribeRef.current = null;
+
+      try {
+        websiteDevProcessRef.current?.kill();
+      } catch {
+        // ignore
+      }
+      websiteDevProcessRef.current = null;
+
+      const webcontainer = await getWebContainer();
+      await webcontainer.mount(toWebContainerTree(files));
+
+      websiteServerUnsubscribeRef.current = webcontainer.on("server-ready", (_port, url) => {
+        setWebsiteLivePreviewUrl(url);
+        setWebsiteLivePreviewStatus("Live preview ready");
+      });
+
+      setWebsiteLivePreviewStatus("Installing dependencies…");
+      const installProcess = await webcontainer.spawn("npm", ["install", "--no-audit", "--no-fund"]);
+      const installCode = await installProcess.exit;
+      if (installCode !== 0) throw new Error(`npm install failed (${installCode})`);
+
+      setWebsiteLivePreviewStatus("Starting Next.js dev server…");
+      const devProcess = await webcontainer.spawn("npm", ["run", "dev", "--", "--port", "3000", "--hostname", "0.0.0.0"]);
+      websiteDevProcessRef.current = devProcess;
+
+      void devProcess.exit.then((code) => {
+        setWebsiteLivePreviewRunning(false);
+        if (code !== 0) {
+          setWebsiteLivePreviewError(`Live preview exited with code ${code}.`);
+          setWebsiteLivePreviewStatus(null);
+        }
+      });
+    } catch (err: unknown) {
+      setWebsiteLivePreviewRunning(false);
+      setWebsiteLivePreviewStatus(null);
+      setWebsiteLivePreviewError(err instanceof Error ? err.message : "Live preview failed to start.");
+    }
+  }
+
   async function handlePlan() {
     if (!prompt.trim()) return;
     setPlanLoading(true);
@@ -1065,10 +1177,16 @@ function AIPageInner() {
 
   async function handleWebsiteGenerate() {
     if (!websitePrompt.trim()) return;
+
+    const previousFiles = output?.files ?? [];
+
     setWebsiteLoading(true);
     setWebsiteError(null);
     setWebsiteResult(null);
     setWebsitePassMessage(null);
+    setWebsiteLivePreviewUrl(null);
+    setWebsiteLivePreviewError(null);
+    setWebsiteLivePreviewStatus(null);
     try {
       const newIteration = websiteIteration + 1;
       const res = await fetch("/api/build", {
@@ -1115,19 +1233,45 @@ function AIPageInner() {
       }
 
       if (collectedFiles.length > 0) {
-        setWebsiteResult({ files: collectedFiles, preview_html: "", summary: buildSummary || `Generated ${collectedFiles.length} files.` });
+        setWebsitePassMessage("Preparing website preview…");
+        const previewHtml = await generatePreviewFromFiles(collectedFiles);
+        const summary = buildSummary || `Generated ${collectedFiles.length} files.`;
+
+        setWebsiteResult({ files: collectedFiles, preview_html: previewHtml, summary });
         setWebsiteIteration(newIteration);
         setWebsiteHistory((prev) => [
           ...prev,
           { role: "user" as const, content: websitePrompt },
-          { role: "assistant" as const, content: buildSummary || `Generated ${collectedFiles.length} files.` },
+          { role: "assistant" as const, content: summary },
         ]);
+
+        setOutput({ files: collectedFiles, preview_html: previewHtml, summary });
+        setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
+        setActiveRightTab("files");
+
+        const previousFileMap = new Map(previousFiles.map((f) => [f.path, f.content]));
+        setDiffFiles(
+          collectedFiles.map((f) => ({
+            path: f.path,
+            oldContent: previousFileMap.get(f.path) ?? "",
+            newContent: f.content,
+          }))
+        );
+        setShowDiff(true);
+      }
+
+        void startWebsiteLivePreview(collectedFiles); else if (!websiteError) {
+        setWebsiteError("No files were generated. Try a more specific prompt.");
       }
     } catch (err: unknown) {
       setWebsiteError(err instanceof Error ? err.message : "Website generation failed. Please try again.");
     }
     setWebsiteLoading(false);
     setWebsitePassMessage(null);
+    setWebsiteLivePreviewUrl(null);
+    setWebsiteLivePreviewError(null);
+    setWebsiteLivePreviewStatus(null);
   }
 
   async function handleMobileGenerate() {
@@ -2445,6 +2589,24 @@ function AIPageInner() {
                       </div>
                       <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{websiteResult.summary}</div>
                       <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{websiteResult.files.length} file(s) generated</div>
+                      <button
+                        className="zivo-btn"
+                        onClick={() => { setMode("code"); setActiveRightTab("files"); }}
+                        style={{ marginTop: "0.6rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: "pointer" }}
+                      >
+                        Open in Code Builder
+                      </button>
+                      <button
+                        className="zivo-btn"
+                        onClick={() => void startWebsiteLivePreview(websiteResult.files)}
+                        disabled={websiteLivePreviewRunning}
+                        style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: websiteLivePreviewRunning ? "not-allowed" : "pointer", opacity: websiteLivePreviewRunning ? 0.6 : 1 }}
+                      >
+                        {websiteLivePreviewRunning ? "Starting live runtime…" : websiteLivePreviewUrl ? "Restart Live Preview" : "Start Live Preview"}
+                      </button>
+                      {websiteLivePreviewStatus && (
+                        <div style={{ marginTop: "0.45rem", fontSize: "0.72rem", color: COLORS.textSecondary }}>{websiteLivePreviewStatus}</div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3330,7 +3492,26 @@ function AIPageInner() {
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.accent }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
                   <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary }}>Website Preview</span>
+                  <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    {websiteLivePreviewStatus && (
+                      <span style={{ fontSize: "0.72rem", color: COLORS.textMuted }}>{websiteLivePreviewStatus}</span>
+                    )}
+                    {websiteResult?.files && websiteResult.files.length > 0 && (
+                      <button
+                        onClick={() => void startWebsiteLivePreview(websiteResult.files)}
+                        disabled={websiteLivePreviewRunning}
+                        style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: websiteLivePreviewRunning ? "not-allowed" : "pointer", opacity: websiteLivePreviewRunning ? 0.6 : 1 }}
+                      >
+                        {websiteLivePreviewRunning ? "Starting…" : websiteLivePreviewUrl ? "Restart Live" : "Start Live"}
+                      </button>
+                    )}
+                  </div>
                 </div>
+                {websiteLivePreviewError && (
+                  <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>
+                    {websiteLivePreviewError}
+                  </div>
+                )}
                 {!websiteResult && !websiteLoading && (
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
                     <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
@@ -3345,7 +3526,15 @@ function AIPageInner() {
                     <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
                   </div>
                 )}
-                {websiteResult?.preview_html && (
+                {websiteResult && websiteLivePreviewUrl && (
+                  <iframe
+                    title="Website Live Runtime Preview"
+                    src={websiteLivePreviewUrl}
+                    style={{ flex: 1, width: "100%", border: "none" }}
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                  />
+                )}
+                {websiteResult?.preview_html && !websiteLivePreviewUrl && (
                   <iframe
                     title="Website Preview"
                     srcDoc={websiteResult.preview_html}
@@ -3999,3 +4188,8 @@ export default function AIPage() {
     </Suspense>
   );
 }
+
+
+
+
+
