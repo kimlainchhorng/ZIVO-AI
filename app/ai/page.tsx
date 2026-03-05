@@ -28,7 +28,7 @@ import AgentOrchestrator from "@/components/AgentOrchestrator";
 import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
 import { Icon } from "@/components/icons/Icon";
-import { getWebContainer, resetWebContainer } from "@/lib/webcontainer";
+import { getWebContainer, invalidateWebContainer } from "@/lib/webcontainer";
 import type { FileSystemTree, WebContainerProcess } from "@webcontainer/api";
 
 interface SecurityIssue {
@@ -191,6 +191,16 @@ function getActionStyle(action: string): React.CSSProperties {
   if (action === "create") return { background: "rgba(16,185,129,0.15)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)" };
   if (action === "delete") return { background: "rgba(239,68,68,0.15)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" };
   return { background: "rgba(99,102,241,0.15)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.3)" };
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(id); resolve(v); },
+      (e) => { clearTimeout(id); reject(e); }
+    );
+  });
 }
 
 function AIPageInner() {
@@ -1067,14 +1077,9 @@ function AIPageInner() {
       const webcontainer = await getWebContainer();
       await webcontainer.mount(toWebContainerTree(files));
 
-      websiteServerUnsubscribeRef.current = webcontainer.on("server-ready", (_port, url) => {
-        setWebsiteLivePreviewUrl(url);
-        setWebsiteLivePreviewStatus("Live preview ready");
-      });
-
       setWebsiteLivePreviewStatus("Installing dependencies…");
       const installProcess = await webcontainer.spawn("npm", ["install", "--no-audit", "--no-fund"]);
-      const installCode = await installProcess.exit;
+      const installCode = await withTimeout(installProcess.exit, 120_000, 'npm install');
       if (installCode !== 0) throw new Error(`npm install failed (${installCode})`);
 
       setWebsiteLivePreviewStatus("Starting Next.js dev server…");
@@ -1088,25 +1093,45 @@ function AIPageInner() {
           setWebsiteLivePreviewStatus(null);
         }
       });
+
+      // Wait for server-ready with a 60 s timeout.
+      let serverReadyUnsub: (() => void) | null = null;
+      const serverReadyPromise = new Promise<string>((resolve) => {
+        serverReadyUnsub = webcontainer.on("server-ready", (_port, url) => {
+          serverReadyUnsub?.();
+          serverReadyUnsub = null;
+          websiteServerUnsubscribeRef.current = null;
+          resolve(url);
+        });
+        websiteServerUnsubscribeRef.current = serverReadyUnsub;
+      });
+      const previewUrl = await withTimeout(serverReadyPromise, 60_000, 'server-ready');
+      setWebsiteLivePreviewUrl(previewUrl);
+      setWebsiteLivePreviewStatus("Live preview ready");
     } catch (err: unknown) {
-      // Check if this is the UNKNOWN write error (errno -4094)
+      // Clean up any pending server-ready listener so it doesn't fire after timeout.
+      try { websiteServerUnsubscribeRef.current?.(); } catch { /* ignore */ }
+      websiteServerUnsubscribeRef.current = null;
+      // Check if this is the UNKNOWN write error (errno -4094) or a progress timeout.
       const isWriteError =
         err instanceof Error &&
         (err.message.includes("-4094") ||
           err.message.includes("UNKNOWN") ||
           err.message.includes("syscall: 'write'") ||
-          err.message.includes("write"));
+          err.message.includes("write") ||
+          err.message.startsWith("Timeout:"));
       // Allow up to 4 retries (5 total attempts) for write errors.
       // Delays: 2s, 4s, 8s, 16s (exponential backoff starting at 2s).
       if (retryCount < 4 && isWriteError) {
         const delay = 2000 * Math.pow(2, retryCount);
         setWebsiteLivePreviewStatus(`Write error — retrying (attempt ${retryCount + 2}/5)…`);
         await new Promise<void>((resolve) => setTimeout(resolve, delay));
-        // Reset the singleton so the next getWebContainer() call boots fresh.
-        resetWebContainer();
+        // Invalidate the singleton so the next getWebContainer() call boots fresh.
+        invalidateWebContainer();
         return startWebsiteLivePreview(files, retryCount + 1);
       }
       // All retries exhausted — graceful fallback to static snapshot
+      invalidateWebContainer();
       setWebsiteLivePreviewRunning(false);
       setWebsiteLivePreviewStatus(null);
       setWebsiteLivePreviewError("Live preview unavailable — showing static snapshot");
@@ -2972,8 +2997,8 @@ function AIPageInner() {
                       <button
                         className="zivo-btn"
                         onClick={() => void startWebsiteLivePreview(websiteResult.files)}
-                        disabled={websiteLivePreviewRunning}
-                        style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: websiteLivePreviewRunning ? "not-allowed" : "pointer", opacity: websiteLivePreviewRunning ? 0.6 : 1 }}
+                        disabled={websiteLivePreviewRunning && !websiteLivePreviewError}
+                        style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: (websiteLivePreviewRunning && !websiteLivePreviewError) ? "not-allowed" : "pointer", opacity: (websiteLivePreviewRunning && !websiteLivePreviewError) ? 0.6 : 1 }}
                       >
                         {websiteLivePreviewRunning ? "Starting live runtime…" : websiteLivePreviewUrl ? "Restart Live Preview" : "Start Live Preview"}
                       </button>
@@ -4130,8 +4155,8 @@ function AIPageInner() {
                     {websiteResult?.files && websiteResult.files.length > 0 && (
                       <button
                         onClick={() => void startWebsiteLivePreview(websiteResult.files)}
-                        disabled={websiteLivePreviewRunning}
-                        style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: websiteLivePreviewRunning ? "not-allowed" : "pointer", opacity: websiteLivePreviewRunning ? 0.6 : 1 }}
+                        disabled={websiteLivePreviewRunning && !websiteLivePreviewError}
+                        style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: (websiteLivePreviewRunning && !websiteLivePreviewError) ? "not-allowed" : "pointer", opacity: (websiteLivePreviewRunning && !websiteLivePreviewError) ? 0.6 : 1 }}
                       >
                         {websiteLivePreviewRunning ? "Starting…" : websiteLivePreviewUrl ? "Restart Live" : "Start Live"}
                       </button>
