@@ -12,7 +12,7 @@ export function repairJSON(raw: string): string {
   let i = 0;
   while (i < s.length) {
     const ch = s[i];
-    if (ch === '\\' && inString) { i += 2; continue; }
+    if (ch === '\\' && inString && i + 1 < s.length) { i += 2; continue; }
     if (ch === '"') inString = !inString;
     i++;
   }

@@ -124,9 +124,11 @@ export class ProjectMemoryStore {
     if (!memory) return '';
 
     const maxChars = maxTokens * CHARS_PER_TOKEN_ESTIMATE;
+    const truncated = memory.files.length > MAX_CONTEXT_FILE_PATHS;
     const filePaths = memory.files
       .slice(0, MAX_CONTEXT_FILE_PATHS)
       .map((f) => `- ${f.path}`)
+      .concat(truncated ? [`... and ${memory.files.length - MAX_CONTEXT_FILE_PATHS} more files`] : [])
       .join('\n');
 
     const recentMessages = memory.conversationHistory

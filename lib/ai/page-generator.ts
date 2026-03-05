@@ -54,7 +54,10 @@ export async function generatePage(
 
   const raw = response.choices?.[0]?.message?.content ?? '';
   const routeToPath = (route: string): string => {
-    const clean = route.replace(/^\//, '') || 'home';
+    const clean = route
+      .replace(/^\//, '')
+      // Convert Express-style :param to Next.js [param] dynamic segments
+      .replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, '[$1]') || 'home';
     return `app/${clean}/page.tsx`;
   };
   const fallback: GeneratedFile = {

@@ -46,7 +46,7 @@ function getExtension(path: string): string {
 }
 
 function extractExports(content: string): string[] {
-  const matches = content.match(/^export\s+(?:default\s+)?(?:function|class|const|interface|type|enum)\s+(\w+)/gm) ?? [];
+  const matches = content.match(/\bexport\s+(?:default\s+)?(?:function|class|const|interface|type|enum)\s+(\w+)/gm) ?? [];
   return matches
     .map((m) => {
       const match = m.match(/\s(\w+)$/);

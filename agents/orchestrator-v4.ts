@@ -161,7 +161,6 @@ export async function runOrchestratorV4(
   // ── Stage 6: Fix Loop ────────────────────────────────────────────────────
   steps[5].status = 'running';
   const currentFiles = allFiles;
-  const projectContext = currentFiles.map((f) => `// ${f.path}\n${f.content.slice(0, 500)}`).join('\n\n');
 
   while (!validation.valid && iterations < maxFixIterations) {
     iterations++;
@@ -177,13 +176,20 @@ export async function runOrchestratorV4(
       byFile.set(issue.file, list);
     }
 
+    // Build context only from files referenced in this fix batch to avoid token bloat
+    const fixFilePaths = new Set(byFile.keys());
+    const fixContext = currentFiles
+      .filter((f) => fixFilePaths.has(f.path))
+      .map((f) => `// ${f.path}\n${f.content.slice(0, 1500)}`)
+      .join('\n\n');
+
     const fixRequests = Array.from(byFile.entries()).map(([filePath, issues]) => {
       const fileObj = currentFiles.find((f) => f.path === filePath);
       return {
         file: filePath,
         content: fileObj?.content ?? '',
         issues,
-        projectContext,
+        projectContext: fixContext,
       };
     });
 
