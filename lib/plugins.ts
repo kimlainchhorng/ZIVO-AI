@@ -1,4 +1,8 @@
 // lib/plugins.ts — Plugin Registry
+import { generateStripeIntegration } from "./plugins/stripe";
+import { generateResendIntegration } from "./plugins/resend";
+import { generateUploadThingIntegration } from "./plugins/uploadthing";
+import { generatePusherIntegration } from "./plugins/pusher";
 
 export interface PluginFile {
   path: string;
@@ -224,8 +228,36 @@ export function installPlugin(
 
   installedPlugins.set(pluginId, config);
 
+  let files: PluginFile[];
+
+  switch (pluginId) {
+    case "stripe":
+      files = generateStripeIntegration({
+        currency: config.currency ?? "usd",
+        successUrl: config.successUrl ?? `${config.appUrl ?? ""}/success`,
+        cancelUrl: config.cancelUrl ?? `${config.appUrl ?? ""}/cancel`,
+      });
+      break;
+    case "resend":
+      files = generateResendIntegration({
+        fromEmail: config.fromEmail ?? "noreply@example.com",
+        fromName: config.fromName ?? "My App",
+      });
+      break;
+    case "uploadthing":
+      files = generateUploadThingIntegration();
+      break;
+    case "pusher":
+      files = generatePusherIntegration({
+        appId: config.appId ?? "your-app-id",
+      });
+      break;
+    default:
+      files = plugin.generatedFiles;
+  }
+
   return {
-    files: plugin.generatedFiles,
+    files,
     instructions: plugin.setupInstructions,
   };
 }
