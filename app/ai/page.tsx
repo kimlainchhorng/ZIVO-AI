@@ -475,9 +475,9 @@ function AIPageInner() {
 
   // Resizable left panel
   const [leftPanelWidth, setLeftPanelWidth] = useState<number>(() => {
-    if (typeof window === "undefined") return 320;
+    if (typeof window === "undefined") return 280;
     const stored = localStorage.getItem("zivo_left_panel_width");
-    return stored ? Math.min(480, Math.max(220, parseInt(stored, 10))) : 320;
+    return stored ? Math.min(480, Math.max(220, parseInt(stored, 10))) : 280;
   });
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const isDraggingPanelRef = useRef(false);
@@ -509,6 +509,7 @@ function AIPageInner() {
     setSaveStatus("idle");
     setFileSearchQuery("");
     setAutoFixLog(null);
+    setWebsiteLivePreviewError(null);
     setConsoleLogs([{ text: isIteration ? `> Iteration ${buildIterationCount + 1}: Updating project...` : "> Building project...", type: "info" }]);
     setIsBuildRunning(true);
     setBuildErrors([]);
@@ -1090,7 +1091,7 @@ function AIPageInner() {
       // All retries exhausted — graceful fallback to static snapshot
       setWebsiteLivePreviewRunning(false);
       setWebsiteLivePreviewStatus(null);
-      setWebsiteLivePreviewError("Live preview starting… (this may take a moment in your browser)");
+      setWebsiteLivePreviewError("Live preview unavailable — showing static snapshot");
     }
   }
 
@@ -1927,8 +1928,8 @@ function AIPageInner() {
             </nav>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: COLORS.success, boxShadow: `0 0 6px ${COLORS.success}` }} />
-            <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>Ready</span>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: loading ? COLORS.warning : COLORS.success, boxShadow: `0 0 6px ${loading ? COLORS.warning : COLORS.success}`, animation: loading ? "statusBlink 1.5s ease-in-out infinite" : "none" }} aria-hidden="true" />
+            <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary }} aria-live="polite" aria-label={loading ? "Building project" : "Ready to build"}>{loading ? "Building..." : "Ready"}</span>
             <button
               className="zivo-btn"
               onClick={() => setChatOpen((o) => !o)}
@@ -3279,8 +3280,17 @@ function AIPageInner() {
 
               {/* URL bar */}
               <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:COLORS.textMuted,flexShrink:0}}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace" }}>localhost:3000</span>
+                {loading ? (
+                  <span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid rgba(99,102,241,0.3)", borderTop: `2px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:output?.preview_html ? COLORS.success : COLORS.textMuted,flexShrink:0}}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                )}
+                <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {loading ? "Building…" : output?.preview_html ? "localhost:3000" : "No preview"}
+                </span>
+                {output?.preview_html && !loading && (
+                  <span style={{ fontSize: "0.65rem", padding: "1px 5px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "4px", color: COLORS.success, fontWeight: 600, flexShrink: 0 }}>Live</span>
+                )}
               </div>
 
               <div style={{ flex: 1 }} />
@@ -3372,9 +3382,9 @@ function AIPageInner() {
             </div>
             )}
 
-            {/* Loading progress bar */}
-            {loading && (
-              <div style={{ padding: "0.5rem 1rem", borderBottom: `1px solid ${COLORS.border}` }}>
+            {/* Build progress indicator — shown during loading and briefly after completion */}
+            {(loading || (buildIterationCount > 0 && !loading && mode === "code")) && (
+              <div style={{ padding: "0.5rem 1rem", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
                 <BuildProgressIndicator stages={buildStages} currentStage={currentBuildStage} />
               </div>
             )}
@@ -3411,6 +3421,13 @@ function AIPageInner() {
               {/* Loading State */}
               {loading && (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
+                  {/* Pass counter badge */}
+                  {buildIteration > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0.875rem", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px" }}>
+                      <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: COLORS.accent, animation: "statusBlink 1.5s ease-in-out infinite" }} />
+                      <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.accent }}>Pass {buildIteration}/8</span>
+                    </div>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", width: "100%", maxWidth: "320px" }}>
                     {[
                       "🧠 Analyzing prompt…",
@@ -3436,12 +3453,27 @@ function AIPageInner() {
                       <div key={i} style={{ height: "16px", borderRadius: "8px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
                     ))}
                   </div>
+                  {/* Streaming file counter */}
+                  {output?.files?.length ? (
+                    <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: COLORS.success, animation: "statusBlink 1s ease-in-out infinite" }} />
+                      {output.files.length} file{output.files.length !== 1 ? "s" : ""} generated…
+                    </div>
+                  ) : null}
                 </div>
               )}
 
               {/* Preview Tab */}
               {!loading && output && activeTab === "preview" && (
-                <div style={{ width: iframeWidth, height: "100%", position: "relative", transition: "width 0.3s ease" }}>
+                <div style={{ width: iframeWidth, height: "100%", position: "relative", transition: "width 0.3s ease", display: "flex", flexDirection: "column" }}>
+                  {/* WebContainer fallback banner */}
+                  {websiteLivePreviewError && (
+                    <div style={{ padding: "0.4rem 0.75rem", background: "rgba(245,158,11,0.08)", borderBottom: "1px solid rgba(245,158,11,0.2)", fontSize: "0.75rem", color: COLORS.warning, display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+                      {websiteLivePreviewError}
+                    </div>
+                  )}
+                  <div style={{ flex: 1, position: "relative" }}>
                   {(() => {
                     const previewHtml = output?.preview_html ||
                       (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
@@ -3501,6 +3533,7 @@ function AIPageInner() {
                       </div>
                     );
                   })()}
+                  </div>
                 </div>
               )}
 
@@ -4180,7 +4213,7 @@ function AIPageInner() {
 
           {/* Right Panel — Files / Code / Diff (Code Builder only) */}
           {mode === "code" && (
-            <div style={{ width: "360px", flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
+            <div style={{ width: "280px", flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
               {/* Tab bar */}
               <div style={{ display: "flex", alignItems: "center", gap: "2px", padding: "0 0.75rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
                 {(["files", "code", "diff"] as const).map((tab) => (
@@ -4191,7 +4224,7 @@ function AIPageInner() {
                     style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeRightTab === tab ? "rgba(99,102,241,0.15)" : "transparent", color: activeRightTab === tab ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s", display: "flex", alignItems: "center", gap: "0.3rem" }}
                   >
                     {tab === "files" && output?.files?.length ? (
-                      <>{tab.charAt(0).toUpperCase() + tab.slice(1)}<span style={{ background: "rgba(99,102,241,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>{output.files.length}</span></>
+                      <>{tab.charAt(0).toUpperCase() + tab.slice(1)}<span style={{ background: loading ? "rgba(245,158,11,0.25)" : "rgba(99,102,241,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.65rem", fontWeight: 700, color: loading ? COLORS.warning : COLORS.accent }}>{output.files.length}</span></>
                     ) : tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
