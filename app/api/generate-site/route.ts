@@ -31,6 +31,19 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ProjectMemoryInput {
+  name?: string;
+  framework?: string;
+  designSystem?: {
+    primaryColor?: string;
+    fontFamily?: string;
+    borderRadius?: string;
+  };
+  pages?: Array<{ route: string; description: string }>;
+  components?: string[];
+  lastUpdated?: number;
+}
+
 type GenerateMode = "standard" | "advanced" | "minimal";
 
 const BASE_RULES = `
@@ -269,24 +282,22 @@ export async function POST(req: Request) {
       : [];
 
     // Build project memory context string if provided
-    const projectMemory = body?.projectMemory as Record<string, unknown> | undefined;
+    const projectMemory = body?.projectMemory as ProjectMemoryInput | undefined;
     let projectMemoryContext: string | undefined;
     if (projectMemory && typeof projectMemory === "object") {
       const parts: string[] = [];
       if (projectMemory.name) parts.push(`App name: ${projectMemory.name}`);
       if (projectMemory.framework) parts.push(`Framework: ${projectMemory.framework}`);
-      if (projectMemory.designSystem && typeof projectMemory.designSystem === "object") {
-        const ds = projectMemory.designSystem as Record<string, string>;
+      if (projectMemory.designSystem) {
+        const ds = projectMemory.designSystem;
         parts.push(`Design system: primaryColor=${ds.primaryColor ?? ""}, fontFamily=${ds.fontFamily ?? ""}, borderRadius=${ds.borderRadius ?? ""}`);
       }
       if (Array.isArray(projectMemory.pages) && projectMemory.pages.length) {
-        const pagesStr = (projectMemory.pages as Array<{ route: string; description: string }>)
-          .map((p) => `${p.route}: ${p.description}`)
-          .join(", ");
+        const pagesStr = projectMemory.pages.map((p) => `${p.route}: ${p.description}`).join(", ");
         parts.push(`Existing pages: ${pagesStr}`);
       }
       if (Array.isArray(projectMemory.components) && projectMemory.components.length) {
-        parts.push(`Existing components: ${(projectMemory.components as string[]).join(", ")}`);
+        parts.push(`Existing components: ${projectMemory.components.join(", ")}`);
       }
       if (parts.length) projectMemoryContext = parts.join("\n");
     }

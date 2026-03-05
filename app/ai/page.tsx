@@ -432,34 +432,41 @@ function AIPageInner() {
         try { localStorage.setItem("zivo_project_memory", JSON.stringify(updatedMemory)); } catch { /* ignore */ }
       }
 
-      // Auto-fix errors loop (Upgrade 9)
-      if (buildErrors.length > 0 && data.files?.length) {
-        let currentFiles = data.files;
-        let iteration = 0;
-        const MAX_FIX_ITERATIONS = 3;
-        setAutoFixing(true);
-        setConsoleLogs((prev) => [...prev, { text: "> 🔧 Auto-fixing errors…", type: "info" }]);
-        while (buildErrors.length > 0 && iteration < MAX_FIX_ITERATIONS) {
-          try {
-            const fixRes = await fetch("/api/fix-errors", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ files: currentFiles, errors: buildErrors, iteration }),
-            });
-            const fixData = await fixRes.json();
-            if (fixData.files?.length) {
-              currentFiles = fixData.files;
-              setOutput((prev) => prev ? { ...prev, files: fixData.files } : prev);
+      // Auto-fix errors loop (Upgrade 9) — validate generated files and fix any errors
+      if (data.files?.length) {
+        const { validateFiles } = await import("@/agents/validator");
+        const validationResult = validateFiles(data.files.map((f) => ({ path: f.path, content: f.content })));
+        const errorsToFix = validationResult.issues
+          .filter((i) => i.type === "error")
+          .map((i) => ({ file: i.file, line: i.line, message: i.message, type: "typescript" as const }));
+        if (errorsToFix.length > 0) {
+          let currentFiles = data.files;
+          let iteration = 0;
+          const MAX_FIX_ITERATIONS = 3;
+          setAutoFixing(true);
+          setConsoleLogs((prev) => [...prev, { text: `> 🔧 Auto-fixing ${errorsToFix.length} error(s)…`, type: "info" }]);
+          while (iteration < MAX_FIX_ITERATIONS) {
+            try {
+              const fixRes = await fetch("/api/fix-errors", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ files: currentFiles, errors: errorsToFix, iteration }),
+              });
+              const fixData = await fixRes.json();
+              if (fixData.files?.length) {
+                currentFiles = fixData.files;
+                setOutput((prev) => prev ? { ...prev, files: fixData.files } : prev);
+              }
+              setAutoFixLog(fixData.summary ?? null);
+              setConsoleLogs((prev) => [...prev, { text: `> 🔧 ${fixData.summary}`, type: "success" }]);
+              if (fixData.fixed === 0) break;
+            } catch {
+              break;
             }
-            setAutoFixLog(fixData.summary ?? null);
-            setConsoleLogs((prev) => [...prev, { text: `> 🔧 ${fixData.summary}`, type: "success" }]);
-            if (fixData.fixed === 0) break;
-          } catch {
-            break;
+            iteration++;
           }
-          iteration++;
+          setAutoFixing(false);
         }
-        setAutoFixing(false);
       }
     } catch (err: unknown) {
       if ((err as Error)?.name === "AbortError") {

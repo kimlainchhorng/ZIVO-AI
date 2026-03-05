@@ -158,7 +158,7 @@ export default function ComponentsPage() {
                         srcDoc={component.previewHtml}
                         style={{ width: '100%', height: '240px', border: 'none', transform: 'scale(0.5)', transformOrigin: 'top left', pointerEvents: 'none' }}
                         title={component.name}
-                        sandbox="allow-scripts"
+                        sandbox="allow-scripts allow-same-origin"
                       />
                     </div>
 
