@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { WEBSITE_BUILDER_SYSTEM_PROMPT } from "../../../prompts/website-builder";
 import { fixBrokenImages } from "../../../lib/html-processor";
+import { generateFullProject } from "../../../lib/ai/master-project-generator";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,12 @@ export interface GenerateSiteResponse {
   preview_html?: string;
   summary?: string;
   notes?: string;
+  env?: string[];
+  routes?: string[];
+  commands?: string[];
+  warnings?: string[];
+  missing_env?: string[];
+  next_steps?: string[];
 }
 
 export interface ChatMessage {
@@ -319,11 +326,11 @@ export async function POST(req: Request) {
       : [];
 
     // Accept existing files for iterative builds
-    const existingFiles: GeneratedFile[] | undefined = Array.isArray(body?.existingFiles)
+    const existingFiles: GeneratedFile[] = Array.isArray(body?.existingFiles)
       ? (body.existingFiles as GeneratedFile[]).filter(
           (f) => typeof f.path === "string" && typeof f.content === "string"
         )
-      : undefined;
+      : [];
 
     // Build project memory context string if provided
     const projectMemory = body?.projectMemory as ProjectMemoryInput | undefined;
@@ -357,9 +364,53 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
     }
 
+    // Use master project generator for standard/advanced modes; fall back to minimal generator
+    if (mode !== "minimal") {
+      let result: Awaited<ReturnType<typeof generateFullProject>>;
+      try {
+        // Prepend project memory context to prompt if available
+        const fullPrompt = projectMemoryContext
+          ? `Project context:\n${projectMemoryContext}\n\nRequest: ${prompt}`
+          : prompt;
+        result = await generateFullProject(fullPrompt, existingFiles);
+      } catch (error) {
+        console.error("Master generator failed:", error);
+        return NextResponse.json(
+          { error: `Invalid JSON from AI: ${error instanceof Error ? error.message : "Unknown error"}` },
+          { status: 500 }
+        );
+      }
+
+      const { output, validationResult } = result;
+
+      // Post-process: fix broken images in preview_html
+      if (output.preview_html) {
+        output.preview_html = fixBrokenImages(output.preview_html);
+      }
+
+      // Merge validation warnings into output warnings
+      const allWarnings = [...(output.warnings ?? []), ...validationResult.warnings];
+
+      const response: GenerateSiteResponse = {
+        thinking: output.thinking,
+        files: output.files as GeneratedFile[],
+        preview_html: output.preview_html,
+        summary: output.summary,
+        env: output.env,
+        routes: output.routes,
+        commands: output.commands,
+        warnings: allWarnings,
+        missing_env: output.missing_env,
+        next_steps: output.next_steps,
+      };
+
+      return NextResponse.json(response);
+    }
+
+    // Minimal mode: use the legacy generator
     let parsed: GenerateSiteResponse;
     try {
-      parsed = await generateFiles(prompt, mode, context, projectMemoryContext, existingFiles);
+      parsed = await generateFiles(prompt, mode, context, projectMemoryContext, existingFiles.length > 0 ? existingFiles : undefined);
     } catch {
       return NextResponse.json({ error: "Invalid JSON from AI" }, { status: 500 });
     }
