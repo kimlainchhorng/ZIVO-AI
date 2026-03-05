@@ -55,6 +55,8 @@ interface GenerateSiteResponse {
   summary?: string;
   notes?: string;
   error?: string;
+  iterationCount?: number;
+  projectId?: string;
 }
 
 interface DeployResult {
@@ -184,6 +186,9 @@ function AIPageInner() {
   const [buildIterationCount, setBuildIterationCount] = useState(0);
   const [conversationHistory, setConversationHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
+  // Project memory ID — persisted in localStorage across page reloads
+  const [projectId, setProjectId] = useState<string | null>(null);
+
   // Chat panel state
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
@@ -283,6 +288,22 @@ function AIPageInner() {
       if (stored) setProjectMemory(JSON.parse(stored));
     } catch {
       // Ignore invalid stored data
+    }
+  }, []);
+
+  // Load projectId from localStorage on mount; generate one if absent
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("zivo_project_id");
+      if (stored) {
+        setProjectId(stored);
+      } else {
+        const newId = (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36));
+        localStorage.setItem("zivo_project_id", newId);
+        setProjectId(newId);
+      }
+    } catch {
+      // Ignore storage errors
     }
   }, []);
 
@@ -452,6 +473,7 @@ function AIPageInner() {
           projectMemory,
           context: buildContext,
           existingFiles: existingFilesForBuild,
+          projectId,
         }),
         signal: controller.signal,
       });
@@ -482,7 +504,12 @@ function AIPageInner() {
         { role: "assistant", content: data.summary ?? `Generated ${data.files?.length ?? 0} files.` },
       ];
       setConversationHistory(newHistory);
-      setBuildIterationCount((n) => n + 1);
+      // Use iterationCount from server response if available, otherwise increment locally
+      if (typeof data.iterationCount === "number") {
+        setBuildIterationCount(data.iterationCount);
+      } else {
+        setBuildIterationCount((n) => n + 1);
+      }
 
       // Save to build history
       addHistoryEntry({
@@ -576,6 +603,31 @@ function AIPageInner() {
 
   function handleStopBuild() {
     abortControllerRef.current?.abort();
+  }
+
+  function handleStartFresh() {
+    // Generate a new projectId and persist it
+    const newId = (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36));
+    try {
+      localStorage.setItem("zivo_project_id", newId);
+    } catch { /* ignore */ }
+    setProjectId(newId);
+    // Reset all build state
+    setOutput(null);
+    setActiveFile(null);
+    setConversationHistory([]);
+    setBuildIterationCount(0);
+    setDiffFiles([]);
+    setShowDiff(false);
+    setPlan(null);
+    setPlanData(null);
+    setConsoleLogs([{ text: "> 🆕 New project started.", type: "info" }]);
+    // Create a fresh project entry in server-side memory
+    fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "create", projectId: newId, prompt: "" }),
+    }).catch((err) => console.error("[ZIVO] Failed to reset server-side project memory:", err));
   }
 
   async function handlePlan() {
@@ -1501,7 +1553,7 @@ function AIPageInner() {
                 </div>
               </div>
               )}
-              {/* or start from row */}
+              {/* or start from row + Start Fresh */}
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.875rem", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, flexShrink: 0 }}>or start from</span>
                 {[
@@ -1518,6 +1570,20 @@ function AIPageInner() {
                     {item.emoji} {item.label}
                   </button>
                 ))}
+                {buildIterationCount > 0 && (
+                  <span style={{ marginLeft: "auto", padding: "0.2rem 0.55rem", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 700, color: COLORS.success }}>
+                    Iteration {buildIterationCount}
+                  </span>
+                )}
+                <button
+                  className="zivo-btn"
+                  onClick={handleStartFresh}
+                  title="Clear project memory and start a new project"
+                  style={{ marginLeft: buildIterationCount > 0 ? "0" : "auto", padding: "0.25rem 0.6rem", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "20px", color: "#ef4444", cursor: "pointer", fontSize: "0.7rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  Start Fresh
+                </button>
               </div>
 
               {/* Prompt Suggestions */}

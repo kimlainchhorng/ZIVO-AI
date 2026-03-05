@@ -1,5 +1,97 @@
 // lib/project-memory.ts — Persistent project context with per-project message/file history
 
+import type { ProjectBlueprint } from "./ai/passes/pass1-plan";
+
+// ── New unified ProjectMemory record (used by /api/projects and context-snapshot) ──
+
+export interface ProjectMemory {
+  projectId: string;
+  prompt: string;
+  blueprint: ProjectBlueprint | null;
+  files: { path: string; content: string; sha256?: string }[];
+  techStack: string[];
+  envVars: string[];
+  dbSchema: string | null;
+  authProvider: "supabase" | "nextauth" | "clerk" | null;
+  createdAt: string;
+  updatedAt: string;
+  iterationCount: number;
+  conversationHistory: { role: "user" | "assistant"; content: string; timestamp: string }[];
+}
+
+// In-memory store (resets on server restart — use Supabase/Redis in production)
+const memoryStore = new Map<string, ProjectMemory>();
+
+export function createProject(projectId: string, prompt: string): ProjectMemory {
+  const now = new Date().toISOString();
+  const memory: ProjectMemory = {
+    projectId,
+    prompt,
+    blueprint: null,
+    files: [],
+    techStack: [],
+    envVars: [],
+    dbSchema: null,
+    authProvider: null,
+    createdAt: now,
+    updatedAt: now,
+    iterationCount: 0,
+    conversationHistory: [],
+  };
+  memoryStore.set(projectId, memory);
+  return memory;
+}
+
+export function getProject(projectId: string): ProjectMemory | undefined {
+  return memoryStore.get(projectId);
+}
+
+export function updateProject(projectId: string, updates: Partial<ProjectMemory>): ProjectMemory {
+  const existing = memoryStore.get(projectId);
+  if (!existing) throw new Error(`Project ${projectId} not found`);
+  const updated = { ...existing, ...updates, updatedAt: new Date().toISOString() };
+  memoryStore.set(projectId, updated);
+  return updated;
+}
+
+export function addFiles(projectId: string, newFiles: { path: string; content: string }[]): void {
+  const project = memoryStore.get(projectId);
+  if (!project) return;
+
+  // Merge: update existing files, add new ones
+  const fileMap = new Map(project.files.map((f) => [f.path, f]));
+  for (const file of newFiles) {
+    fileMap.set(file.path, file);
+  }
+  project.files = Array.from(fileMap.values());
+  project.updatedAt = new Date().toISOString();
+  project.iterationCount += 1;
+}
+
+export function addConversationTurn(
+  projectId: string,
+  role: "user" | "assistant",
+  content: string
+): void {
+  const project = memoryStore.get(projectId);
+  if (!project) return;
+  project.conversationHistory.push({ role, content, timestamp: new Date().toISOString() });
+  // Keep last 20 turns
+  if (project.conversationHistory.length > 20) {
+    project.conversationHistory = project.conversationHistory.slice(-20);
+  }
+}
+
+export function listProjects(): ProjectMemory[] {
+  return Array.from(memoryStore.values());
+}
+
+export function deleteProject(projectId: string): boolean {
+  return memoryStore.delete(projectId);
+}
+
+// ── Legacy per-project file/message store (preserved for backward compatibility) ──
+
 export interface ProjectFile {
   path: string;
   content: string;
@@ -41,7 +133,7 @@ function getOrCreate(projectId: string): ProjectState {
 }
 
 /** Manages per-project memory: files and conversation history. */
-export class ProjectMemory {
+export class ProjectMemoryStore {
   /**
    * Adds or replaces a file in the project's memory.
    * Evicts the oldest file if the limit of 20 is reached.
@@ -104,13 +196,13 @@ export class ProjectMemory {
   }
 
   /** Returns all project IDs in memory. */
-  listProjects(): string[] {
+  listProjectIds(): string[] {
     return Array.from(projectStore.keys());
   }
 }
 
-/** Default shared ProjectMemory instance. */
-export const projectMemory = new ProjectMemory();
+/** Default shared ProjectMemoryStore instance. */
+export const projectMemory = new ProjectMemoryStore();
 
 // ── Lightweight global context store (cross-prompt project settings) ──────────
 
