@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import Image from "next/image";
 import { Suspense } from "react";
-import { addHistoryEntry } from "../history/page";
+import { addHistoryEntry } from "@/lib/history-store";
 import PlanViewer from "@/components/PlanViewer";
 import BuildOutputPanel from "@/components/BuildOutputPanel";
 import DiffViewer from "@/components/DiffViewer";
@@ -108,6 +108,20 @@ const QUICK_PROMPTS = [
   { icon: <BarChartIcon />, label: "Dashboard", prompt: "Build an analytics dashboard with charts, stats cards, and data tables" },
 ];
 
+const PROMPT_SUGGESTIONS = [
+  "Build a complete e-commerce application with product catalog, shopping cart, Stripe checkout, order management, admin panel, user authentication, and mobile-responsive design",
+  "Build an e-commerce app featuring product listings, cart, checkout, user accounts, and order history",
+  "Build a responsive e-commerce platform with product search, filters, reviews, and payment processing",
+];
+
+const TEMPLATE_SHORTCUTS = [
+  { icon: "🏠", label: "Landing Page", prompt: "Build a beautiful SaaS landing page with hero, features, pricing, FAQ, and CTA sections" },
+  { icon: "📋", label: "Todo App", prompt: "Build a full-stack todo app with auth, CRUD operations, categories, and due dates" },
+  { icon: "🛒", label: "E-commerce", prompt: "Build a complete e-commerce store with product catalog, cart, and Stripe checkout" },
+  { icon: "🔐", label: "Auth Flow", prompt: "Build a complete authentication system with login, signup, password reset, and profile pages" },
+  { icon: "📊", label: "Dashboard", prompt: "Build a modern analytics dashboard with charts, stats cards, data tables, and filters" },
+];
+
 const TEMPLATE_CARDS = [
   { iconName: "rocket" as const, label: "Landing Page", description: "SaaS landing page with hero, features, pricing, testimonials, and CTA", prompt: "Build a SaaS landing page with hero, features, pricing, testimonials, and CTA" },
   { iconName: "barChart" as const, label: "Dashboard", description: "Analytics dashboard with sidebar navigation, stats cards, charts, and data tables", prompt: "Build an analytics dashboard with sidebar navigation, stats cards, charts, and data tables" },
@@ -135,6 +149,8 @@ const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 // Mobile phone frame dimensions for preview
 const MOBILE_FRAME_WIDTH = 375;
 const MOBILE_FRAME_HEIGHT = 812;
+// Max characters shown in the quick prompt suggestion chip text
+const MAX_PROMPT_SUGGESTION_LENGTH = 72;
 
 // Map SSE stage names (from /api/build) to buildStages array indices:
 // buildStages: [prompt(0), parse(1), blueprint(2), generate(3), validate(4), fix(5), preview(6), deploy(7)]
@@ -1888,7 +1904,6 @@ function AIPageInner() {
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes recordPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
-        @keyframes statusBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .zivo-btn:hover { opacity: 0.85; transform: scale(1.02); }
         .zivo-btn { transition: opacity 0.15s, transform 0.15s; }
@@ -1908,7 +1923,7 @@ function AIPageInner() {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: COLORS.bg, color: COLORS.textPrimary, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif", overflow: "hidden" }}>
 
         {/* Top Nav */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "52px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: "#0a0b14", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <div style={{ width: "28px", height: "28px", background: COLORS.accentGradient, borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 }}>Z</div>
             <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>ZIVO AI</span>
@@ -2452,8 +2467,26 @@ function AIPageInner() {
                 </div>
               )}
 
-              {/* Quick Prompts */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+              {/* Quick Prompts — Lovable-style text chips with "+" prefix */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.875rem" }}>
+                {PROMPT_SUGGESTIONS.map((ps, i) => (
+                  <button
+                    key={i}
+                    className="zivo-chip"
+                    onClick={() => setPrompt(ps)}
+                    style={{ display: "flex", alignItems: "flex-start", gap: "0.35rem", padding: "0.35rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.72rem", transition: "background 0.15s, border-color 0.15s", textAlign: "left", lineHeight: 1.4 }}
+                    title={ps}
+                  >
+                    <span style={{ color: COLORS.accent, fontWeight: 700, flexShrink: 0 }}>+</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical" as const }}>
+                      {ps.length > MAX_PROMPT_SUGGESTION_LENGTH ? ps.slice(0, MAX_PROMPT_SUGGESTION_LENGTH) + "…" : ps}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Quick Prompt icon chips */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.875rem" }}>
                 {QUICK_PROMPTS.map((qp) => (
                   <button
                     key={qp.label}
@@ -2467,7 +2500,28 @@ function AIPageInner() {
                 ))}
               </div>
 
-              {/* Template Selector — shown when prompt is empty */}
+              {/* Template Shortcuts grid */}
+              {!prompt.trim() && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.5rem" }}>Templates</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.35rem" }}>
+                    {TEMPLATE_SHORTCUTS.map((t) => (
+                      <button
+                        key={t.label}
+                        className="zivo-chip"
+                        onClick={() => setPrompt(t.prompt)}
+                        title={t.prompt}
+                        style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.4rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", transition: "background 0.15s, border-color 0.15s", textAlign: "left" }}
+                      >
+                        <span style={{ fontSize: "0.875rem", flexShrink: 0 }}>{t.icon}</span>
+                        <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Full Template Selector — shown when prompt is empty */}
               {!prompt.trim() && (
                 <div style={{ marginBottom: "1rem" }}>
                   <TemplateSelector
@@ -3592,7 +3646,7 @@ function AIPageInner() {
                       {websiteLivePreviewError}
                     </div>
                   )}
-                  <div style={{ flex: 1, position: "relative" }}>
+                  <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column" }}>
                   {(() => {
                     const previewHtml = output?.preview_html ||
                       (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
@@ -3600,15 +3654,16 @@ function AIPageInner() {
                     return previewHtml ? (
                       <>
                         {isSnapshot && (
-                          <div style={{ position: "absolute", top: 8, right: 12, zIndex: 10, padding: "0.2rem 0.6rem", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "20px", fontSize: "0.7rem", color: "#f59e0b", fontWeight: 600, pointerEvents: "none" }}>
-                            HTML Snapshot
+                          <div style={{ padding: "0.4rem 0.875rem", background: "rgba(245,158,11,0.08)", borderBottom: "1px solid rgba(245,158,11,0.2)", fontSize: "0.75rem", color: COLORS.warning, display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                            <span>This is a static snapshot preview. Use the <strong>Code</strong> tab to view and edit files.</span>
                           </div>
                         )}
                         <iframe
                           ref={iframeRef}
                           srcDoc={previewHtml}
                           title={isSnapshot ? "HTML Snapshot Preview" : "Live Preview"}
-                          style={{ width: "100%", height: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
+                          style={{ flex: 1, width: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
                           sandbox="allow-scripts"
                           onLoad={() => { if (!isSnapshot) applyVisualEditOverlay(visualEdit); }}
                         />
