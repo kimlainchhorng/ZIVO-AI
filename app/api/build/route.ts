@@ -5,6 +5,15 @@
 
 export const runtime = "nodejs";
 
+import {
+  extractBearerToken,
+  getUserFromToken,
+  createProject as dbCreateProject,
+  getProject,
+  getProjectFiles,
+  upsertProjectFiles,
+  appendProjectBuild,
+} from "@/lib/db/projects-db";
 import { runOrchestratorV4 } from "@/agents/orchestrator-v4";
 import { ProgressStage } from "@/lib/ai/progress-events";
 import type { GeneratedFile } from "@/lib/ai/schema";
@@ -92,7 +101,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const { prompt, model = "gpt-4o", existingFiles = [] } = body;
+  const { prompt, model = "gpt-4o" } = body;
   const mode: BuildMode =
     body.mode === "website_v2" || body.mode === "mobile_v2" ? body.mode : "code";
 
@@ -108,6 +117,35 @@ export async function POST(req: Request): Promise<Response> {
       `data: ${JSON.stringify({ type: "error", message: "OPENAI_API_KEY is not configured" })}\n\n`,
       { status: 500, headers: { "Content-Type": "text/event-stream" } }
     );
+  }
+
+  // ── Optional Supabase persistence ─────────────────────────────────────────
+  // If the caller is authenticated (Bearer token present), we persist the
+  // project/files/build to Supabase.  Unauthenticated callers get the same
+  // build experience without persistence (no breaking change).
+  const token = extractBearerToken(req.headers.get("Authorization"));
+  const user = token ? await getUserFromToken(token) : null;
+
+  let resolvedProjectId: string | null = body.projectId ?? null;
+  let existingFiles: GeneratedFile[] = Array.isArray(body.existingFiles) ? body.existingFiles : [];
+
+  // If authenticated and projectId supplied, load existing files from Supabase
+  if (user && token && resolvedProjectId) {
+    try {
+      const proj = await getProject(token, resolvedProjectId);
+      if (proj) {
+        const dbFiles = await getProjectFiles(token, resolvedProjectId);
+        if (dbFiles.length > 0) {
+          existingFiles = dbFiles.map((f) => ({
+            path: f.path,
+            content: f.content,
+            action: "update" as const,
+          }));
+        }
+      }
+    } catch {
+      // Non-fatal: fall through with client-provided existingFiles
+    }
   }
 
   const encoder = new TextEncoder();
@@ -131,23 +169,32 @@ export async function POST(req: Request): Promise<Response> {
         }
       }, 15_000);
 
+      let generatedFiles: GeneratedFile[] = [];
+      let buildSummary = "";
+
       try {
         if (mode === "website_v2") {
-          await runWebsiteV2Pipeline(prompt, model, send);
+          await runWebsiteV2Pipeline(prompt, model, (evt) => {
+            send(evt);
+            if (evt.type === "files") generatedFiles = (evt as FilesEvent).files;
+            if (evt.type === "stage" && (evt as StageEvent).stage === "DONE") buildSummary = (evt as StageEvent).message;
+          });
         } else if (mode === "mobile_v2") {
-          await runMobileV2Pipeline(prompt, model, send);
+          await runMobileV2Pipeline(prompt, model, (evt) => {
+            send(evt);
+            if (evt.type === "files") generatedFiles = (evt as FilesEvent).files;
+            if (evt.type === "stage" && (evt as StageEvent).stage === "DONE") buildSummary = (evt as StageEvent).message;
+          });
         } else {
           // Default: code builder using orchestrator
-          const safeExisting: GeneratedFile[] = Array.isArray(existingFiles)
-            ? existingFiles.map((f) => ({
-                path: String(f.path ?? ""),
-                content: String(f.content ?? ""),
-                action: (["create", "update", "delete"].includes(f.action ?? "") ? f.action : "create") as
-                  | "create"
-                  | "update"
-                  | "delete",
-              }))
-            : [];
+          const safeExisting: GeneratedFile[] = existingFiles.map((f) => ({
+            path: String(f.path ?? ""),
+            content: String(f.content ?? ""),
+            action: (["create", "update", "delete"].includes(f.action ?? "") ? f.action : "create") as
+              | "create"
+              | "update"
+              | "delete",
+          }));
 
           await runOrchestratorV4(
             prompt,
@@ -166,6 +213,8 @@ export async function POST(req: Request): Promise<Response> {
             },
             model
           ).then((result) => {
+            generatedFiles = result.files;
+            buildSummary = result.summary;
             send({ type: "files", files: result.files });
             send({ type: "stage", stage: "DONE", message: result.summary, progress: 100 });
           });
@@ -173,13 +222,51 @@ export async function POST(req: Request): Promise<Response> {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Build pipeline error";
         send({ type: "error", message, details: err instanceof Error ? err.stack : undefined });
-      } finally {
-        clearInterval(heartbeat);
+      }
+
+      // ── Persist to Supabase (authenticated users only) ──────────────────
+      if (user && token && generatedFiles.length > 0) {
         try {
-          controller.close();
+          // Create project if no projectId was provided
+          if (!resolvedProjectId) {
+            const proj = await dbCreateProject(token, user.id, {
+              title: prompt.slice(0, 80),
+              mode,
+              client_idea: prompt,
+            });
+            resolvedProjectId = proj.id;
+          }
+
+          // Upsert generated files
+          await upsertProjectFiles(
+            token,
+            resolvedProjectId,
+            generatedFiles
+              .filter((f) => f.action !== "delete")
+              .map((f) => ({ path: f.path, content: f.content, generated_by: model }))
+          );
+
+          // Append build record
+          await appendProjectBuild(token, resolvedProjectId, buildSummary || `Build: ${prompt.slice(0, 120)}`);
+
+          // Notify client of the persisted projectId
+          send({
+            type: "stage",
+            stage: "DONE",
+            message: buildSummary || "Build complete.",
+            progress: 100,
+            data: { projectId: resolvedProjectId },
+          });
         } catch {
-          // Already closed
+          // Persistence failure is non-fatal; build output is still usable
         }
+      }
+
+      clearInterval(heartbeat);
+      try {
+        controller.close();
+      } catch {
+        // Already closed
       }
     },
   });
