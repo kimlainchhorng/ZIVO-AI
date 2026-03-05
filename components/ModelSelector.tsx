@@ -20,6 +20,18 @@ const QUALITY_LABEL: Record<ModelConfig["quality"], string> = {
   economy: "⭐",
 };
 
+const QUALITY_BADGE: Record<ModelConfig["quality"], string> = {
+  high: "bg-green-500/20 text-green-400 border border-green-500/30",
+  medium: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30",
+  economy: "bg-zinc-700/60 text-zinc-400 border border-zinc-600/30",
+};
+
+const PROVIDER_BADGE: Record<string, string> = {
+  openai: "bg-indigo-600/25 text-indigo-300 border border-indigo-500/30",
+  anthropic: "bg-orange-600/25 text-orange-300 border border-orange-500/30",
+  google: "bg-blue-600/25 text-blue-300 border border-blue-500/30",
+};
+
 function formatCost(costPer1kTokens: number): string {
   return `$${costPer1kTokens.toFixed(5)}/1k`;
 }
@@ -68,22 +80,22 @@ export default function ModelSelector({ task, value, onChange }: ModelSelectorPr
       {/* Info card for selected model */}
       {selected && (
         <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3 text-xs text-zinc-300 dark:bg-zinc-800/50">
-          <div className="mb-1 flex items-center justify-between">
+          <div className="mb-2 flex items-center justify-between">
             <span className="font-semibold text-zinc-100">{selected.name}</span>
-            <span className="rounded bg-indigo-600/30 px-2 py-0.5 text-indigo-300">
+            <span className={`rounded px-2 py-0.5 text-xs font-medium ${PROVIDER_BADGE[selected.provider] ?? "bg-indigo-600/30 text-indigo-300"}`}>
               {selected.provider}
             </span>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             <span
               className={`rounded px-2 py-0.5 font-medium ${SPEED_BADGE[selected.speed]}`}
             >
               {selected.speed}
             </span>
-            <span className="rounded bg-zinc-700/60 px-2 py-0.5">
-              quality {QUALITY_LABEL[selected.quality]}
+            <span className={`rounded px-2 py-0.5 font-medium ${QUALITY_BADGE[selected.quality]}`}>
+              {selected.quality} {QUALITY_LABEL[selected.quality]}
             </span>
-            <span className="rounded bg-zinc-700/60 px-2 py-0.5">
+            <span className="rounded bg-zinc-700/60 px-2 py-0.5 text-zinc-400">
               {formatCost(selected.costPer1kTokens)} per 1k tokens
             </span>
           </div>
