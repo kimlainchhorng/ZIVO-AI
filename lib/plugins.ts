@@ -35,7 +35,7 @@ export const PLUGIN_REGISTRY: Plugin[] = [
     generatedFiles: [
       {
         path: "lib/stripe.ts",
-        content: `import Stripe from 'stripe';\nexport const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' });`,
+        content: `import Stripe from 'stripe';\nexport const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2024-06-20' as const });`,
       },
       {
         path: "app/api/stripe/checkout/route.ts",

@@ -6,6 +6,10 @@ import type { GeneratedFile } from "@/lib/build-runner";
 
 export const runtime = "nodejs";
 
+const MIN_RETRIES = 1;
+const DEFAULT_RETRIES = 3;
+const MAX_RETRIES = 5;
+
 export async function GET() {
   return NextResponse.json({
     description: "AI Fix Loop — POST { files, maxRetries? } to run build validation + AI fix loop with SSE streaming",
@@ -38,7 +42,7 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const safeMaxRetries = Math.min(Math.max(1, Number(maxRetries) || 3), 5);
+  const safeMaxRetries = Math.min(Math.max(MIN_RETRIES, Number(maxRetries) || DEFAULT_RETRIES), MAX_RETRIES);
 
   const encoder = new TextEncoder();
 

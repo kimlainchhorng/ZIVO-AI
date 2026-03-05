@@ -99,8 +99,8 @@ export default function FixLoopMonitor({ files, maxRetries = 3, onComplete, onEr
             try {
               const event = JSON.parse(jsonStr) as SSEEvent;
               handleEvent(event);
-            } catch {
-              // skip malformed events
+            } catch (parseErr: unknown) {
+              console.warn("[fix-loop] Malformed SSE event:", jsonStr, parseErr);
             }
           }
         }
