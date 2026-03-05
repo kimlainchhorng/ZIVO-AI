@@ -72,7 +72,12 @@ export interface DesignSystemTokens {
   spacing: SpacingTokens;
   shadows: ShadowTokens;
   radii: RadiusTokens;
-  /** Validated hex color allowlist — only these or token references should appear in generated code */
+  /**
+   * Validated hex color allowlist.
+   * Only these exact hex values (or CSS token references like var(--color-primary-500))
+   * should appear in generated code outside of token definition files.
+   * Enforced by `validateColorUsage()`.
+   */
   allowedColors: string[];
 }
 

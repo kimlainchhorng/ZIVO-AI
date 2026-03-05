@@ -77,7 +77,7 @@ Rules:
 
   // Apply patches to the file list
   const updatedFiles = applyPatches(files, patches);
-  const patchedPaths = patches.map((p: FilePatch) => p.path);
+  const patchedPaths = patches.map((p) => p.path);
 
   return {
     files: updatedFiles,

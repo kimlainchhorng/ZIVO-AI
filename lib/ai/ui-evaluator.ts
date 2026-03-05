@@ -216,7 +216,10 @@ function computeScore(files: GeneratedFile[], issues: Issue[]): number {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/** Run heuristic UI quality evaluation on website files */
+/** Run heuristic UI quality evaluation on website files.
+ * The `plan` parameter is reserved for future LLM-based deep evaluation
+ * that will cross-reference generated content against the original plan spec.
+ */
 export function evaluateWebsiteUI(
   files: GeneratedFile[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -252,7 +255,10 @@ export function evaluateWebsiteUI(
   return { score, issues: allIssues, passedChecks };
 }
 
-/** Run heuristic UI quality evaluation on mobile files */
+/** Run heuristic UI quality evaluation on mobile files.
+ * The `plan` parameter is reserved for future LLM-based deep evaluation
+ * that will verify screen states and navigation against the original plan spec.
+ */
 export function evaluateMobileUI(
   files: GeneratedFile[],
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
