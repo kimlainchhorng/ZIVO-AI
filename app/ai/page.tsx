@@ -429,6 +429,11 @@ function AIPageInner() {
   const [designFontFamily, setDesignFontFamily] = useState("Inter");
   const [designSpacing, setDesignSpacing] = useState("normal");
 
+  // Click-to-Edit: in-panel code editor state
+  const [editedContent, setEditedContent] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
   async function handleBuild(promptOverride?: string) {
@@ -446,6 +451,8 @@ function AIPageInner() {
     setDeployError(null);
     setDownloadError(null);
     setActiveFile(null);
+    setEditedContent(null);
+    setSaveStatus("idle");
     setFileSearchQuery("");
     setAutoFixLog(null);
     setConsoleLogs([{ text: isIteration ? `> Iteration ${buildIterationCount + 1}: Updating project...` : "> Building project...", type: "info" }]);
@@ -559,6 +566,7 @@ function AIPageInner() {
             // Show files incrementally
             if (collectedFiles.length > 0 && !activeFile) {
               setActiveFile(collectedFiles[0]);
+              setEditedContent(collectedFiles[0].content);
               setActiveRightTab("files");
             }
             setOutput((prev) => ({ ...(prev ?? {}), files: collectedFiles }));
@@ -579,6 +587,7 @@ function AIPageInner() {
 
       if (collectedFiles.length > 0) {
         setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
         // Build a lookup map for O(1) access to existing file content
         const existingFileMap = new Map(
           (existingFilesForBuild ?? []).map((ef) => [ef.path, ef.content])
@@ -709,6 +718,7 @@ function AIPageInner() {
     // Reset all build state
     setOutput(null);
     setActiveFile(null);
+    setEditedContent(null);
     setConversationHistory([]);
     setBuildIterationCount(0);
     setDiffFiles([]);
@@ -716,6 +726,168 @@ function AIPageInner() {
     setPlan(null);
     setPlanData(null);
     setConsoleLogs([{ text: "> 🆕 New project started.", type: "info" }]);
+  }
+
+  /** Save the currently edited file content to local state (and Supabase if authenticated). */
+  async function handleFileSave() {
+    if (!activeFile || editedContent === null) return;
+    const newContent = editedContent;
+    setIsSaving(true);
+    setSaveStatus("idle");
+
+    // Update local output.files state
+    const updatedFile: GeneratedFile = { ...activeFile, content: newContent, action: "update" };
+    setActiveFile(updatedFile);
+    setOutput((prev) =>
+      prev
+        ? { ...prev, files: (prev.files ?? []).map((f) => (f.path === activeFile.path ? updatedFile : f)) }
+        : prev
+    );
+
+    // Also refresh diff tracking for the edited file
+    setDiffFiles((prev) =>
+      prev.map((d) => (d.path === activeFile.path ? { ...d, newContent } : d))
+    );
+
+    // Persist to Supabase if the user has a saved project
+    if (savedProjectId) {
+      try {
+        const token = typeof window !== "undefined" ? localStorage.getItem("zivo_supabase_token") : null;
+        if (token) {
+          const res = await fetch(`/api/projects/${savedProjectId}/files`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ path: activeFile.path, content: newContent }),
+          });
+          if (!res.ok) throw new Error("Save failed");
+        }
+      } catch {
+        setIsSaving(false);
+        setSaveStatus("error");
+        return;
+      }
+    }
+
+    setIsSaving(false);
+    setSaveStatus("saved");
+    setTimeout(() => setSaveStatus("idle"), 2500);
+  }
+
+  /**
+   * Generates a static HTML snapshot from generated files for the preview pane.
+   * Used as a fallback when no preview_html is available (e.g. Next.js/TypeScript builds).
+   */
+  function buildHTMLSnapshot(files: GeneratedFile[]): string {
+    let appName = "ZIVO App";
+    const pkgFile = files.find((f) => f.path === "package.json");
+    if (pkgFile) {
+      try {
+        const pkg = JSON.parse(pkgFile.content) as { name?: string };
+        if (pkg.name) appName = pkg.name;
+      } catch { /* ignore */ }
+    }
+
+    const pageFiles = files.filter(
+      (f) =>
+        f.path.endsWith("/page.tsx") ||
+        f.path.endsWith("/page.ts") ||
+        f.path === "pages/index.tsx" ||
+        f.path === "pages/index.ts"
+    );
+
+    const routes = pageFiles.map((f) => {
+      const route =
+        f.path
+          .replace(/^(src\/app|app|pages)/, "")
+          .replace(/\/page\.(tsx|ts|jsx|js)$/, "")
+          .replace(/^$/, "/") || "/";
+      return route || "/";
+    });
+
+    const components = files
+      .filter(
+        (f) =>
+          f.path.startsWith("components/") ||
+          f.path.startsWith("src/components/")
+      )
+      .map((f) => f.path.split("/").pop()?.replace(/\.(tsx|ts|jsx|js)$/, "") ?? "")
+      .filter(Boolean)
+      .slice(0, 16);
+
+    const mainPage = files.find(
+      (f) =>
+        f.path === "app/page.tsx" ||
+        f.path === "src/app/page.tsx" ||
+        f.path === "pages/index.tsx" ||
+        f.path === "app/page.ts"
+    );
+    let mainContent = "";
+    if (mainPage) {
+      mainContent = mainPage.content
+        .replace(/^import\s.*$/gm, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\{[^}]*\}/g, "")
+        .replace(/\/\/.*$/gm, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 400);
+    }
+
+    const totalKB = Math.round(files.reduce((a, f) => a + f.content.length, 0) / 1024);
+
+    const esc = (s: string) =>
+      s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] ?? c));
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(appName)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#0a0b14;color:#f1f5f9;min-height:100vh}
+  .hdr{background:#0f1120;border-bottom:1px solid rgba(255,255,255,.08);padding:.875rem 2rem;display:flex;align-items:center;gap:.75rem}
+  .logo{width:32px;height:32px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1rem;flex-shrink:0;color:#fff}
+  .hdr h1{font-size:1.125rem;font-weight:700}
+  .badge{padding:.2rem .65rem;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:20px;font-size:.7rem;color:#f59e0b;font-weight:600;margin-left:.25rem}
+  .wrap{max-width:860px;margin:1.5rem auto;padding:0 1.5rem;display:grid;gap:1.25rem}
+  .note{padding:.65rem 1rem;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;font-size:.8125rem;color:#f59e0b}
+  .card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:1.125rem}
+  .card h2{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:600;margin-bottom:.75rem}
+  .stats{display:flex;gap:2rem;flex-wrap:wrap}
+  .sn{font-size:1.625rem;font-weight:800;color:#f1f5f9;line-height:1}
+  .sl{font-size:.7rem;color:#475569;text-transform:uppercase;letter-spacing:.06em;margin-top:.2rem}
+  .routes{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.4rem}
+  .route{padding:.4rem .65rem;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25);border-radius:7px;font-size:.8rem;color:#a5b4fc;font-family:monospace}
+  .tags{display:flex;flex-wrap:wrap;gap:.35rem}
+  .tag{padding:.2rem .55rem;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:6px;font-size:.75rem;color:#94a3b8}
+  .txt{font-size:.8125rem;color:#94a3b8;line-height:1.75}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo">Z</div>
+  <h1>${esc(appName)}</h1>
+  <span class="badge">HTML Snapshot</span>
+</div>
+<div class="wrap">
+  <div class="note">&#9432; This is a static snapshot preview. Use the <strong>Code</strong> tab to view and edit files.</div>
+  <div class="card">
+    <h2>Project Overview</h2>
+    <div class="stats">
+      <div><div class="sn">${files.length}</div><div class="sl">Files</div></div>
+      <div><div class="sn">${routes.length}</div><div class="sl">Routes</div></div>
+      <div><div class="sn">${components.length}</div><div class="sl">Components</div></div>
+      <div><div class="sn">${totalKB}KB</div><div class="sl">Total Size</div></div>
+    </div>
+  </div>
+  ${routes.length > 0 ? `<div class="card"><h2>Pages &amp; Routes (${routes.length})</h2><div class="routes">${routes.map((r) => `<div class="route">${esc(r)}</div>`).join("")}</div></div>` : ""}
+  ${components.length > 0 ? `<div class="card"><h2>Components (${components.length})</h2><div class="tags">${components.map((c) => `<span class="tag">${esc(c)}</span>`).join("")}</div></div>` : ""}
+  ${mainContent ? `<div class="card"><h2>Homepage Content</h2><p class="txt">${esc(mainContent)}</p></div>` : ""}
+</div>
+</body>
+</html>`;
   }
 
   async function handlePlan() {
@@ -1161,8 +1333,9 @@ function AIPageInner() {
     setLoadingStep(0);
     setOutput(null);
     setActiveFile(null);
+    setEditedContent(null);
+    setSaveStatus("idle");
     setConsoleLogs([{ text: `> ⚡ Building full app: ${options.appName}…`, type: "info" }]);
-    setIsBuildRunning(true);
     setBuildErrors([]);
     setBuildWarnings([]);
     setBuildLogs([]);
@@ -1261,6 +1434,7 @@ function AIPageInner() {
             collectedFiles = evt.files as GeneratedFile[];
             if (collectedFiles.length > 0 && !activeFile) {
               setActiveFile(collectedFiles[0]);
+              setEditedContent(collectedFiles[0].content);
               setActiveRightTab("files");
             }
             setOutput((prev) => ({ ...(prev ?? {}), files: collectedFiles }));
@@ -1281,6 +1455,7 @@ function AIPageInner() {
 
       if (collectedFiles.length > 0) {
         setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
         setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: "", newContent: f.content })));
         setShowDiff(true);
         setActiveRightTab("files");
@@ -2770,57 +2945,65 @@ function AIPageInner() {
               {/* Preview Tab */}
               {!loading && output && activeTab === "preview" && (
                 <div style={{ width: iframeWidth, height: "100%", position: "relative", transition: "width 0.3s ease" }}>
-                  {output?.preview_html ? (
-                    <>
-                      <iframe
-                        ref={iframeRef}
-                        srcDoc={output.preview_html}
-                        title="Live Preview"
-                        style={{ width: "100%", height: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
-                        sandbox="allow-scripts"
-                        onLoad={() => applyVisualEditOverlay(visualEdit)}
-                      />
-                      {popover && (
-                        <div style={{ position: "absolute", top: popover.y, left: popover.x, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.875rem", boxShadow: "0 8px 32px rgba(0,0,0,0.4)", zIndex: 10000, minWidth: "220px", animation: "fadeIn 0.2s ease" }}>
-                          <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", color: COLORS.textSecondary }}>Edit element text:</p>
-                          <input
-                            className="zivo-input"
-                            value={popoverInput}
-                            onChange={(e) => setPopoverInput(e.target.value)}
-                            style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "0.35rem 0.5rem", color: COLORS.textPrimary, fontSize: "0.875rem" }}
-                          />
-                          <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}>
-                            <button
-                              className="zivo-btn"
-                              onClick={() => {
-                                if (output?.preview_html && popover) {
-                                  const updated = output.preview_html.replace(popover.text, popoverInput);
-                                  setOutput((prev) => prev ? { ...prev, preview_html: updated } : prev);
-                                }
-                                setPopover(null);
-                              }}
-                              style={{ flex: 1, padding: "0.35rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "6px", border: "none", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600 }}
-                            >
-                              Apply
-                            </button>
-                            <button
-                              className="zivo-btn"
-                              onClick={() => setPopover(null)}
-                              style={{ flex: 1, padding: "0.35rem", background: COLORS.bgCard, color: COLORS.textSecondary, borderRadius: "6px", border: `1px solid ${COLORS.border}`, cursor: "pointer", fontSize: "0.75rem" }}
-                            >
-                              Cancel
-                            </button>
+                  {(() => {
+                    const previewHtml = output?.preview_html ||
+                      (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
+                    const isSnapshot = !output?.preview_html && Boolean(previewHtml);
+                    return previewHtml ? (
+                      <>
+                        {isSnapshot && (
+                          <div style={{ position: "absolute", top: 8, right: 12, zIndex: 10, padding: "0.2rem 0.6rem", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "20px", fontSize: "0.7rem", color: "#f59e0b", fontWeight: 600, pointerEvents: "none" }}>
+                            HTML Snapshot
                           </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.875rem", textAlign: "center", padding: "2rem" }}>
-                      {output?.files?.some((f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts"))
-                        ? "Live preview not available for TypeScript files — view in Code tab"
-                        : "No preview available for this project type."}
-                    </div>
-                  )}
+                        )}
+                        <iframe
+                          ref={iframeRef}
+                          srcDoc={previewHtml}
+                          title={isSnapshot ? "HTML Snapshot Preview" : "Live Preview"}
+                          style={{ width: "100%", height: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
+                          sandbox="allow-scripts"
+                          onLoad={() => { if (!isSnapshot) applyVisualEditOverlay(visualEdit); }}
+                        />
+                        {!isSnapshot && popover && (
+                          <div style={{ position: "absolute", top: popover.y, left: popover.x, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.875rem", boxShadow: "0 8px 32px rgba(0,0,0,0.4)", zIndex: 10000, minWidth: "220px", animation: "fadeIn 0.2s ease" }}>
+                            <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", color: COLORS.textSecondary }}>Edit element text:</p>
+                            <input
+                              className="zivo-input"
+                              value={popoverInput}
+                              onChange={(e) => setPopoverInput(e.target.value)}
+                              style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "0.35rem 0.5rem", color: COLORS.textPrimary, fontSize: "0.875rem" }}
+                            />
+                            <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}>
+                              <button
+                                className="zivo-btn"
+                                onClick={() => {
+                                  if (output?.preview_html && popover) {
+                                    const updated = output.preview_html.replace(popover.text, popoverInput);
+                                    setOutput((prev) => prev ? { ...prev, preview_html: updated } : prev);
+                                  }
+                                  setPopover(null);
+                                }}
+                                style={{ flex: 1, padding: "0.35rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "6px", border: "none", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600 }}
+                              >
+                                Apply
+                              </button>
+                              <button
+                                className="zivo-btn"
+                                onClick={() => setPopover(null)}
+                                style={{ flex: 1, padding: "0.35rem", background: COLORS.bgCard, color: COLORS.textSecondary, borderRadius: "6px", border: `1px solid ${COLORS.border}`, cursor: "pointer", fontSize: "0.75rem" }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.875rem", textAlign: "center", padding: "2rem" }}>
+                        No preview available for this project type.
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -3394,7 +3577,7 @@ function AIPageInner() {
                     <FileExplorer
                       files={(output?.files ?? []).filter((f) => !fileSearchQuery || f.path.toLowerCase().includes(fileSearchQuery.toLowerCase())) as Array<{ path: string; content: string; action: "create" | "update" | "delete" }>}
                       activeFilePath={activeFile?.path ?? null}
-                      onFileSelect={(f) => { setActiveFile(f); setActiveRightTab("code"); }}
+                      onFileSelect={(f) => { setActiveFile(f); setEditedContent(f.content); setSaveStatus("idle"); setActiveRightTab("code"); }}
                     />
                   </div>
                 </div>
@@ -3405,34 +3588,114 @@ function AIPageInner() {
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
                   {activeFile ? (
                     <>
+                      {/* File header: path + action badge + Save/Copy buttons */}
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
                         <span style={{ fontSize: "0.875rem" }}>{getFileIcon(activeFile.path)}</span>
-                        <code style={{ flex: 1, fontSize: "0.75rem", color: COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeFile.path}</code>
+                        <code style={{ flex: 1, fontSize: "0.75rem", color: COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={activeFile.path}>{activeFile.path}</code>
+                        {/* Save button */}
                         <button
                           className="zivo-btn"
-                          onClick={() => navigator.clipboard.writeText(activeFile.content).then(() => {
+                          onClick={handleFileSave}
+                          disabled={isSaving || loading || editedContent === activeFile.content}
+                          title={loading ? "Build in progress — editing disabled" : "Save file"}
+                          style={{
+                            padding: "0.2rem 0.55rem",
+                            background: saveStatus === "saved" ? "rgba(16,185,129,0.15)" : saveStatus === "error" ? "rgba(239,68,68,0.15)" : "rgba(99,102,241,0.15)",
+                            border: `1px solid ${saveStatus === "saved" ? "rgba(16,185,129,0.4)" : saveStatus === "error" ? "rgba(239,68,68,0.4)" : "rgba(99,102,241,0.3)"}`,
+                            borderRadius: "5px",
+                            color: saveStatus === "saved" ? COLORS.success : saveStatus === "error" ? COLORS.error : COLORS.accent,
+                            cursor: isSaving || loading || editedContent === activeFile.content ? "not-allowed" : "pointer",
+                            fontSize: "0.7rem",
+                            fontWeight: 600,
+                            flexShrink: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.3rem",
+                            opacity: editedContent === activeFile.content ? 0.5 : 1,
+                          }}
+                        >
+                          {isSaving ? (
+                            <><span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid rgba(99,102,241,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Saving…</>
+                          ) : saveStatus === "saved" ? (
+                            <>✓ Saved</>
+                          ) : saveStatus === "error" ? (
+                            <>✕ Error</>
+                          ) : (
+                            <>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                              Save
+                            </>
+                          )}
+                        </button>
+                        {/* Copy button */}
+                        <button
+                          className="zivo-btn"
+                          onClick={() => navigator.clipboard.writeText(editedContent ?? activeFile.content).then(() => {
                             setCopyFileLabel("copied");
                             setTimeout(() => setCopyFileLabel("copy"), 2000);
                           }).catch(() => {})}
                           style={{ padding: "0.2rem 0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "5px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.7rem", flexShrink: 0 }}
                         >
-                          {copyFileLabel === "copied" ? "✓ Copied" : "Copy"}
+                          {copyFileLabel === "copied" ? "✓" : "Copy"}
                         </button>
                       </div>
-                      <div style={{ flex: 1, overflow: "auto", padding: "0.75rem" }}>
-                        <pre style={{ margin: 0, fontSize: "0.75rem", lineHeight: 1.7, color: COLORS.textPrimary, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                          {activeFile.content.split("\n").map((line, i) => (
-                            <div key={i} style={{ display: "flex", gap: "0.75rem" }}>
-                              <span style={{ color: COLORS.textMuted, userSelect: "none", minWidth: "2rem", textAlign: "right", flexShrink: 0, fontSize: "0.7rem" }}>{i + 1}</span>
-                              <span>{line}</span>
-                            </div>
-                          ))}
-                        </pre>
-                      </div>
+                      {/* Editable textarea */}
+                      <textarea
+                        className="zivo-textarea"
+                        value={editedContent ?? activeFile.content}
+                        onChange={(e) => { setEditedContent(e.target.value); setSaveStatus("idle"); }}
+                        readOnly={loading}
+                        spellCheck={false}
+                        onKeyDown={(e) => {
+                          // Ctrl/Cmd+S to save
+                          if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+                            e.preventDefault();
+                            void handleFileSave();
+                          }
+                          // Tab key inserts spaces instead of leaving the field
+                          if (e.key === "Tab") {
+                            e.preventDefault();
+                            const el = e.currentTarget;
+                            const start = el.selectionStart;
+                            const end = el.selectionEnd;
+                            const val = el.value;
+                            const newVal = val.slice(0, start) + "  " + val.slice(end);
+                            setEditedContent(newVal);
+                            // Restore cursor position after React re-render
+                            requestAnimationFrame(() => {
+                              el.selectionStart = start + 2;
+                              el.selectionEnd = start + 2;
+                            });
+                          }
+                        }}
+                        style={{
+                          flex: 1,
+                          resize: "none",
+                          width: "100%",
+                          padding: "0.75rem",
+                          background: "transparent",
+                          border: "none",
+                          color: loading ? COLORS.textMuted : COLORS.textPrimary,
+                          fontSize: "0.75rem",
+                          lineHeight: 1.7,
+                          fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
+                          outline: "none",
+                          boxSizing: "border-box",
+                          cursor: loading ? "not-allowed" : "text",
+                        }}
+                        title={loading ? "Build in progress — editing will resume when build completes" : undefined}
+                      />
+                      {/* Unsaved changes indicator */}
+                      {editedContent !== null && editedContent !== activeFile.content && saveStatus === "idle" && (
+                        <div style={{ padding: "0.3rem 0.75rem", borderTop: `1px solid ${COLORS.border}`, flexShrink: 0, display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.7rem", color: COLORS.warning }}>
+                          <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: COLORS.warning, flexShrink: 0 }} />
+                          Unsaved changes — press <kbd style={{ padding: "0 4px", background: "rgba(255,255,255,0.08)", borderRadius: "3px", fontSize: "0.65rem" }}>⌘S</kbd> or click Save
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.8125rem", textAlign: "center", padding: "2rem" }}>
-                      Select a file from the Files tab to view its code.
+                      Select a file from the Files tab to view and edit its code.
                     </div>
                   )}
                 </div>
