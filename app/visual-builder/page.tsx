@@ -1,213 +1,109 @@
 'use client';
-import { useState, useCallback } from 'react';
 
-type ComponentType = 'Hero' | 'Features' | 'Navbar' | 'Footer' | 'Card' | 'Button' | 'Text' | 'Image';
+import { useState } from 'react';
+import dynamic from 'next/dynamic';
 
-interface CanvasComponent {
-  id: string;
-  type: ComponentType;
-  props: Record<string, string>;
-}
+const VisualEditorPanel = dynamic(() => import('@/components/VisualEditor/VisualEditorPanel'), { ssr: false });
 
-const COMPONENT_BLOCKS: ComponentType[] = ['Hero', 'Features', 'Navbar', 'Footer', 'Card', 'Button', 'Text', 'Image'];
-
-const componentPreviews: Record<ComponentType, string> = {
-  Hero: 'bg-gradient-to-r from-indigo-600 to-purple-600 h-24 rounded flex items-center justify-center text-white font-bold',
-  Features: 'bg-[#1a1a2e] h-16 rounded border border-[#6366f1]/30 flex items-center justify-center text-gray-300 text-sm',
-  Navbar: 'bg-[#111] h-10 rounded flex items-center px-4 text-white text-sm border border-white/10',
-  Footer: 'bg-[#0d0d0d] h-10 rounded flex items-center px-4 text-gray-500 text-xs border border-white/10',
-  Card: 'bg-[#1a1a1a] h-16 rounded-lg border border-white/10 flex items-center justify-center text-white text-sm',
-  Button: 'bg-[#6366f1] h-10 rounded-lg flex items-center justify-center text-white text-sm font-semibold w-32',
-  Text: 'bg-transparent h-8 flex items-center text-gray-300 text-sm px-2 border-b border-white/10',
-  Image: 'bg-[#1a1a1a] h-20 rounded border-2 border-dashed border-white/20 flex items-center justify-center text-gray-500 text-xs',
+const COLORS = {
+  bg: "#0a0b14",
+  bgPanel: "#0f1120",
+  border: "rgba(255,255,255,0.08)",
+  accent: "#6366f1",
+  textPrimary: "#f1f5f9",
+  textSecondary: "#94a3b8",
+  textMuted: "#475569",
 };
 
 export default function VisualBuilderPage() {
-  const [canvas, setCanvas] = useState<CanvasComponent[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [history, setHistory] = useState<CanvasComponent[][]>([[]]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [exporting, setExporting] = useState(false);
-  const [exportedCode, setExportedCode] = useState('');
+  const [generatedCode, setGeneratedCode] = useState('');
+  const [generatedFilename, setGeneratedFilename] = useState('Component.tsx');
+  const [showModal, setShowModal] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const selectedComponent = canvas.find(c => c.id === selected);
-
-  const pushHistory = useCallback((newCanvas: CanvasComponent[]) => {
-    setHistory(prev => {
-      const trimmed = prev.slice(0, historyIndex + 1);
-      return [...trimmed, newCanvas];
-    });
-    setHistoryIndex(prev => prev + 1);
-  }, [historyIndex]);
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const type = e.dataTransfer.getData('text/plain') as ComponentType;
-    if (!type) return;
-    const newComponent: CanvasComponent = {
-      id: `${type}-${Date.now()}`,
-      type,
-      props: { label: type },
-    };
-    const newCanvas = [...canvas, newComponent];
-    setCanvas(newCanvas);
-    pushHistory(newCanvas);
-    setSelected(newComponent.id);
+  const handleCodeGenerated = (code: string, filename: string) => {
+    setGeneratedCode(code);
+    setGeneratedFilename(filename);
+    setShowModal(true);
   };
 
-  const undo = () => {
-    if (historyIndex <= 0) return;
-    const newIndex = historyIndex - 1;
-    setHistoryIndex(newIndex);
-    setCanvas(history[newIndex]);
-    setSelected(null);
-  };
-
-  const removeComponent = (id: string) => {
-    const newCanvas = canvas.filter(c => c.id !== id);
-    setCanvas(newCanvas);
-    pushHistory(newCanvas);
-    if (selected === id) setSelected(null);
-  };
-
-  const updateProp = (key: string, value: string) => {
-    if (!selected) return;
-    const newCanvas = canvas.map(c =>
-      c.id === selected ? { ...c, props: { ...c.props, [key]: value } } : c
-    );
-    setCanvas(newCanvas);
-  };
-
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const res = await fetch('/api/visual-builder/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ components: canvas }),
-      });
-      const data = await res.json() as { code?: string; error?: string };
-      setExportedCode(data.code ?? data.error ?? 'Error exporting');
-    } finally {
-      setExporting(false);
-    }
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(generatedCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-[#111]">
-        <h1 className="text-lg font-bold text-[#6366f1] mr-4">Visual Builder</h1>
-        <button
-          onClick={undo}
-          disabled={historyIndex <= 0}
-          className="px-3 py-1.5 text-sm bg-white/5 hover:bg-white/10 rounded disabled:opacity-40 transition"
-        >
-          ↩ Undo
-        </button>
-        <button
-          onClick={handleExport}
-          disabled={exporting || canvas.length === 0}
-          className="px-3 py-1.5 text-sm bg-[#6366f1] hover:bg-[#5254cc] rounded disabled:opacity-40 transition font-semibold"
-        >
-          {exporting ? 'Exporting…' : '⬇ Export'}
-        </button>
-        <span className="text-xs text-gray-500 ml-auto">{canvas.length} component{canvas.length !== 1 ? 's' : ''}</span>
+    <>
+      <style>{`
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+      `}</style>
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: COLORS.bg, color: COLORS.textPrimary, fontFamily: "'Inter','Segoe UI',system-ui,sans-serif" }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.625rem 1.25rem', borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+          <a href="/ai" style={{ fontSize: '0.8125rem', color: COLORS.textMuted, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+            ← Back to AI Builder
+          </a>
+          <div style={{ width: '1px', height: '16px', background: COLORS.border }} />
+          <h1 style={{ fontSize: '1rem', fontWeight: 700, color: COLORS.textPrimary, margin: 0, letterSpacing: '-0.01em' }}>
+            🎨 Visual Builder
+          </h1>
+          <p style={{ fontSize: '0.8125rem', color: COLORS.textMuted, margin: 0, marginLeft: '0.25rem' }}>
+            — Drag &amp; drop to build UI
+          </p>
+        </div>
+
+        {/* Main editor */}
+        <div style={{ flex: 1, overflow: 'hidden' }}>
+          <VisualEditorPanel onCodeGenerated={handleCodeGenerated} />
+        </div>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left sidebar – component blocks */}
-        <aside className="w-44 border-r border-white/10 p-3 flex flex-col gap-2 bg-[#0d0d0d]">
-          <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Components</p>
-          {COMPONENT_BLOCKS.map(type => (
-            <div
-              key={type}
-              draggable
-              onDragStart={e => e.dataTransfer.setData('text/plain', type)}
-              className="px-3 py-2 bg-[#1a1a1a] hover:bg-[#6366f1]/20 border border-white/10 rounded cursor-grab text-sm transition select-none"
-            >
-              {type}
-            </div>
-          ))}
-        </aside>
-
-        {/* Center canvas */}
-        <div className="flex-1 p-4 overflow-y-auto">
+      {/* Generated Code Modal */}
+      {showModal && (
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className={`min-h-96 rounded-xl border-2 border-dashed transition p-4 flex flex-col gap-3 ${
-              dragOver ? 'border-[#6366f1] bg-[#6366f1]/5' : 'border-white/10 bg-[#111]'
-            }`}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: COLORS.bgPanel,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: '12px',
+              width: '100%',
+              maxWidth: '800px',
+              maxHeight: '80vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
           >
-            {canvas.length === 0 && (
-              <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">
-                Drag components here
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.25rem', borderBottom: `1px solid ${COLORS.border}` }}>
+              <div>
+                <h2 style={{ fontSize: '0.9375rem', fontWeight: 600, color: COLORS.textPrimary, margin: 0 }}>Generated Code</h2>
+                <p style={{ fontSize: '0.75rem', color: COLORS.textMuted, margin: 0, fontFamily: 'monospace' }}>{generatedFilename}</p>
               </div>
-            )}
-            {canvas.map(comp => (
-              <div
-                key={comp.id}
-                onClick={() => setSelected(comp.id)}
-                className={`group relative cursor-pointer rounded-lg transition ${
-                  selected === comp.id ? 'ring-2 ring-[#6366f1]' : 'ring-1 ring-white/5'
-                }`}
-              >
-                <div className={componentPreviews[comp.type]}>
-                  {comp.props.label || comp.type}
-                </div>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <button
-                  onClick={e => { e.stopPropagation(); removeComponent(comp.id); }}
-                  className="absolute top-1 right-1 text-xs bg-red-500/80 hover:bg-red-500 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 hover:opacity-100 transition"
+                  onClick={handleCopy}
+                  style={{ padding: '0.375rem 0.875rem', background: copied ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)', border: `1px solid ${copied ? 'rgba(16,185,129,0.3)' : COLORS.border}`, borderRadius: '6px', color: copied ? '#10b981' : COLORS.textSecondary, cursor: 'pointer', fontSize: '0.8125rem', fontWeight: 500 }}
+                >
+                  {copied ? '✓ Copied' : '⎘ Copy'}
+                </button>
+                <button
+                  onClick={() => setShowModal(false)}
+                  style={{ padding: '0.375rem 0.625rem', background: 'transparent', border: 'none', color: COLORS.textMuted, cursor: 'pointer', fontSize: '1.125rem', lineHeight: '1' }}
                 >
                   ✕
                 </button>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right sidebar – property inspector */}
-        <aside className="w-56 border-l border-white/10 p-4 bg-[#0d0d0d]">
-          <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-3">Properties</p>
-          {selectedComponent ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm font-semibold text-[#6366f1]">{selectedComponent.type}</p>
-              {Object.entries(selectedComponent.props).map(([key, value]) => (
-                <label key={key} className="flex flex-col gap-1">
-                  <span className="text-xs text-gray-400 capitalize">{key}</span>
-                  <input
-                    value={value}
-                    onChange={e => updateProp(key, e.target.value)}
-                    className="bg-[#1a1a1a] border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-[#6366f1]"
-                  />
-                </label>
-              ))}
             </div>
-          ) : (
-            <p className="text-xs text-gray-600">Select a component to edit properties</p>
-          )}
-        </aside>
-      </div>
-
-      {/* Export output */}
-      {exportedCode && (
-        <div className="border-t border-white/10 p-4 bg-[#0d0d0d]">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Exported Code</p>
-            <button
-              onClick={() => navigator.clipboard.writeText(exportedCode)}
-              className="text-xs text-[#6366f1] hover:underline"
-            >
-              Copy
-            </button>
+            <pre style={{ margin: 0, padding: '1.25rem', fontSize: '0.8125rem', color: COLORS.textPrimary, fontFamily: "'JetBrains Mono','Fira Code',monospace", overflowY: 'auto', flex: 1, lineHeight: 1.6, background: 'rgba(0,0,0,0.2)' }}>
+              {generatedCode}
+            </pre>
           </div>
-          <pre className="bg-[#111] rounded p-3 text-xs text-green-400 overflow-x-auto max-h-48">{exportedCode}</pre>
         </div>
       )}
-    </main>
+    </>
   );
 }
