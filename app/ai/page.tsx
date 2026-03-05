@@ -17,6 +17,14 @@ import BlueprintPanel from "@/components/BlueprintPanel";
 import type { ProjectPlan } from "@/lib/ai/project-planner";
 import type { BuildError, BuildWarning } from "@/lib/ai/fix-loop";
 import type { ArchitecturePlan } from "@/app/api/plan/route";
+import BuildProgressIndicator, { type BuildStage } from "@/components/BuildProgressIndicator";
+import ConsolePanel from "@/components/ConsolePanel";
+import SEOAnalyzer from "@/components/SEOAnalyzer";
+import AccessibilityScanner from "@/components/AccessibilityScanner";
+import PerformanceAnalyzer from "@/components/PerformanceAnalyzer";
+import DocGenerator from "@/components/DocGenerator";
+import AgentOrchestrator from "@/components/AgentOrchestrator";
+import type { LogEntry } from "@/lib/logger";
 
 interface SecurityIssue {
   id: string;
@@ -325,6 +333,21 @@ function AIPageInner() {
   const [planData, setPlanData] = useState<ArchitecturePlan | null>(null);
   // Command palette + design system panel
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [buildStages, setBuildStages] = useState<BuildStage[]>([
+    { id: "prompt", label: "Prompt", icon: "✏️", status: "pending" },
+    { id: "parse", label: "Parse", icon: "🔍", status: "pending" },
+    { id: "blueprint", label: "Blueprint", icon: "📐", status: "pending" },
+    { id: "generate", label: "Generate", icon: "⚡", status: "pending" },
+    { id: "validate", label: "Validate", icon: "✅", status: "pending" },
+    { id: "fix", label: "Fix", icon: "🔧", status: "pending" },
+    { id: "preview", label: "Preview", icon: "👁️", status: "pending" },
+    { id: "deploy", label: "Deploy", icon: "🚀", status: "pending" },
+  ]);
+  const [currentBuildStage, setCurrentBuildStage] = useState(0);
+  const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [consolePanelOpen, setConsolePanelOpen] = useState(false);
+  const [analysisTab, setAnalysisTab] = useState<"seo" | "a11y" | "perf" | "docs" | "agents">("seo");
+  const [analysisPanelOpen, setAnalysisPanelOpen] = useState(false);
   const [designSystemOpen, setDesignSystemOpen] = useState(false);
   // Design panel (visual token editor)
   const [designPanelOpen, setDesignPanelOpen] = useState(false);
@@ -2152,10 +2175,27 @@ function AIPageInner() {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 3a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3H6a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3V6a3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3h12a3 3 0 0 0 3-3 3 3 0 0 0-3-3z"/></svg>
                 <kbd style={{ fontSize: "0.65rem", opacity: 0.6 }}>⌘K</kbd>
               </button>
+              <button
+                onClick={() => setAnalysisPanelOpen(!analysisPanelOpen)}
+                style={{ padding: "0.375rem 0.75rem", background: analysisPanelOpen ? COLORS.accent : COLORS.bgCard, border: `1px solid ${analysisPanelOpen ? COLORS.accent : COLORS.border}`, borderRadius: "6px", color: analysisPanelOpen ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500 }}
+              >
+                Analysis
+              </button>
+              <button
+                onClick={() => setConsolePanelOpen(!consolePanelOpen)}
+                style={{ padding: "0.375rem 0.75rem", background: consolePanelOpen ? COLORS.accent : COLORS.bgCard, border: `1px solid ${consolePanelOpen ? COLORS.accent : COLORS.border}`, borderRadius: "6px", color: consolePanelOpen ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500 }}
+              >
+                Console
+              </button>
             </div>
             )}
 
             {/* Loading progress bar */}
+            {loading && (
+              <div style={{ padding: "0.5rem 1rem", borderBottom: `1px solid ${COLORS.border}` }}>
+                <BuildProgressIndicator stages={buildStages} currentStage={currentBuildStage} />
+              </div>
+            )}
             {loading && (
               <div style={{ height: "3px", background: COLORS.bgCard, flexShrink: 0 }}>
                 <div style={{ height: "100%", background: COLORS.accentGradient, width: loadingStep === 0 ? "20%" : loadingStep === 1 ? "45%" : loadingStep === 2 ? "75%" : "95%", transition: "width 0.8s ease" }} />
@@ -2947,6 +2987,39 @@ function AIPageInner() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Analysis Panel */}
+        {analysisPanelOpen && (
+          <div style={{ borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "1rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", borderBottom: `1px solid ${COLORS.border}`, paddingBottom: "0.5rem" }}>
+              {(["seo", "a11y", "perf", "docs", "agents"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setAnalysisTab(tab)}
+                  style={{ padding: "0.25rem 0.75rem", borderRadius: 6, border: "none", background: analysisTab === tab ? COLORS.accent : "transparent", color: analysisTab === tab ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500 }}
+                >
+                  {tab === "seo" ? "SEO" : tab === "a11y" ? "A11y" : tab === "perf" ? "Performance" : tab === "docs" ? "Docs" : "Agents"}
+                </button>
+              ))}
+              <button onClick={() => setAnalysisPanelOpen(false)} style={{ marginLeft: "auto", background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1.125rem" }}>×</button>
+            </div>
+            <div style={{ maxHeight: "400px", overflowY: "auto" }}>
+              {analysisTab === "seo" && <SEOAnalyzer files={output?.files ?? []} />}
+              {analysisTab === "a11y" && <AccessibilityScanner files={output?.files ?? []} />}
+              {analysisTab === "perf" && <PerformanceAnalyzer files={output?.files ?? []} />}
+              {analysisTab === "docs" && <DocGenerator files={output?.files ?? []} projectName="My Project" />}
+              {analysisTab === "agents" && (() => {
+                const typedFiles = (output?.files ?? []) as Array<{ path: string; content: string; action: "create" | "update" | "delete" }>;
+                return <AgentOrchestrator projectFiles={typedFiles} onFilesUpdated={(files) => setOutput((prev) => prev ? { ...prev, files } : prev)} />;
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* Console Panel */}
+        {consolePanelOpen && (
+          <ConsolePanel logs={logEntries} onClear={() => setLogEntries([])} />
         )}
 
         {/* Status Bar */}

@@ -26,6 +26,8 @@ const NAV_LINKS = [
   { href: '/auth-builder', label: 'Auth' },
   { href: '/visual-builder', label: 'Visual' },
   { href: '/history', label: 'History' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/onboarding', label: 'Get Started' },
 ];
 
 export default function NavBar() {
