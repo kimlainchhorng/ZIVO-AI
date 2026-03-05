@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import type { ProjectPlan, ProjectTask } from "@/lib/ai/project-planner";
 
 interface PlanViewerProps {
@@ -89,12 +89,16 @@ function LoadingSkeleton() {
 
 function TaskItem({ task, onGenerateTask }: { task: ProjectTask; onGenerateTask?: (task: ProjectTask) => void }) {
   const [localStatus, setLocalStatus] = useState<ProjectTask["status"]>(task.status);
-  const st = taskStatusStyle(localStatus);
+  const [prevPropStatus, setPrevPropStatus] = useState<ProjectTask["status"]>(task.status);
 
-  // Sync local status if the prop changes (e.g. parent updates task status)
-  useEffect(() => {
+  // Sync local status when the prop changes using the React "adjusting state during render" pattern
+  // (avoids useEffect which triggers cascading-render lint errors).
+  if (prevPropStatus !== task.status) {
+    setPrevPropStatus(task.status);
     setLocalStatus(task.status);
-  }, [task.status]);
+  }
+
+  const st = taskStatusStyle(localStatus);
 
   const handleToggleDone = () => {
     setLocalStatus((s) => (s === "done" ? "pending" : "done"));
