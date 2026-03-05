@@ -603,6 +603,8 @@ function AIPageInner() {
         );
         setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: existingFileMap.get(f.path) ?? "", newContent: f.content })));
         setShowDiff(true);
+
+        void startWebsiteLivePreview(collectedFiles);
         setActiveRightTab("files");
       }
 
@@ -1261,7 +1263,7 @@ function AIPageInner() {
         setShowDiff(true);
       }
 
-        void startWebsiteLivePreview(collectedFiles); else if (!websiteError) {
+      } else if (!websiteError) {
         setWebsiteError("No files were generated. Try a more specific prompt.");
       }
     } catch (err: unknown) {
