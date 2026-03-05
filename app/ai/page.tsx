@@ -26,6 +26,7 @@ import DocGenerator from "@/components/DocGenerator";
 import AgentOrchestrator from "@/components/AgentOrchestrator";
 import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
+import { Icon, type IconName } from "@/components/icons/Icon";
 
 interface SecurityIssue {
   id: string;
@@ -102,14 +103,14 @@ const QUICK_PROMPTS = [
 ];
 
 const TEMPLATE_CARDS = [
-  { icon: "🚀", label: "Landing Page", description: "SaaS landing page with hero, features, pricing, testimonials, and CTA", prompt: "Build a SaaS landing page with hero, features, pricing, testimonials, and CTA" },
-  { icon: "📊", label: "Dashboard", description: "Analytics dashboard with sidebar navigation, stats cards, charts, and data tables", prompt: "Build an analytics dashboard with sidebar navigation, stats cards, charts, and data tables" },
-  { icon: "🛒", label: "E-commerce", description: "E-commerce store with product listings, cart, and checkout flow", prompt: "Build an e-commerce store with product listings, cart, and checkout flow" },
-  { icon: "🔐", label: "Auth System", description: "Complete auth flow with login, signup, forgot password, and profile pages", prompt: "Build a complete auth flow with login, signup, forgot password, and profile pages" },
-  { icon: "⚙️", label: "Admin Panel", description: "Admin panel with user management, data tables, CRUD operations, and role permissions", prompt: "Build an admin panel with user management, data tables, CRUD operations, and role permissions" },
-  { icon: "📱", label: "Mobile App", description: "Mobile-first React Native-style app with bottom navigation and card-based UI", prompt: "Build a mobile-first React Native-style app with bottom navigation and card-based UI" },
-  { icon: "🤝", label: "SaaS App", description: "Full SaaS application with dashboard, billing, team management, and settings", prompt: "Build a full SaaS application with dashboard, billing, team management, and settings" },
-  { icon: "🏪", label: "Marketplace", description: "Marketplace with listings, search, filters, seller profiles, and messaging", prompt: "Build a marketplace with listings, search, filters, seller profiles, and messaging" },
+  { iconName: "rocket" as const, label: "Landing Page", description: "SaaS landing page with hero, features, pricing, testimonials, and CTA", prompt: "Build a SaaS landing page with hero, features, pricing, testimonials, and CTA" },
+  { iconName: "barChart" as const, label: "Dashboard", description: "Analytics dashboard with sidebar navigation, stats cards, charts, and data tables", prompt: "Build an analytics dashboard with sidebar navigation, stats cards, charts, and data tables" },
+  { iconName: "cart" as const, label: "E-commerce", description: "E-commerce store with product listings, cart, and checkout flow", prompt: "Build an e-commerce store with product listings, cart, and checkout flow" },
+  { iconName: "lock" as const, label: "Auth System", description: "Complete auth flow with login, signup, forgot password, and profile pages", prompt: "Build a complete auth flow with login, signup, forgot password, and profile pages" },
+  { iconName: "settings" as const, label: "Admin Panel", description: "Admin panel with user management, data tables, CRUD operations, and role permissions", prompt: "Build an admin panel with user management, data tables, CRUD operations, and role permissions" },
+  { iconName: "mobile" as const, label: "Mobile App", description: "Mobile-first React Native-style app with bottom navigation and card-based UI", prompt: "Build a mobile-first React Native-style app with bottom navigation and card-based UI" },
+  { iconName: "users" as const, label: "SaaS App", description: "Full SaaS application with dashboard, billing, team management, and settings", prompt: "Build a full SaaS application with dashboard, billing, team management, and settings" },
+  { iconName: "globe" as const, label: "Marketplace", description: "Marketplace with listings, search, filters, seller profiles, and messaging", prompt: "Build a marketplace with listings, search, filters, seller profiles, and messaging" },
 ];
 
 const MODELS = [
@@ -135,8 +136,11 @@ const SSE_STAGE_TO_BUILD_INDEX: Readonly<Record<string, number>> = {
   BLUEPRINT: 2,
   MANIFEST: 3,
   GENERATE: 3,
+  GENERATING: 3,
   VALIDATE: 4,
+  VALIDATING: 4,
   FIX: 5,
+  FIXING: 5,
   DONE: 6,
 };
 
@@ -232,6 +236,8 @@ function AIPageInner() {
   // Website iteration tracking
   const [websiteIteration, setWebsiteIteration] = useState(0);
   const [websiteHistory, setWebsiteHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  // Website v2 pass counter for SSE progress
+  const [websitePassMessage, setWebsitePassMessage] = useState<string | null>(null);
 
   // Mobile app generation state
   const [mobilePrompt, setMobilePrompt] = useState("");
@@ -239,6 +245,8 @@ function AIPageInner() {
   const [mobileResult, setMobileResult] = useState<{ files: GeneratedFile[]; preview_html: string; summary: string } | null>(null);
   const [mobileLoading, setMobileLoading] = useState(false);
   const [mobileError, setMobileError] = useState<string | null>(null);
+  // Mobile v2 pass counter for SSE progress
+  const [mobilePassMessage, setMobilePassMessage] = useState<string | null>(null);
 
   // Image generation state
   const [imagePrompt, setImagePrompt] = useState("");
@@ -378,14 +386,14 @@ function AIPageInner() {
   // Command palette + design system panel
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [buildStages, setBuildStages] = useState<BuildStage[]>([
-    { id: "prompt", label: "Prompt", icon: "✏️", status: "pending" },
-    { id: "parse", label: "Parse", icon: "🔍", status: "pending" },
-    { id: "blueprint", label: "Blueprint", icon: "📐", status: "pending" },
-    { id: "generate", label: "Generate", icon: "⚡", status: "pending" },
-    { id: "validate", label: "Validate", icon: "✅", status: "pending" },
-    { id: "fix", label: "Fix", icon: "🔧", status: "pending" },
-    { id: "preview", label: "Preview", icon: "👁️", status: "pending" },
-    { id: "deploy", label: "Deploy", icon: "🚀", status: "pending" },
+    { id: "prompt", label: "Prompt", icon: "edit", status: "pending" },
+    { id: "parse", label: "Parse", icon: "search", status: "pending" },
+    { id: "blueprint", label: "Blueprint", icon: "fileText", status: "pending" },
+    { id: "generate", label: "Generate", icon: "zap", status: "pending" },
+    { id: "validate", label: "Validate", icon: "check", status: "pending" },
+    { id: "fix", label: "Fix", icon: "settings", status: "pending" },
+    { id: "preview", label: "Preview", icon: "eye", status: "pending" },
+    { id: "deploy", label: "Deploy", icon: "rocket", status: "pending" },
   ]);
   const [currentBuildStage, setCurrentBuildStage] = useState(0);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
@@ -883,34 +891,66 @@ function AIPageInner() {
     setWebsiteLoading(true);
     setWebsiteError(null);
     setWebsiteResult(null);
+    setWebsitePassMessage(null);
     try {
       const newIteration = websiteIteration + 1;
-      const existingFiles = websiteResult?.files?.length ? websiteResult.files : undefined;
-      const res = await fetch("/api/generate-site", {
+      const res = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `Build a complete multi-page website: ${websitePrompt}. Style: ${websiteStyle}. Include a homepage, about page, and contact page with modern design.`,
+          prompt: `${websitePrompt}. Style: ${websiteStyle}.`,
           model,
-          mode: "advanced",
-          context: websiteHistory,
-          existingFiles,
+          mode: "website_v2",
         }),
       });
-      const data = await res.json();
-      if (data.error) {
-        setWebsiteError(data.error);
-      } else {
-        setWebsiteResult({ files: data.files ?? [], preview_html: data.preview_html ?? "", summary: data.summary ?? "" });
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+      let collectedFiles: GeneratedFile[] = [];
+      let buildSummary = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[] };
+          try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
+
+          if (evt.type === "stage") {
+            if (evt.message) setWebsitePassMessage(evt.message);
+            if (evt.stage === "DONE") buildSummary = evt.message ?? buildSummary;
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files;
+          } else if (evt.type === "error") {
+            setWebsiteError(String(evt.message ?? "Website generation failed."));
+          }
+        }
+      }
+
+      if (collectedFiles.length > 0) {
+        setWebsiteResult({ files: collectedFiles, preview_html: "", summary: buildSummary || `Generated ${collectedFiles.length} files.` });
         setWebsiteIteration(newIteration);
         setWebsiteHistory((prev) => [
           ...prev,
           { role: "user" as const, content: websitePrompt },
-          { role: "assistant" as const, content: data.summary ?? `Generated ${(data.files ?? []).length} files.` },
+          { role: "assistant" as const, content: buildSummary || `Generated ${collectedFiles.length} files.` },
         ]);
       }
-    } catch { setWebsiteError("Website generation failed. Please try again."); }
+    } catch (err: unknown) {
+      setWebsiteError(err instanceof Error ? err.message : "Website generation failed. Please try again.");
+    }
     setWebsiteLoading(false);
+    setWebsitePassMessage(null);
   }
 
   async function handleMobileGenerate() {
@@ -918,21 +958,59 @@ function AIPageInner() {
     setMobileLoading(true);
     setMobileError(null);
     setMobileResult(null);
+    setMobilePassMessage(null);
     try {
-      const res = await fetch("/api/generate-site", {
+      const res = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `Build a ${mobileFramework} mobile app: ${mobilePrompt}. Generate the main screens with navigation, styled components, and mobile-first UI patterns.\n\nIMPORTANT: The preview_html MUST be a pixel-perfect HTML mockup showing the app screens in a 375x812 mobile viewport. Include a phone-frame wrapper, bottom tab navigation, and all main screens. Use real images from https://picsum.photos. Make it visually stunning.`,
+          prompt: `${mobileFramework} mobile app: ${mobilePrompt}`,
           model,
-          mode: "advanced",
+          mode: "mobile_v2",
         }),
       });
-      const data = await res.json();
-      if (data.error) { setMobileError(data.error); }
-      else { setMobileResult({ files: data.files ?? [], preview_html: data.preview_html ?? "", summary: data.summary ?? "" }); }
-    } catch { setMobileError("Mobile app generation failed. Please try again."); }
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+      let collectedFiles: GeneratedFile[] = [];
+      let buildSummary = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[] };
+          try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
+
+          if (evt.type === "stage") {
+            if (evt.message) setMobilePassMessage(evt.message);
+            if (evt.stage === "DONE") buildSummary = evt.message ?? buildSummary;
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files;
+          } else if (evt.type === "error") {
+            setMobileError(String(evt.message ?? "Mobile generation failed."));
+          }
+        }
+      }
+
+      if (collectedFiles.length > 0) {
+        setMobileResult({ files: collectedFiles, preview_html: "", summary: buildSummary || `Generated ${collectedFiles.length} files.` });
+      }
+    } catch (err: unknown) {
+      setMobileError(err instanceof Error ? err.message : "Mobile app generation failed. Please try again.");
+    }
     setMobileLoading(false);
+    setMobilePassMessage(null);
   }
 
   async function handleVideoGenerate() {
@@ -1534,7 +1612,7 @@ function AIPageInner() {
                         aria-label={`Use template: ${tpl.label}`}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                          <span style={{ fontSize: "1.125rem", lineHeight: 1 }}>{tpl.icon}</span>
+                          <span style={{ display: "inline-flex", alignItems: "center", color: COLORS.accent }}><Icon name={tpl.iconName} size={16} /></span>
                           <span style={{ fontWeight: 600, fontSize: "0.875rem", color: COLORS.textPrimary }}>{tpl.label}</span>
                         </div>
                         <p style={{ margin: 0, fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.5 }}>{tpl.description}</p>
@@ -2049,8 +2127,8 @@ function AIPageInner() {
               {mode === "website" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
                   <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Website Builder</h2>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a complete multi-page site instantly</p>
+                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Website Builder v2</h2>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a real Next.js multi-page site with design tokens and multi-pass quality</p>
                   </div>
                   <div style={{ marginBottom: "0.75rem" }}>
                     <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
@@ -2089,13 +2167,16 @@ function AIPageInner() {
                       <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Build Website</>
                     )}
                   </button>
+                  {websiteLoading && websitePassMessage && (
+                    <div style={{ padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px", fontSize: "0.8125rem", color: COLORS.accent }}>{websitePassMessage}</div>
+                  )}
                   {websiteError && (
                     <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{websiteError}</div>
                   )}
                   {websiteResult && (
                     <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
-                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600 }}>✓ Website generated</div>
+                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600 }}>Website generated</div>
                         {websiteIteration > 1 && (
                           <span style={{ padding: "0.1rem 0.4rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>iteration {websiteIteration}</span>
                         )}
@@ -2111,8 +2192,8 @@ function AIPageInner() {
               {mode === "mobile" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
                   <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Mobile App Builder</h2>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates React Native / Expo screens instantly</p>
+                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Mobile App Builder v2</h2>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates a real Expo Router app with navigation, mock data, and multi-pass quality</p>
                   </div>
                   <div style={{ marginBottom: "0.75rem" }}>
                     <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
@@ -2150,13 +2231,16 @@ function AIPageInner() {
                       <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Build Mobile App</>
                     )}
                   </button>
+                  {mobileLoading && mobilePassMessage && (
+                    <div style={{ padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px", fontSize: "0.8125rem", color: COLORS.accent }}>{mobilePassMessage}</div>
+                  )}
                   {mobileError && (
                     <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{mobileError}</div>
                   )}
                   {mobileResult && (
                     <div>
                       <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px", marginBottom: "0.75rem" }}>
-                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600, marginBottom: "0.35rem" }}>✓ Mobile app generated</div>
+                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600, marginBottom: "0.35rem" }}>Mobile app generated</div>
                         <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{mobileResult.summary}</div>
                         <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{mobileResult.files.length} file(s) generated</div>
                       </div>
