@@ -1,7 +1,14 @@
 import type { NextConfig } from "next";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const nextConfig: NextConfig = {
   async headers() {
+    // Only apply strict COOP/COEP headers in production.
+    // Lovable (and other sandboxed preview environments) render your app
+    // inside an iframe, so these headers break the preview when applied in dev.
+    if (!isProd) return [];
+
     return [
       {
         source: "/(.*)",
