@@ -34,6 +34,52 @@ const HERO_IDS = [1040, 1041, 1043, 1044, 1046] as const;
 const FEATURE_IDS = [20, 21, 22, 24, 25, 26] as const;
 const AVATAR_IDS = [64, 65, 91] as const;
 
+// ─── Single source-of-truth constants ────────────────────────────────────────
+
+/**
+ * Brand identity constants.
+ * The build pipeline (`runWebsiteV2Pipeline`) overwrites `lib/assets.ts` with
+ * the actual brand name/tagline extracted from the WebsitePlan, so this default
+ * object is only used when importing the module directly outside of a build.
+ * Treat this as read-only at runtime; mutations will not persist across builds.
+ */
+export const brand: { name?: string; tagline?: string } = {};
+
+/**
+ * Inline SVG logo string.  The build pipeline replaces this with an
+ * AI-generated logo via generateSvgLogo().  The fallback renders a
+ * minimal geometric mark that is safe to embed directly in HTML.
+ */
+export const brandLogoSvg: string =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none" aria-label="Logo">' +
+  '<rect width="40" height="40" rx="8" fill="#6366f1"/>' +
+  '<path d="M10 30 L20 10 L30 30 Z" fill="white" opacity="0.9"/>' +
+  '</svg>';
+
+/**
+ * Stable, deterministic image URL constants.
+ * All URLs use picsum.photos/id/N for reproducible results.
+ * - hero:     1600 x 900  (16:9 landscape)
+ * - features: 800  x 600  (4:3)
+ * - avatars:  200  x 200  (1:1 square)
+ */
+export const images = {
+  hero: `https://picsum.photos/id/${HERO_IDS[0]}/1600/900`,
+  features: [
+    `https://picsum.photos/id/${FEATURE_IDS[0]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[1]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[2]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[3]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[4]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[5]}/800/600`,
+  ],
+  avatars: [
+    `https://picsum.photos/id/${AVATAR_IDS[0]}/200/200`,
+    `https://picsum.photos/id/${AVATAR_IDS[1]}/200/200`,
+    `https://picsum.photos/id/${AVATAR_IDS[2]}/200/200`,
+  ],
+} as const;
+
 /**
  * Returns stable, deterministic image URLs for a given seed index.
  * Using picsum.photos/id/N allows stable, reproducible URLs.
