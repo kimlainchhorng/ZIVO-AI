@@ -132,26 +132,149 @@ async function executeNode(node: WorkflowNode): Promise<NodeResult> {
           durationMs: Date.now() - start,
         };
 
-      case "email":
-        return {
-          status: "success",
-          output: { sent: true, messageId: `msg_${Date.now()}` },
-          durationMs: Date.now() - start,
-        };
+      case "email": {
+        const to = (node.config.to as string | undefined) ?? "";
+        const subject = (node.config.subject as string | undefined) ?? "Notification";
+        const html = (node.config.html as string | undefined) ?? (node.config.body as string | undefined) ?? "";
+        const from = (node.config.from as string | undefined) ?? "ZIVO AI <no-reply@example.com>";
 
-      case "payments":
-        return {
-          status: "success",
-          output: { charged: true, transactionId: `txn_${Date.now()}`, amount: 0 },
-          durationMs: Date.now() - start,
-        };
+        const resendApiKey = process.env.RESEND_API_KEY;
+        if (!resendApiKey) {
+          // Log-only mode when key is absent
+          return {
+            status: "success",
+            output: {
+              sent: false,
+              simulated: true,
+              messageId: `sim_${Date.now()}`,
+              to,
+              subject,
+              note: "RESEND_API_KEY not configured — email simulated",
+            },
+            durationMs: Date.now() - start,
+          };
+        }
 
-      case "code":
+        const resendRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${resendApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ from, to, subject, html: html || `<p>${subject}</p>` }),
+        });
+        const resendData = await resendRes.json() as { id?: string; error?: { message?: string } };
+        if (!resendRes.ok) {
+          throw new Error(resendData.error?.message ?? "Resend API error");
+        }
         return {
           status: "success",
-          output: { result: null, stdout: "", exitCode: 0 },
+          output: { sent: true, messageId: resendData.id ?? `msg_${Date.now()}`, to, subject },
           durationMs: Date.now() - start,
         };
+      }
+
+      case "db": {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+        if (!supabaseUrl || !supabaseKey) {
+          // Fallback to mock when Supabase credentials are absent
+          return {
+            status: "success",
+            output: { rows: [{ id: 1, data: "sample-db-row" }], rowCount: 1, simulated: true },
+            durationMs: Date.now() - start,
+          };
+        }
+
+        const table = (node.config.table as string | undefined) ?? "";
+        const operation = (node.config.operation as string | undefined) ?? "select";
+        const data = (node.config.data as Record<string, unknown> | undefined) ?? {};
+        const filters = (node.config.filters as Record<string, unknown> | undefined) ?? {};
+
+        if (!table) throw new Error("Missing config.table for db node");
+
+        let endpoint = `${supabaseUrl}/rest/v1/${encodeURIComponent(table)}`;
+        let method = "GET";
+        let requestBody: string | undefined;
+
+        if (operation === "insert") {
+          method = "POST";
+          requestBody = JSON.stringify(data);
+        } else if (operation === "update") {
+          method = "PATCH";
+          requestBody = JSON.stringify(data);
+          const filterParts = Object.entries(filters)
+            .map(([k, v]) => `${k}=eq.${encodeURIComponent(String(v))}`)
+            .join("&");
+          if (filterParts) endpoint += `?${filterParts}`;
+        } else if (operation === "delete") {
+          method = "DELETE";
+          const filterParts = Object.entries(filters)
+            .map(([k, v]) => `${k}=eq.${encodeURIComponent(String(v))}`)
+            .join("&");
+          if (filterParts) endpoint += `?${filterParts}`;
+        } else {
+          // select
+          const filterParts = Object.entries(filters)
+            .map(([k, v]) => `${k}=eq.${encodeURIComponent(String(v))}`)
+            .join("&");
+          if (filterParts) endpoint += `?${filterParts}`;
+        }
+
+        const dbRes = await fetch(endpoint, {
+          method,
+          headers: {
+            "apikey": supabaseKey,
+            "Authorization": `Bearer ${supabaseKey}`,
+            "Content-Type": "application/json",
+            "Prefer": operation === "insert" ? "return=representation" : "return=minimal",
+          },
+          body: requestBody,
+        });
+
+        const dbText = await dbRes.text();
+        let dbOutput: unknown;
+        try { dbOutput = JSON.parse(dbText); } catch { dbOutput = dbText; }
+
+        if (!dbRes.ok) {
+          throw new Error(`Supabase ${operation} failed: ${dbText.slice(0, 200)}`);
+        }
+
+        return {
+          status: "success",
+          output: {
+            rows: Array.isArray(dbOutput) ? dbOutput : [dbOutput],
+            rowCount: Array.isArray(dbOutput) ? dbOutput.length : 1,
+            operation,
+            table,
+          },
+          durationMs: Date.now() - start,
+        };
+      }
+
+      case "code": {
+        const expression = (node.config.expression as string | undefined) ?? (node.config.code as string | undefined) ?? "";
+        if (!expression.trim()) {
+          return { status: "success", output: { result: null, stdout: "" }, durationMs: Date.now() - start };
+        }
+        // Safe evaluation via new Function (no eval). Only pure JS expressions.
+        // Note: This provides basic sandboxing via forbidden keyword patterns.
+        // For production use with untrusted code, consider a dedicated sandbox (vm2 / isolated-vm).
+        // Disallow access to runtime globals: require, import, process, fetch, globalThis, etc.
+        const forbidden = /\b(require|import|process|fetch|globalThis|__dirname|__filename|Buffer|setTimeout|setInterval|clearTimeout|clearInterval)\b/;
+        if (forbidden.test(expression)) {
+          throw new Error("Code node: disallowed built-in usage detected");
+        }
+        const output: string[] = [];
+        const safeFn = new Function("console", `"use strict";\n${expression}`) as (c: { log: (...args: unknown[]) => void }) => unknown;
+        const result: unknown = safeFn({ log: (...args: unknown[]) => output.push(args.map(String).join(" ")) });
+        return {
+          status: "success",
+          output: { result, stdout: output.join("\n"), exitCode: 0 },
+          durationMs: Date.now() - start,
+        };
+      }
 
       case "loop":
         return {

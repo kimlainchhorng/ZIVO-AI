@@ -11,6 +11,8 @@ import FileExplorer from "@/components/FileExplorer";
 import ModelSelector from "@/components/ModelSelector";
 import CommandPalette from "@/components/CommandPalette";
 import DesignSystemPanel from "@/components/DesignSystemPanel";
+import DesignPanel from "@/components/DesignPanel";
+import FullAppModal, { type FullAppOptions } from "@/components/FullAppModal";
 import type { ProjectPlan } from "@/lib/ai/project-planner";
 import type { BuildError, BuildWarning } from "@/lib/ai/fix-loop";
 import type { ArchitecturePlan } from "@/app/api/plan/route";
@@ -313,7 +315,7 @@ function AIPageInner() {
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const [buildIteration, setBuildIteration] = useState(0);
   const [isBuildRunning, setIsBuildRunning] = useState(false);
-  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows">("prompt");
+  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows" | "generate">("prompt");
   const [activeRightTab, setActiveRightTab] = useState<"files" | "code" | "diff">("files");
   const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
   const [showDiff, setShowDiff] = useState(false);
@@ -322,6 +324,11 @@ function AIPageInner() {
   // Command palette + design system panel
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [designSystemOpen, setDesignSystemOpen] = useState(false);
+  // Design panel (visual token editor)
+  const [designPanelOpen, setDesignPanelOpen] = useState(false);
+  // Full App Modal
+  const [fullAppModalOpen, setFullAppModalOpen] = useState(false);
+  const [fullAppLoading, setFullAppLoading] = useState(false);
   // Abort controller for streaming build
   const abortControllerRef = useRef<AbortController | null>(null);
   // File search (Upgrade 14b)
@@ -827,6 +834,81 @@ function AIPageInner() {
     setEnhancing(false);
   }
 
+  async function handleFullAppBuild(options: FullAppOptions) {
+    setFullAppModalOpen(false);
+    setFullAppLoading(true);
+    setLoading(true);
+    setLoadingStep(0);
+    setOutput(null);
+    setActiveFile(null);
+    setConsoleLogs([{ text: `> ⚡ Building full app: ${options.appName}…`, type: "info" }]);
+    setIsBuildRunning(true);
+    setBuildErrors([]);
+    setBuildWarnings([]);
+    setBuildLogs([]);
+
+    const buildStart = Date.now();
+    const stepTimer1 = setTimeout(() => setLoadingStep(1), LOADING_STEP1_DELAY);
+    const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
+
+    try {
+      const res = await fetch("/api/generate-full-app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: options.prompt,
+          appName: options.appName,
+          features: options.features,
+          model,
+        }),
+      });
+      const data = await res.json() as {
+        files?: GeneratedFile[];
+        plan?: { pages: Array<{ path: string; name: string; description: string }>; components: string[]; database: Array<{ table: string; columns: string[] }> };
+        summary?: string;
+        error?: string;
+      };
+
+      if (data.error) {
+        setOutput({ error: data.error });
+        setConsoleLogs((prev) => [...prev, { text: `> Error: ${data.error}`, type: "error" }]);
+      } else if (data.files?.length) {
+        const genFiles: GeneratedFile[] = data.files.map((f) => ({ ...f, action: "create" as const }));
+        setOutput({ files: genFiles, summary: data.summary });
+        setActiveFile(genFiles[0]);
+        setDiffFiles(genFiles.map((f) => ({ path: f.path, oldContent: "", newContent: f.content })));
+        setShowDiff(true);
+        setActiveRightTab("files");
+        setActiveTab("code");
+        const duration = Date.now() - buildStart;
+        setBuildTime(`${(duration / 1000).toFixed(1)}s`);
+        const fileLogs = genFiles.map((f) => ({ text: `> Created: ${f.path}`, type: "success" as const }));
+        setConsoleLogs((prev) => [
+          ...prev,
+          ...fileLogs,
+          { text: `> ⚡ Full app built in ${duration}ms — ${genFiles.length} files`, type: "success" },
+        ]);
+        addHistoryEntry({
+          createdAt: Date.now(),
+          prompt: options.prompt,
+          model,
+          files: genFiles.map((f) => ({ path: f.path, action: f.action })),
+          buildTimeMs: duration,
+        });
+      }
+    } catch {
+      setOutput({ error: "Full app generation failed. Please try again." });
+      setConsoleLogs((prev) => [...prev, { text: "> Error: Full app generation failed", type: "error" }]);
+    }
+
+    clearTimeout(stepTimer1);
+    clearTimeout(stepTimer2);
+    setLoading(false);
+    setLoadingStep(0);
+    setFullAppLoading(false);
+    setIsBuildRunning(false);
+  }
+
   async function handleChatSend() {
     if (!chatInput.trim() || chatLoading) return;
     const userMsg = chatInput.trim();
@@ -991,13 +1073,14 @@ function AIPageInner() {
                 <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
-              {/* Prompt / Plan / Templates / Workflows Tabs */}
+              {/* Prompt / Plan / Templates / Workflows / Generate Tabs */}
               <div style={{ display: "flex", gap: "4px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px" }}>
                 {([
                   ["prompt", "Prompt"],
                   ["plan", "Plan"],
                   ["templates", "Templates"],
                   ["workflows", "Workflows"],
+                  ["generate", "Generate"],
                 ] as const).map(([tab, label]) => (
                   <button
                     key={tab}
@@ -1169,6 +1252,37 @@ function AIPageInner() {
                 </div>
               )}
 
+              {/* Generate Tab — quick-generate buttons */}
+              {activeLeftTab === "generate" && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>Quick Generate</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                    {([
+                      { icon: "🏗️", label: "Full App", description: "Generate all pages, auth, db, and deployment config", action: () => setFullAppModalOpen(true) },
+                      { icon: "🔐", label: "Add Auth", description: "Login, signup, forgot password + middleware", action: () => { setPrompt("Add complete authentication system with login, signup, forgot-password pages, Supabase auth integration, and middleware to protect private routes."); setActiveLeftTab("prompt"); } },
+                      { icon: "🗄️", label: "Add Database", description: "Supabase schema, types, and CRUD helpers", action: () => { setPrompt("Add a Supabase database layer with SQL schema migrations, TypeScript types, RLS policies, and CRUD helper functions for the app."); setActiveLeftTab("prompt"); } },
+                      { icon: "🧩", label: "Component Library", description: "Button, Card, Modal, Table, and 10+ more", action: () => { setPrompt("Generate a complete shadcn/ui-compatible component library with Button, Card, Input, Badge, Modal, Table, Dropdown, Toast, Avatar, and Tabs components using Tailwind CSS."); setActiveLeftTab("prompt"); } },
+                      { icon: "🚀", label: "Deploy Config", description: "Vercel, Docker, GitHub Actions, Cloudflare, Netlify", action: () => { setPrompt("Generate deployment configuration files for Vercel, Docker (multi-stage), GitHub Actions CI/CD pipeline, Cloudflare Pages, and Netlify."); setActiveLeftTab("prompt"); } },
+                      { icon: "🎨", label: "Design System", description: "Theme tokens, Tailwind config, CSS variables", action: () => { setPrompt("Generate a complete design system with Tailwind config tokens, CSS custom properties, design tokens JSON, and a ThemeProvider component with dark mode toggle."); setActiveLeftTab("prompt"); } },
+                    ] as const).map(({ icon, label, description, action }) => (
+                      <button
+                        key={label}
+                        className="zivo-file"
+                        onClick={action}
+                        disabled={loading}
+                        style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", cursor: loading ? "not-allowed" : "pointer", textAlign: "left", opacity: loading ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
+                          <span style={{ fontSize: "1.125rem", lineHeight: 1 }}>{icon}</span>
+                          <span style={{ fontWeight: 600, fontSize: "0.875rem", color: COLORS.textPrimary }}>{label}</span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.5 }}>{description}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Unified Prompt Box */}
               {activeLeftTab === "prompt" && (
               <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "14px", overflow: "hidden" }}>
@@ -1251,6 +1365,17 @@ function AIPageInner() {
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     )}
                     {loading ? "Building…" : "Build now ▶"}
+                  </button>
+                  {/* Build Full App button */}
+                  <button
+                    className="zivo-btn"
+                    onClick={() => setFullAppModalOpen(true)}
+                    disabled={loading}
+                    title="Generate a complete multi-page app"
+                    style={{ padding: "0.3rem 0.875rem", borderRadius: "20px", background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "#fff", border: "none", cursor: loading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0, opacity: loading ? 0.5 : 1 }}
+                  >
+                    <span>⚡</span>
+                    Full App
                   </button>
                 </div>
               </div>
@@ -1990,6 +2115,16 @@ function AIPageInner() {
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/></svg>
                 <span>Design</span>
+              </button>
+              {/* Design Panel button (visual token editor) */}
+              <button
+                className="zivo-btn"
+                onClick={() => setDesignPanelOpen((o) => !o)}
+                title="Visual Design Panel (colors, fonts, spacing)"
+                style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1px solid ${designPanelOpen ? "rgba(99,102,241,0.4)" : COLORS.border}`, background: designPanelOpen ? "rgba(99,102,241,0.15)" : "transparent", color: designPanelOpen ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>
+                <span>Theme</span>
               </button>
 
               {/* Cmd+K button */}
@@ -2827,6 +2962,23 @@ function AIPageInner() {
             setConsoleLogs((prev) => [...prev, { text: `> Design system applied (${css.length} chars of CSS variables)`, type: "success" }]);
             setDesignSystemOpen(false);
           }}
+        />
+      )}
+
+      {/* Visual Design Panel (token editor) */}
+      {designPanelOpen && (
+        <DesignPanel
+          onClose={() => setDesignPanelOpen(false)}
+          iframeRef={iframeRef}
+        />
+      )}
+
+      {/* Full App Modal */}
+      {fullAppModalOpen && (
+        <FullAppModal
+          onClose={() => setFullAppModalOpen(false)}
+          onConfirm={handleFullAppBuild}
+          isLoading={fullAppLoading}
         />
       )}
     </>
