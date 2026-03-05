@@ -1,18 +1,7 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
-
-// Define the shape of our project data
-interface ProjectVersion {
-  id: string;
-  projectId: string;
-  htmlContent: string;
-  metadata?: Record<string, unknown>;
-  createdAt: string;
-}
-
-// Memory storage for versions (fallback when Supabase is not configured)
-const versions: ProjectVersion[] = [];
+import { type ProjectVersion, versions, getVersions, deleteVersion } from "./versions-store";
 
 const PROJECTS_DIR = path.join(process.cwd(), "projects");
 const MAX_VERSIONS_PER_PROJECT = 50;
@@ -149,25 +138,6 @@ async function supabaseDeleteOldestVersions(
   for (const row of toDelete) {
     await supabaseDeleteVersion(config, row.id);
   }
-}
-
-// ─── In-memory helpers (fallback) ──────────────────────────────────────────────
-
-// Get all versions
-export function getVersions(): ProjectVersion[] {
-  return [...versions].sort((a, b) =>
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
-}
-
-// Delete a version
-export function deleteVersion(id: string): boolean {
-  const index = versions.findIndex(v => v.id === id);
-  if (index !== -1) {
-    versions.splice(index, 1);
-    return true;
-  }
-  return false;
 }
 
 // ─── GET — list versions for a project ────────────────────────────────────────

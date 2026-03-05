@@ -1,7 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
-
 export type BuildStageStatus = 'pending' | 'active' | 'done' | 'error';
 
 export interface BuildStage {
@@ -34,7 +32,7 @@ const COLORS = {
 
 /** Map icon name strings → compact SVG icons */
 function StageIcon({ status, icon }: { status: BuildStageStatus; icon: string }) {
-  const size = 13;
+  const size = 14;
   const s: React.CSSProperties = { display: 'inline-block', flexShrink: 0 };
 
   if (status === 'done') {
@@ -54,7 +52,7 @@ function StageIcon({ status, icon }: { status: BuildStageStatus; icon: string })
     );
   }
 
-  const iconColor = 'currentColor';
+  const iconColor = status === 'active' ? COLORS.accent : COLORS.textMuted;
   switch (icon) {
     case 'edit':
       return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>;
@@ -73,7 +71,7 @@ function StageIcon({ status, icon }: { status: BuildStageStatus; icon: string })
     case 'rocket':
       return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={iconColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>;
     default:
-      return <span style={{ fontSize: 11, color: 'currentColor' }}>{icon.charAt(0).toUpperCase()}</span>;
+      return <span style={{ fontSize: 11, color: iconColor }}>{icon.charAt(0).toUpperCase()}</span>;
   }
 }
 
@@ -85,7 +83,7 @@ export default function BuildProgressIndicator({ stages, currentStage }: BuildPr
         alignItems: 'center',
         gap: 0,
         overflowX: 'auto',
-        padding: '6px 0',
+        padding: '8px 0 4px',
       }}
     >
       {stages.map((stage, index) => {
@@ -93,104 +91,92 @@ export default function BuildProgressIndicator({ stages, currentStage }: BuildPr
         const isDone = stage.status === 'done';
         const isError = stage.status === 'error';
 
-        // Pill accent colours
-        const pillBg = isDone
-          ? 'rgba(16,185,129,0.12)'
+        const circleBg = isDone
+          ? 'rgba(16,185,129,0.15)'
           : isError
-          ? 'rgba(239,68,68,0.12)'
+          ? 'rgba(239,68,68,0.15)'
           : isActive
-          ? 'rgba(99,102,241,0.18)'
-          : 'rgba(255,255,255,0.03)';
+          ? 'rgba(99,102,241,0.20)'
+          : 'rgba(255,255,255,0.04)';
 
-        const pillBorder = isDone
-          ? 'rgba(16,185,129,0.35)'
+        const circleBorder = isDone
+          ? '#10b981'
           : isError
-          ? 'rgba(239,68,68,0.35)'
+          ? '#ef4444'
           : isActive
-          ? 'rgba(99,102,241,0.5)'
-          : 'rgba(255,255,255,0.07)';
+          ? '#6366f1'
+          : 'rgba(255,255,255,0.10)';
 
-        const pillColor = isDone
+        const labelColor = isDone
           ? COLORS.success
-          : isError
-          ? COLORS.error
           : isActive
-          ? COLORS.textPrimary
+          ? COLORS.accent
           : COLORS.textMuted;
 
         return (
-          <div key={stage.id} style={{ display: 'flex', alignItems: 'center', flex: index < stages.length - 1 ? 1 : 'none' }}>
-            {/* Stage pill */}
-            <motion.div
-              animate={
-                isActive
-                  ? { boxShadow: ['0 0 0px rgba(99,102,241,0)', '0 0 8px rgba(99,102,241,0.5)', '0 0 0px rgba(99,102,241,0)'] }
-                  : { boxShadow: '0 0 0px transparent' }
-              }
-              transition={isActive ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' } : {}}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '4px 10px',
-                borderRadius: 20,
-                background: pillBg,
-                border: `1px solid ${pillBorder}`,
-                color: pillColor,
-                whiteSpace: 'nowrap',
-                flexShrink: 0,
-                transition: 'background 0.3s, border-color 0.3s, color 0.3s',
-              }}
-            >
-              <StageIcon status={stage.status} icon={stage.icon} />
-              <span style={{ fontSize: 11, fontWeight: isActive || isDone ? 600 : 400, letterSpacing: '-0.01em' }}>
+          <div
+            key={stage.id}
+            style={{ display: 'flex', alignItems: 'center', flex: index < stages.length - 1 ? 1 : 'none' }}
+          >
+            {/* Stage circle + label */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: circleBg,
+                  border: `2px solid ${circleBorder}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  animation: isActive ? 'stagePulse 2s infinite' : 'none',
+                  transition: 'background 0.3s, border-color 0.3s',
+                  flexShrink: 0,
+                }}
+              >
+                <StageIcon status={stage.status} icon={stage.icon} />
+              </div>
+              <span
+                style={{
+                  fontSize: '0.6rem',
+                  color: labelColor,
+                  fontWeight: isActive || isDone ? 600 : 400,
+                  letterSpacing: '-0.01em',
+                  whiteSpace: 'nowrap',
+                  transition: 'color 0.3s',
+                }}
+              >
                 {stage.label}
+                {isDone && stage.duration !== undefined && (
+                  <span style={{ marginLeft: 3, color: COLORS.textMuted, fontWeight: 400 }}>
+                    {stage.duration < 1000 ? `${stage.duration}ms` : `${(stage.duration / 1000).toFixed(1)}s`}
+                  </span>
+                )}
               </span>
-              {stage.duration !== undefined && isDone && (
-                <span style={{ fontSize: 9, color: COLORS.textMuted, marginLeft: 2 }}>
-                  {stage.duration < 1000 ? `${stage.duration}ms` : `${(stage.duration / 1000).toFixed(1)}s`}
-                </span>
-              )}
-              {isActive && (
-                <motion.span
-                  animate={{ opacity: [1, 0.3, 1] }}
-                  transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: COLORS.accent, flexShrink: 0 }}
-                />
-              )}
-            </motion.div>
+            </div>
 
-            {/* Connector line */}
+            {/* Connector line between stages */}
             {index < stages.length - 1 && (
               <div
                 style={{
                   flex: 1,
-                  height: 1,
-                  background: COLORS.border,
-                  minWidth: 8,
+                  height: '2px',
+                  background: isDone ? COLORS.success : COLORS.border,
+                  minWidth: 16,
+                  marginBottom: 16,
                   position: 'relative',
                   overflow: 'hidden',
+                  transition: 'background 0.35s',
                 }}
               >
-                <motion.div
-                  initial={{ scaleX: 0 }}
-                  animate={{ scaleX: isDone ? 1 : 0 }}
-                  transition={{ duration: 0.35, ease: 'easeOut' }}
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    background: COLORS.success,
-                    transformOrigin: 'left',
-                  }}
-                />
-                {isActive && !isDone && (
-                  <motion.div
-                    animate={{ x: ['-100%', '110%'] }}
-                    transition={{ duration: 1.0, repeat: Infinity, ease: 'easeInOut' }}
+                {isActive && (
+                  <div
                     style={{
                       position: 'absolute',
                       inset: 0,
                       background: `linear-gradient(90deg, transparent, ${COLORS.accent}99, transparent)`,
+                      animation: 'slideRight 1.2s ease-in-out infinite',
                     }}
                   />
                 )}
