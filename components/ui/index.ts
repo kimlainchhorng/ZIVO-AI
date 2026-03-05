@@ -5,6 +5,34 @@
  * Generated components span layout, data display, forms, feedback, navigation, and charts.
  */
 
+// ─── Design primitives (from ZIVO design system) ────────────────────────────
+export { Button } from "./Button";
+export type { ButtonProps } from "./Button";
+
+export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "./Card";
+export type { CardProps } from "./Card";
+
+export { Input } from "./Input";
+export type { InputProps } from "./Input";
+
+export { Badge } from "./Badge";
+export type { BadgeProps } from "./Badge";
+
+export { Modal } from "./Modal";
+export type { ModalProps } from "./Modal";
+
+export { Tabs, TabPanel } from "./Tabs";
+export type { TabsProps, TabPanelProps, Tab } from "./Tabs";
+
+export { Container } from "./Container";
+export type { ContainerProps } from "./Container";
+
+export { Stack } from "./Stack";
+export type { StackProps } from "./Stack";
+
+export { Grid, GridItem } from "./Grid";
+export type { GridProps, GridItemProps } from "./Grid";
+
 // ─── Layout ─────────────────────────────────────────────────────────────────
 export { TenantSwitcher } from "../TenantSwitcher";
 export type { TenantSwitcherProps, Tenant, TenantRole } from "../TenantSwitcher";

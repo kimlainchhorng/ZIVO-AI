@@ -1,14 +1,22 @@
 // app/api/build/route.ts — SSE streaming build pipeline endpoint
-// Accepts: POST { prompt, model?, projectId?, existingFiles?, projectMemory?, context? }
+// Accepts: POST { prompt, model?, mode?, projectId?, existingFiles?, projectMemory?, context? }
 // Streams:  text/event-stream with stage/files/error events
+//
+// mode: 'code' (default) | 'website' | 'mobile'
+//   website → generates a multi-page Next.js site with design tokens + stable images
+//   mobile  → generates an Expo Router project under mobile/ with UI primitives + mock data
 
 export const runtime = "nodejs";
 
 import { runOrchestratorV4 } from "@/agents/orchestrator-v4";
 import { ProgressStage } from "@/lib/ai/progress-events";
 import type { GeneratedFile } from "@/lib/ai/schema";
+import { evaluateUI } from "@/lib/ai/ui-evaluator";
+import { polishUI } from "@/lib/ai/ui-polish";
 
-type SSEStageType = "BLUEPRINT" | "MANIFEST" | "GENERATE" | "VALIDATE" | "FIX" | "DONE";
+export type BuildMode = "code" | "website" | "mobile";
+
+type SSEStageType = "BLUEPRINT" | "MANIFEST" | "GENERATE" | "VALIDATE" | "FIX" | "POLISH" | "DONE";
 
 interface StageEvent {
   type: "stage";
@@ -40,6 +48,37 @@ const PROGRESS_STAGE_MAP: Partial<Record<ProgressStage, SSEStageType>> = {
   [ProgressStage.DONE]: "DONE",
 };
 
+/** Enrich the user prompt based on build mode */
+function enrichPrompt(prompt: string, mode: BuildMode): string {
+  if (mode === "website") {
+    return (
+      `Build a complete, production-quality multi-page Next.js website. ` +
+      `Use the design tokens from lib/design/tokens.ts and components from components/ui/*.tsx. ` +
+      `Reference stable stock images from lib/assets.ts (picsum.photos stable IDs) for hero, features, and avatars. ` +
+      `Use lucide-react icons via components/icons/Icon.tsx — no emoji in the UI. ` +
+      `Include: homepage with hero section, features grid, testimonials (believable names + quotes), ` +
+      `pricing tiers (3 tiers: Free/Pro/Enterprise), FAQ section, about page, contact page with form. ` +
+      `Generate at minimum 15 files. All TypeScript. ` +
+      `User request: ${prompt}`
+    );
+  }
+  if (mode === "mobile") {
+    return (
+      `Build a complete Expo Router mobile app under the mobile/ directory. ` +
+      `Structure: mobile/app/_layout.tsx, mobile/app/(tabs)/index.tsx, mobile/app/(tabs)/_layout.tsx, ` +
+      `mobile/components/ui/ (Button, Card, Badge, Input primitives), ` +
+      `mobile/theme/tokens.ts (design tokens), mobile/lib/mock-data.ts (realistic mock data), ` +
+      `mobile/README.md (setup instructions). ` +
+      `Use lucide-react-native for icons. Use expo-router for navigation. ` +
+      `Each screen must include loading, empty, error, and success states. ` +
+      `Use realistic mock data — no Lorem ipsum. ` +
+      `Generate at minimum 12 files. All TypeScript. ` +
+      `User request: ${prompt}`
+    );
+  }
+  return prompt;
+}
+
 function encodeSSE(event: SSEEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
@@ -48,6 +87,7 @@ export async function POST(req: Request): Promise<Response> {
   let body: {
     prompt?: string;
     model?: string;
+    mode?: BuildMode;
     projectId?: string;
     existingFiles?: GeneratedFile[];
     projectMemory?: Record<string, unknown> | null;
@@ -63,7 +103,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const { prompt, model = "gpt-4o", existingFiles = [] } = body;
+  const { prompt, model = "gpt-4o", mode = "code", existingFiles = [] } = body;
 
   if (!prompt?.trim()) {
     return new Response(
@@ -113,8 +153,11 @@ export async function POST(req: Request): Promise<Response> {
             }))
           : [];
 
-        await runOrchestratorV4(
-          prompt,
+        // Enrich prompt based on mode
+        const enrichedPrompt = enrichPrompt(String(prompt), mode);
+
+        const result = await runOrchestratorV4(
+          enrichedPrompt,
           safeExisting,
           null, // project memory handled client-side
           (progressEvent) => {
@@ -127,22 +170,49 @@ export async function POST(req: Request): Promise<Response> {
                 progress: progressEvent.progress,
               });
             }
-
-            // Emit incremental file list whenever the GENERATING stage completes a batch
-            if (
-              progressEvent.stage === ProgressStage.GENERATING &&
-              progressEvent.progress > 0 &&
-              Array.isArray((progressEvent.data as { generated?: string[] } | undefined)?.generated)
-            ) {
-              // Batch completion events carry the paths; full file list emitted at DONE
-            }
           },
           model
-        ).then((result) => {
-          // Emit all generated files
-          send({ type: "files", files: result.files });
-          send({ type: "stage", stage: "DONE", message: result.summary, progress: 100 });
-        });
+        );
+
+        let finalFiles = result.files;
+
+        // UI polish loop for website/mobile builds
+        if (mode === "website" || mode === "mobile") {
+          const initialEval = evaluateUI(finalFiles);
+          const POLISH_THRESHOLD = 85;
+          const MAX_POLISH_PASSES = 2;
+
+          if (initialEval.score < POLISH_THRESHOLD) {
+            let passNum = 1;
+            let currentFiles = finalFiles;
+
+            while (passNum <= MAX_POLISH_PASSES) {
+              const totalPasses = MAX_POLISH_PASSES + 1; // e.g. "Pass 2/3"
+              send({
+                type: "stage",
+                stage: "POLISH",
+                message: `Pass ${passNum + 1}/${totalPasses}: UI polish (score: ${evaluateUI(currentFiles).score}/100)`,
+                progress: Math.round(85 + (passNum / MAX_POLISH_PASSES) * 10),
+              });
+
+              const polishResult = await polishUI(currentFiles, {
+                model,
+                maxIterations: 1,
+                scoreThreshold: POLISH_THRESHOLD,
+              });
+
+              currentFiles = polishResult.files;
+              if (polishResult.evalResult.score >= POLISH_THRESHOLD) break;
+              passNum++;
+            }
+
+            finalFiles = currentFiles;
+          }
+        }
+
+        // Emit all generated files
+        send({ type: "files", files: finalFiles });
+        send({ type: "stage", stage: "DONE", message: result.summary, progress: 100 });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Build pipeline error";
         send({ type: "error", message, details: err instanceof Error ? err.stack : undefined });

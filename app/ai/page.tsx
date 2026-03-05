@@ -26,6 +26,7 @@ import DocGenerator from "@/components/DocGenerator";
 import AgentOrchestrator from "@/components/AgentOrchestrator";
 import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
+import { Icon } from "@/components/icons/Icon";
 
 interface SecurityIssue {
   id: string;
@@ -102,14 +103,14 @@ const QUICK_PROMPTS = [
 ];
 
 const TEMPLATE_CARDS = [
-  { icon: "🚀", label: "Landing Page", description: "SaaS landing page with hero, features, pricing, testimonials, and CTA", prompt: "Build a SaaS landing page with hero, features, pricing, testimonials, and CTA" },
-  { icon: "📊", label: "Dashboard", description: "Analytics dashboard with sidebar navigation, stats cards, charts, and data tables", prompt: "Build an analytics dashboard with sidebar navigation, stats cards, charts, and data tables" },
-  { icon: "🛒", label: "E-commerce", description: "E-commerce store with product listings, cart, and checkout flow", prompt: "Build an e-commerce store with product listings, cart, and checkout flow" },
-  { icon: "🔐", label: "Auth System", description: "Complete auth flow with login, signup, forgot password, and profile pages", prompt: "Build a complete auth flow with login, signup, forgot password, and profile pages" },
-  { icon: "⚙️", label: "Admin Panel", description: "Admin panel with user management, data tables, CRUD operations, and role permissions", prompt: "Build an admin panel with user management, data tables, CRUD operations, and role permissions" },
-  { icon: "📱", label: "Mobile App", description: "Mobile-first React Native-style app with bottom navigation and card-based UI", prompt: "Build a mobile-first React Native-style app with bottom navigation and card-based UI" },
-  { icon: "🤝", label: "SaaS App", description: "Full SaaS application with dashboard, billing, team management, and settings", prompt: "Build a full SaaS application with dashboard, billing, team management, and settings" },
-  { icon: "🏪", label: "Marketplace", description: "Marketplace with listings, search, filters, seller profiles, and messaging", prompt: "Build a marketplace with listings, search, filters, seller profiles, and messaging" },
+  { icon: <Icon name="Rocket" size={16} />, label: "Landing Page", description: "SaaS landing page with hero, features, pricing, testimonials, and CTA", prompt: "Build a SaaS landing page with hero, features, pricing, testimonials, and CTA" },
+  { icon: <Icon name="BarChart2" size={16} />, label: "Dashboard", description: "Analytics dashboard with sidebar navigation, stats cards, charts, and data tables", prompt: "Build an analytics dashboard with sidebar navigation, stats cards, charts, and data tables" },
+  { icon: <Icon name="ShoppingCart" size={16} />, label: "E-commerce", description: "E-commerce store with product listings, cart, and checkout flow", prompt: "Build an e-commerce store with product listings, cart, and checkout flow" },
+  { icon: <Icon name="Lock" size={16} />, label: "Auth System", description: "Complete auth flow with login, signup, forgot password, and profile pages", prompt: "Build a complete auth flow with login, signup, forgot password, and profile pages" },
+  { icon: <Icon name="Settings" size={16} />, label: "Admin Panel", description: "Admin panel with user management, data tables, CRUD operations, and role permissions", prompt: "Build an admin panel with user management, data tables, CRUD operations, and role permissions" },
+  { icon: <Icon name="Smartphone" size={16} />, label: "Mobile App", description: "Mobile-first React Native-style app with bottom navigation and card-based UI", prompt: "Build a mobile-first React Native-style app with bottom navigation and card-based UI" },
+  { icon: <Icon name="Layers" size={16} />, label: "SaaS App", description: "Full SaaS application with dashboard, billing, team management, and settings", prompt: "Build a full SaaS application with dashboard, billing, team management, and settings" },
+  { icon: <Icon name="Store" size={16} />, label: "Marketplace", description: "Marketplace with listings, search, filters, seller profiles, and messaging", prompt: "Build a marketplace with listings, search, filters, seller profiles, and messaging" },
 ];
 
 const MODELS = [
@@ -137,6 +138,7 @@ const SSE_STAGE_TO_BUILD_INDEX: Readonly<Record<string, number>> = {
   GENERATE: 3,
   VALIDATE: 4,
   FIX: 5,
+  POLISH: 5,
   DONE: 6,
 };
 
@@ -229,16 +231,17 @@ function AIPageInner() {
   const [websiteResult, setWebsiteResult] = useState<{ files: GeneratedFile[]; preview_html: string; summary: string } | null>(null);
   const [websiteLoading, setWebsiteLoading] = useState(false);
   const [websiteError, setWebsiteError] = useState<string | null>(null);
+  const [websiteStage, setWebsiteStage] = useState<string>("");
   // Website iteration tracking
   const [websiteIteration, setWebsiteIteration] = useState(0);
   const [websiteHistory, setWebsiteHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
   // Mobile app generation state
   const [mobilePrompt, setMobilePrompt] = useState("");
-  const [mobileFramework, setMobileFramework] = useState("react-native");
   const [mobileResult, setMobileResult] = useState<{ files: GeneratedFile[]; preview_html: string; summary: string } | null>(null);
   const [mobileLoading, setMobileLoading] = useState(false);
   const [mobileError, setMobileError] = useState<string | null>(null);
+  const [mobileStage, setMobileStage] = useState<string>("");
 
   // Image generation state
   const [imagePrompt, setImagePrompt] = useState("");
@@ -883,34 +886,53 @@ function AIPageInner() {
     setWebsiteLoading(true);
     setWebsiteError(null);
     setWebsiteResult(null);
+    setWebsiteStage("Preparing…");
     try {
       const newIteration = websiteIteration + 1;
       const existingFiles = websiteResult?.files?.length ? websiteResult.files : undefined;
-      const res = await fetch("/api/generate-site", {
+      const res = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `Build a complete multi-page website: ${websitePrompt}. Style: ${websiteStyle}. Include a homepage, about page, and contact page with modern design.`,
+          prompt: `Build a complete multi-page website: ${websitePrompt}. Style: ${websiteStyle}.`,
           model,
-          mode: "advanced",
-          context: websiteHistory,
+          mode: "website",
           existingFiles,
         }),
       });
-      const data = await res.json();
-      if (data.error) {
-        setWebsiteError(data.error);
-      } else {
-        setWebsiteResult({ files: data.files ?? [], preview_html: data.preview_html ?? "", summary: data.summary ?? "" });
-        setWebsiteIteration(newIteration);
-        setWebsiteHistory((prev) => [
-          ...prev,
-          { role: "user" as const, content: websitePrompt },
-          { role: "assistant" as const, content: data.summary ?? `Generated ${(data.files ?? []).length} files.` },
-        ]);
+      if (!res.body) throw new Error("No response stream");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let resultFiles: GeneratedFile[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          try {
+            const evt = JSON.parse(line.slice(5).trim()) as { type: string; stage?: string; message?: string; files?: GeneratedFile[]; };
+            if (evt.type === "stage" && evt.message) setWebsiteStage(evt.message);
+            if (evt.type === "files" && Array.isArray(evt.files)) resultFiles = evt.files;
+            if (evt.type === "error") throw new Error(evt.message ?? "Build error");
+          } catch (parseErr) { if (parseErr instanceof Error && parseErr.message !== "Build error") { /* skip parse errors */ } else if (parseErr instanceof Error) { throw parseErr; } }
+        }
       }
-    } catch { setWebsiteError("Website generation failed. Please try again."); }
+      if (resultFiles.length === 0) throw new Error("No files generated");
+      setWebsiteResult({ files: resultFiles, preview_html: "", summary: `Generated ${resultFiles.length} files` });
+      setWebsiteIteration(newIteration);
+      setWebsiteHistory((prev) => [
+        ...prev,
+        { role: "user" as const, content: websitePrompt },
+        { role: "assistant" as const, content: `Generated ${resultFiles.length} files.` },
+      ]);
+    } catch (err) { setWebsiteError(err instanceof Error ? err.message : "Website generation failed. Please try again."); }
     setWebsiteLoading(false);
+    setWebsiteStage("");
   }
 
   async function handleMobileGenerate() {
@@ -918,21 +940,46 @@ function AIPageInner() {
     setMobileLoading(true);
     setMobileError(null);
     setMobileResult(null);
+    setMobileStage("Preparing…");
     try {
-      const res = await fetch("/api/generate-site", {
+      const existingFiles = mobileResult?.files?.length ? mobileResult.files : undefined;
+      const res = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: `Build a ${mobileFramework} mobile app: ${mobilePrompt}. Generate the main screens with navigation, styled components, and mobile-first UI patterns.\n\nIMPORTANT: The preview_html MUST be a pixel-perfect HTML mockup showing the app screens in a 375x812 mobile viewport. Include a phone-frame wrapper, bottom tab navigation, and all main screens. Use real images from https://picsum.photos. Make it visually stunning.`,
+          prompt: mobilePrompt,
           model,
-          mode: "advanced",
+          mode: "mobile",
+          existingFiles,
         }),
       });
-      const data = await res.json();
-      if (data.error) { setMobileError(data.error); }
-      else { setMobileResult({ files: data.files ?? [], preview_html: data.preview_html ?? "", summary: data.summary ?? "" }); }
-    } catch { setMobileError("Mobile app generation failed. Please try again."); }
+      if (!res.body) throw new Error("No response stream");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let resultFiles: GeneratedFile[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          try {
+            const evt = JSON.parse(line.slice(5).trim()) as { type: string; stage?: string; message?: string; files?: GeneratedFile[]; };
+            if (evt.type === "stage" && evt.message) setMobileStage(evt.message);
+            if (evt.type === "files" && Array.isArray(evt.files)) resultFiles = evt.files;
+            if (evt.type === "error") throw new Error(evt.message ?? "Build error");
+          } catch (parseErr) { if (parseErr instanceof Error && parseErr.message !== "Build error") { /* skip parse errors */ } else if (parseErr instanceof Error) { throw parseErr; } }
+        }
+      }
+      if (resultFiles.length === 0) throw new Error("No files generated");
+      setMobileResult({ files: resultFiles, preview_html: "", summary: `Generated ${resultFiles.length} files` });
+    } catch (err) { setMobileError(err instanceof Error ? err.message : "Mobile app generation failed. Please try again."); }
     setMobileLoading(false);
+    setMobileStage("");
   }
 
   async function handleVideoGenerate() {
@@ -2050,7 +2097,7 @@ function AIPageInner() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
                   <div>
                     <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Website Builder</h2>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a complete multi-page site instantly</p>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a complete multi-page Next.js site with design tokens, real images &amp; icons</p>
                   </div>
                   <div style={{ marginBottom: "0.75rem" }}>
                     <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
@@ -2084,7 +2131,7 @@ function AIPageInner() {
                     style={{ width: "100%", padding: "0.65rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
                   >
                     {websiteLoading ? (
-                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
+                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> {websiteStage || "Generating..."}</>
                     ) : (
                       <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Build Website</>
                     )}
@@ -2112,7 +2159,7 @@ function AIPageInner() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
                   <div>
                     <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Mobile App Builder</h2>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates React Native / Expo screens instantly</p>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates an Expo Router project with navigation, UI primitives &amp; mock data</p>
                   </div>
                   <div style={{ marginBottom: "0.75rem" }}>
                     <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
@@ -2125,18 +2172,8 @@ function AIPageInner() {
                       style={{ width: "100%", minHeight: "100px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit" }}
                     />
                   </div>
-                  <div style={{ marginBottom: "0.75rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Framework</label>
-                    <select
-                      value={mobileFramework}
-                      onChange={(e) => setMobileFramework(e.target.value)}
-                      style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem" }}
-                    >
-                      <option value="react-native">React Native</option>
-                      <option value="expo">Expo (React Native)</option>
-                      <option value="flutter-web">Flutter (Web Preview)</option>
-                      <option value="ionic">Ionic / Capacitor</option>
-                    </select>
+                  <div style={{ padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.06)", border: `1px solid rgba(99,102,241,0.15)`, borderRadius: "8px", fontSize: "0.75rem", color: COLORS.textSecondary }}>
+                    <span style={{ fontWeight: 600, color: COLORS.accent }}>Expo Router</span> — generates a real Expo Router app with typed navigation, UI components, and mock data
                   </div>
                   <button
                     className="zivo-btn"
@@ -2145,7 +2182,7 @@ function AIPageInner() {
                     style={{ width: "100%", padding: "0.65rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
                   >
                     {mobileLoading ? (
-                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
+                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> {mobileStage || "Generating..."}</>
                     ) : (
                       <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Build Mobile App</>
                     )}
