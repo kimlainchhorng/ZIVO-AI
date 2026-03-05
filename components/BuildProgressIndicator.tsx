@@ -116,29 +116,43 @@ export default function BuildProgressIndicator({ stages, currentStage }: BuildPr
             </div>
 
             {index < stages.length - 1 && (
-              <motion.div
-                initial={{ scaleX: 0 }}
-                animate={{ scaleX: isDone ? 1 : 0 }}
-                transition={{ duration: 0.4, ease: 'easeOut' }}
+              <div
                 style={{
                   flex: 1,
                   height: 2,
-                  background: COLORS.success,
-                  transformOrigin: 'left',
+                  background: COLORS.border,
                   marginBottom: 20,
                   minWidth: 20,
                   position: 'relative',
+                  overflow: 'hidden',
+                  borderRadius: 1,
                 }}
               >
-                <div
+                {/* Green completed fill */}
+                <motion.div
+                  initial={{ scaleX: 0 }}
+                  animate={{ scaleX: isDone ? 1 : 0 }}
+                  transition={{ duration: 0.4, ease: 'easeOut' }}
                   style={{
                     position: 'absolute',
                     inset: 0,
-                    background: COLORS.border,
-                    zIndex: -1,
+                    background: COLORS.success,
+                    transformOrigin: 'left',
                   }}
                 />
-              </motion.div>
+                {/* Animated active pulse for current stage connector */}
+                {isActive && !isDone && (
+                  <motion.div
+                    animate={{ x: ['-100%', '100%'] }}
+                    transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      background: `linear-gradient(90deg, transparent, ${COLORS.accent}88, transparent)`,
+                    }}
+                  />
+                )}
+              </div>
             )}
           </div>
         );

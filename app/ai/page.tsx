@@ -443,6 +443,21 @@ function AIPageInner() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
 
+  // Resizable left panel
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 320;
+    const stored = localStorage.getItem("zivo_left_panel_width");
+    return stored ? Math.min(480, Math.max(220, parseInt(stored, 10))) : 320;
+  });
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const isDraggingPanelRef = useRef(false);
+  const dragStartXRef = useRef(0);
+  const dragStartWidthRef = useRef(0);
+
+  // Streaming code tab: displayed content (typed character by character when loading)
+  const [streamedCodeContent, setStreamedCodeContent] = useState<string>("");
+  const streamedCodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
   async function handleBuild(promptOverride?: string) {
@@ -951,13 +966,15 @@ function AIPageInner() {
     return tree;
   }
 
-  async function startWebsiteLivePreview(files: GeneratedFile[]): Promise<void> {
+  async function startWebsiteLivePreview(files: GeneratedFile[], retryCount = 0): Promise<void> {
     if (!files.length) return;
 
-    setWebsiteLivePreviewError(null);
-    setWebsiteLivePreviewStatus("Booting live runtime…");
-    setWebsiteLivePreviewRunning(true);
-    setWebsiteLivePreviewUrl(null);
+    if (retryCount === 0) {
+      setWebsiteLivePreviewError(null);
+      setWebsiteLivePreviewStatus("Booting live runtime…");
+      setWebsiteLivePreviewRunning(true);
+      setWebsiteLivePreviewUrl(null);
+    }
 
     try {
       try {
@@ -999,9 +1016,24 @@ function AIPageInner() {
         }
       });
     } catch (err: unknown) {
+      // Check if this is the UNKNOWN write error (errno -4094)
+      const isWriteError =
+        err instanceof Error &&
+        (err.message.includes("-4094") ||
+          err.message.includes("UNKNOWN") ||
+          err.message.includes("syscall: 'write'") ||
+          err.message.includes("write"));
+      if (retryCount < 2 && isWriteError) {
+        // Exponential backoff: 1.5s for retry 1, 3s for retry 2
+        const delay = 1500 * (retryCount + 1);
+        setWebsiteLivePreviewStatus(`Write error — retrying (attempt ${retryCount + 2}/3)…`);
+        await new Promise<void>((resolve) => setTimeout(resolve, delay));
+        return startWebsiteLivePreview(files, retryCount + 1);
+      }
+      // All retries exhausted — graceful fallback to static snapshot
       setWebsiteLivePreviewRunning(false);
       setWebsiteLivePreviewStatus(null);
-      setWebsiteLivePreviewError(err instanceof Error ? err.message : "Live preview failed to start.");
+      setWebsiteLivePreviewError("Live preview unavailable — showing static snapshot");
     }
   }
 
@@ -1702,6 +1734,57 @@ function AIPageInner() {
   }
   const hasFiles = Boolean(output?.files?.length);
 
+  // Streaming code tab: type out active file content when loading
+  // STREAMING_CHUNKS: number of equal-sized steps to stream the file over ~2s at 16ms/tick
+  const STREAMING_CHUNKS = 120;
+  useEffect(() => {
+    if (loading && activeFile) {
+      setStreamedCodeContent("");
+      const content = activeFile.content;
+      let idx = 0;
+      const tick = () => {
+        idx += Math.max(1, Math.floor(content.length / STREAMING_CHUNKS));
+        setStreamedCodeContent(content.slice(0, idx));
+        if (idx < content.length) {
+          streamedCodeTimerRef.current = setTimeout(tick, 16);
+        } else {
+          setStreamedCodeContent(content);
+        }
+      };
+      streamedCodeTimerRef.current = setTimeout(tick, 40);
+      return () => {
+        if (streamedCodeTimerRef.current) clearTimeout(streamedCodeTimerRef.current);
+      };
+    } else if (!loading && activeFile) {
+      setStreamedCodeContent(activeFile.content);
+    }
+  }, [loading, activeFile]);
+
+  // Left panel drag-to-resize handlers
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!isDraggingPanelRef.current) return;
+      const delta = e.clientX - dragStartXRef.current;
+      const newWidth = Math.min(480, Math.max(220, dragStartWidthRef.current + delta));
+      setLeftPanelWidth(newWidth);
+    }
+    function onMouseUp() {
+      if (!isDraggingPanelRef.current) return;
+      isDraggingPanelRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try {
+        localStorage.setItem("zivo_left_panel_width", String(leftPanelWidth));
+      } catch { /* ignore */ }
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [leftPanelWidth]);
+
   return (
     <>
       <style>{`
@@ -1711,6 +1794,7 @@ function AIPageInner() {
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes recordPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
         @keyframes statusBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .zivo-btn:hover { opacity: 0.85; transform: scale(1.02); }
         .zivo-btn { transition: opacity 0.15s, transform 0.15s; }
         .zivo-chip:hover { background: rgba(99,102,241,0.2) !important; border-color: rgba(99,102,241,0.4) !important; }
@@ -1770,7 +1854,7 @@ function AIPageInner() {
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
           {/* Left Panel */}
-          <div style={{ width: "320px", flexShrink: 0, display: "flex", flexDirection: "column", borderRight: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
+          <div style={{ width: leftPanelCollapsed ? 0 : `${leftPanelWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", borderRight: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden", transition: leftPanelCollapsed ? "width 0.2s ease" : "none", position: "relative" }}>
 
             {/* Scrollable content */}
             <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem" }}>
@@ -2400,51 +2484,6 @@ function AIPageInner() {
                   <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedProjectId}</div>
                 </div>
               )}
-
-              {/* ── Continue Building input ── */}
-              {hasFiles && !loading && (
-                <div style={{ marginBottom: "0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ padding: "0.5rem 0.75rem 0.25rem", fontSize: "0.7rem", color: COLORS.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                    Continue Building
-                  </div>
-                  <textarea
-                    className="zivo-textarea"
-                    value={continueInstruction}
-                    onChange={(e) => setContinueInstruction(e.target.value)}
-                    onKeyDown={(e) => {
-                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                        e.preventDefault();
-                        if (continueInstruction.trim()) {
-                          setPrompt(continueInstruction);
-                          setContinueInstruction("");
-                          handleBuild(continueInstruction);
-                        }
-                      }
-                    }}
-                    placeholder="Describe what to add or change… (e.g. Add dark mode toggle)"
-                    maxLength={1000}
-                    rows={2}
-                    style={{ width: "100%", background: "transparent", border: "none", padding: "0.5rem 0.75rem", resize: "none", color: COLORS.textPrimary, fontSize: "0.8125rem", lineHeight: 1.5, outline: "none", boxSizing: "border-box" }}
-                  />
-                  <div style={{ display: "flex", justifyContent: "flex-end", padding: "0.35rem 0.625rem 0.5rem", borderTop: `1px solid ${COLORS.border}` }}>
-                    <button
-                      className="zivo-btn"
-                      disabled={!continueInstruction.trim() || loading}
-                      onClick={() => {
-                        if (continueInstruction.trim()) {
-                          setPrompt(continueInstruction);
-                          setContinueInstruction("");
-                          handleBuild(continueInstruction);
-                        }
-                      }}
-                      style={{ padding: "0.3rem 0.85rem", background: continueInstruction.trim() && !loading ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: !continueInstruction.trim() || loading ? "not-allowed" : "pointer", fontSize: "0.75rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: !continueInstruction.trim() || loading ? 0.5 : 1 }}
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                      Continue Build
-                    </button>
-                  </div>
-                </div>
-              )}
               </>)}
 
               {/* ── Security Mode ── */}
@@ -2904,6 +2943,32 @@ function AIPageInner() {
             )}
           </div>
 
+          {/* Left Panel Drag Handle + Collapse Toggle */}
+          <div style={{ position: "relative", width: "0px", flexShrink: 0 }}>
+            {/* Drag handle */}
+            <div
+              onMouseDown={(e) => {
+                e.preventDefault();
+                isDraggingPanelRef.current = true;
+                dragStartXRef.current = e.clientX;
+                dragStartWidthRef.current = leftPanelCollapsed ? 0 : leftPanelWidth;
+                if (leftPanelCollapsed) setLeftPanelCollapsed(false);
+                document.body.style.cursor = "ew-resize";
+                document.body.style.userSelect = "none";
+              }}
+              style={{ position: "absolute", top: 0, left: "-2px", width: "4px", height: "100%", cursor: "ew-resize", zIndex: 10, background: "transparent" }}
+              title="Drag to resize panel"
+            />
+            {/* Collapse/expand toggle */}
+            <button
+              onClick={() => setLeftPanelCollapsed((c) => !c)}
+              title={leftPanelCollapsed ? "Expand panel" : "Collapse panel"}
+              style={{ position: "absolute", top: "50%", left: "-12px", transform: "translateY(-50%)", width: "18px", height: "40px", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "4px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.textMuted, zIndex: 10, fontSize: "10px", padding: 0, transition: "background 0.15s, color 0.15s" }}
+            >
+              {leftPanelCollapsed ? "›" : "‹"}
+            </button>
+          </div>
+
           {/* Right Panel */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: COLORS.bg }}>
 
@@ -3168,7 +3233,7 @@ function AIPageInner() {
               )}
 
               {/* Code Tab */}
-              {!loading && output && activeTab === "code" && (
+              {(loading || (!loading && output)) && activeTab === "code" && (
                 <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", animation: "fadeIn 0.3s ease" }}>
                   {activeFile ? (
                     <>
@@ -3176,6 +3241,12 @@ function AIPageInner() {
                         <span style={{ fontSize: "0.875rem" }}>{getFileIcon(activeFile.path)}</span>
                         <code style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, fontFamily: "monospace" }}>{activeFile.path}</code>
                         <span style={{ fontSize: "0.7rem", padding: "1px 6px", borderRadius: "4px", textTransform: "uppercase", fontWeight: 600, ...getActionStyle(activeFile.action) }}>{activeFile.action}</span>
+                        {loading && (
+                          <span style={{ fontSize: "0.7rem", color: COLORS.accent, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                            <span style={{ display: "inline-block", width: "8px", height: "8px", border: `1.5px solid rgba(99,102,241,0.3)`, borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                            Writing…
+                          </span>
+                        )}
                         <div style={{ flex: 1 }} />
                         <button
                           className="zivo-btn"
@@ -3194,12 +3265,15 @@ function AIPageInner() {
                       </div>
                       <div style={{ flex: 1, overflow: "auto", padding: "1rem" }}>
                         <pre style={{ margin: 0, fontSize: "0.8125rem", lineHeight: 1.7, color: COLORS.textPrimary, fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                          {activeFile.content.split("\n").map((line, i) => (
+                          {(loading ? streamedCodeContent : activeFile.content).split("\n").map((line, i) => (
                             <div key={i} style={{ display: "flex", gap: "1rem" }}>
                               <span style={{ color: COLORS.textMuted, userSelect: "none", minWidth: "2.5rem", textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
                               <span>{line}</span>
                             </div>
                           ))}
+                          {loading && (
+                            <span style={{ display: "inline-block", width: "2px", height: "1.1em", background: COLORS.accent, verticalAlign: "middle", marginLeft: "2px", animation: "cursorBlink 1s step-end infinite" }} />
+                          )}
                         </pre>
                       </div>
                     </>
@@ -3397,6 +3471,51 @@ function AIPageInner() {
               )}
             </div>
             )}
+
+            {/* ── Sticky Continue Build Bar (Code Builder mode) ── */}
+            {mode === "code" && hasFiles && !loading && (
+              <div style={{ borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "0.625rem 1rem", display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0, animation: "fadeIn 0.3s ease" }}>
+                <input
+                  className="zivo-input"
+                  value={continueInstruction}
+                  onChange={(e) => setContinueInstruction(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (continueInstruction.trim()) {
+                        const instruction = continueInstruction;
+                        setContinueInstruction("");
+                        handleBuild(instruction);
+                      }
+                    }
+                  }}
+                  placeholder="Describe what to add or change… (e.g. Add dark mode toggle)"
+                  maxLength={1000}
+                  style={{ flex: 1, background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.4rem 0.75rem", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                />
+                {buildIterationCount > 0 && (
+                  <span style={{ padding: "0.2rem 0.55rem", background: "rgba(99,102,241,0.15)", border: `1px solid rgba(99,102,241,0.3)`, borderRadius: "20px", fontSize: "0.7rem", fontWeight: 700, color: COLORS.accent, flexShrink: 0 }}>
+                    #{buildIterationCount}
+                  </span>
+                )}
+                <button
+                  className="zivo-btn"
+                  disabled={!continueInstruction.trim() || loading}
+                  onClick={() => {
+                    if (continueInstruction.trim()) {
+                      const instruction = continueInstruction;
+                      setContinueInstruction("");
+                      handleBuild(instruction);
+                    }
+                  }}
+                  style={{ padding: "0.4rem 0.875rem", background: continueInstruction.trim() ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "8px", color: "#fff", cursor: !continueInstruction.trim() ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0, opacity: !continueInstruction.trim() ? 0.5 : 1 }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  Continue Build ▶
+                </button>
+              </div>
+            )}
+
             {mode === "code" && (
               <BuildOutputPanel
                 errors={buildErrors}
@@ -3490,13 +3609,44 @@ function AIPageInner() {
             {/* ── Website Right Panel ── */}
             {mode === "website" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                {/* Toolbar */}
+                {/* Toolbar with URL bar */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.accent }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                  <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary }}>Website Preview</span>
+                  {/* URL bar */}
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "360px" }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                    <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1 }}>
+                      {websiteLivePreviewUrl ?? "preview"}
+                    </span>
+                  </div>
+                  {/* Reload button */}
+                  {(websiteLivePreviewUrl || websiteResult?.preview_html) && (
+                    <button
+                      className="zivo-btn"
+                      title="Reload preview"
+                      onClick={() => {
+                        // Force re-render by toggling — use a key approach via state
+                        if (websiteLivePreviewUrl) {
+                          const url = websiteLivePreviewUrl;
+                          setWebsiteLivePreviewUrl(null);
+                          setTimeout(() => setWebsiteLivePreviewUrl(url), 50);
+                        }
+                      }}
+                      style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >↻</button>
+                  )}
+                  {/* Live / Snapshot badge */}
+                  {websiteResult && (
+                    <span style={{ padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 600, flexShrink: 0, background: websiteLivePreviewUrl ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${websiteLivePreviewUrl ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`, color: websiteLivePreviewUrl ? COLORS.success : COLORS.warning }}>
+                      {websiteLivePreviewUrl ? "🟢 Live" : "🟡 Snapshot"}
+                    </span>
+                  )}
                   <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    {websiteLivePreviewStatus && (
-                      <span style={{ fontSize: "0.72rem", color: COLORS.textMuted }}>{websiteLivePreviewStatus}</span>
+                    {/* Status with spinner */}
+                    {websiteLivePreviewStatus && websiteLivePreviewRunning && (
+                      <span style={{ fontSize: "0.72rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        <span style={{ display: "inline-block", width: "8px", height: "8px", border: "1.5px solid rgba(99,102,241,0.3)", borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        {websiteLivePreviewStatus}
+                      </span>
                     )}
                     {websiteResult?.files && websiteResult.files.length > 0 && (
                       <button
@@ -3509,8 +3659,9 @@ function AIPageInner() {
                     )}
                   </div>
                 </div>
+                {/* Error banner with snapshot fallback message */}
                 {websiteLivePreviewError && (
-                  <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>
+                  <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: websiteLivePreviewError.includes("static snapshot") ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)", border: `1px solid ${websiteLivePreviewError.includes("static snapshot") ? "rgba(245,158,11,0.3)" : "rgba(239,68,68,0.3)"}`, borderRadius: "8px", color: websiteLivePreviewError.includes("static snapshot") ? COLORS.warning : COLORS.error, fontSize: "0.8125rem" }}>
                     {websiteLivePreviewError}
                   </div>
                 )}
@@ -3522,10 +3673,28 @@ function AIPageInner() {
                     <p style={{ fontSize: "0.875rem" }}>Your generated website will appear here</p>
                   </div>
                 )}
+                {/* Loading shimmer */}
                 {websiteLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
                     <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
                     <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
+                    <div style={{ width: "100%", maxWidth: "480px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      {[75, 55, 85].map((w, i) => (
+                        <div key={i} style={{ height: "14px", borderRadius: "8px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* WebContainer booting status */}
+                {websiteResult && websiteLivePreviewRunning && !websiteLivePreviewUrl && (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
+                    <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{websiteLivePreviewStatus ?? "Starting live preview…"}</p>
+                    <div style={{ width: "100%", maxWidth: "380px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                      {[70, 50, 80].map((w, i) => (
+                        <div key={i} style={{ height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
+                      ))}
+                    </div>
                   </div>
                 )}
                 {websiteResult && websiteLivePreviewUrl && (
@@ -3536,7 +3705,7 @@ function AIPageInner() {
                     sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                   />
                 )}
-                {websiteResult?.preview_html && !websiteLivePreviewUrl && (
+                {websiteResult?.preview_html && !websiteLivePreviewUrl && !websiteLivePreviewRunning && (
                   <iframe
                     title="Website Preview"
                     srcDoc={websiteResult.preview_html}
