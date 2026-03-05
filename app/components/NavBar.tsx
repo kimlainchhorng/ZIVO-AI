@@ -18,6 +18,9 @@ const NAV_LINKS = [
   { href: '/ai', label: 'Builder' },
   { href: '/workflow', label: 'Workflow' },
   { href: '/templates', label: 'Templates' },
+  { href: '/components', label: 'Components' },
+  { href: '/deploy', label: 'Deploy' },
+  { href: '/plugins', label: 'Plugins' },
   { href: '/history', label: 'History' },
 ];
 
