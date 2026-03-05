@@ -213,6 +213,11 @@ function TreeNode({ node, depth, activeFilePath, onFileSelect }: TreeNodeProps):
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {filename}
                 </span>
+                <span style={{ fontSize: "0.6rem", color: COLORS.textMuted, flexShrink: 0, fontFamily: "monospace" }}>
+                  {file.content.length < 1024
+                    ? `${file.content.length}B`
+                    : `${(file.content.length / 1024).toFixed(1)}KB`}
+                </span>
                 <ActionBadge action={file.action} />
               </button>
             );

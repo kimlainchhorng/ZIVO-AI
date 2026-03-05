@@ -178,6 +178,10 @@ function AIPageInner() {
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
+  // Iteration tracking for iterative builds
+  const [buildIteration_count, setBuildIterationCount] = useState(0);
+  const [conversationHistory, setConversationHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+
   // Chat panel state
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
@@ -208,6 +212,9 @@ function AIPageInner() {
   const [websiteResult, setWebsiteResult] = useState<{ files: GeneratedFile[]; preview_html: string; summary: string } | null>(null);
   const [websiteLoading, setWebsiteLoading] = useState(false);
   const [websiteError, setWebsiteError] = useState<string | null>(null);
+  // Website iteration tracking
+  const [websiteIteration, setWebsiteIteration] = useState(0);
+  const [websiteHistory, setWebsiteHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
   // Mobile app generation state
   const [mobilePrompt, setMobilePrompt] = useState("");
@@ -373,6 +380,11 @@ function AIPageInner() {
   async function handleBuild(promptOverride?: string) {
     const buildPrompt = promptOverride ?? prompt;
     if (!buildPrompt.trim()) return;
+
+    // Capture existing files before resetting output (for iterative builds)
+    const existingFilesForBuild = output?.files?.length ? output.files : undefined;
+    const isIteration = buildIteration_count > 0;
+
     setLoading(true);
     setLoadingStep(0);
     setOutput(null);
@@ -382,7 +394,7 @@ function AIPageInner() {
     setActiveFile(null);
     setFileSearchQuery("");
     setAutoFixLog(null);
-    setConsoleLogs([{ text: "> Building project...", type: "info" }]);
+    setConsoleLogs([{ text: isIteration ? `> Iteration ${buildIteration_count + 1}: Updating project...` : "> Building project...", type: "info" }]);
     setIsBuildRunning(true);
     setBuildErrors([]);
     setBuildWarnings([]);
@@ -405,6 +417,19 @@ function AIPageInner() {
     const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
     const stepTimer3 = setTimeout(() => setLoadingStep(3), LOADING_STEP3_DELAY);
 
+    // Fake build progress: advance stages every ~3s while loading
+    setBuildStages((prev) => prev.map((s, i) => ({ ...s, status: i === 0 ? "active" : "pending" })));
+    setCurrentBuildStage(0);
+    const stageTimers = [2500, 5000, 8000, 13000, 18000, 23000, 28000].map((delay, idx) =>
+      setTimeout(() => {
+        setBuildStages((prev) => prev.map((s, i) => ({
+          ...s,
+          status: i < idx + 1 ? "done" : i === idx + 1 ? "active" : "pending",
+        })));
+        setCurrentBuildStage(idx + 1);
+      }, delay)
+    );
+
     // Create abort controller for this build, cancel any previous
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -412,24 +437,47 @@ function AIPageInner() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Build conversation context for iterative builds
+    const buildContext = isIteration ? conversationHistory : [];
+
     try {
       const res = await fetch("/api/generate-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: buildPrompt, model, projectMemory }),
+        body: JSON.stringify({
+          prompt: buildPrompt,
+          model,
+          projectMemory,
+          context: buildContext,
+          existingFiles: existingFilesForBuild,
+        }),
         signal: controller.signal,
       });
       const data: GenerateSiteResponse = await res.json();
       setOutput(data);
       if (data.files?.length) {
         setActiveFile(data.files[0]);
-        setDiffFiles(data.files.map((f) => ({ path: f.path, oldContent: "", newContent: f.content })));
+        setDiffFiles(data.files.map((f) => ({ path: f.path, oldContent: existingFilesForBuild?.find((ef) => ef.path === f.path)?.content ?? "", newContent: f.content })));
         setShowDiff(true);
         setActiveRightTab("files");
       }
       if (data.preview_html) setActiveTab("preview");
       const duration = Date.now() - buildStart;
       setBuildTime(`${(duration / 1000).toFixed(1)}s`);
+
+      // Mark all stages done
+      setBuildStages((prev) => prev.map((s) => ({ ...s, status: "done" as const })));
+      setCurrentBuildStage(7);
+
+      // Update conversation history for next iteration
+      const newHistory: Array<{ role: "user" | "assistant"; content: string }> = [
+        ...buildContext,
+        { role: "user", content: buildPrompt },
+        { role: "assistant", content: data.summary ?? `Generated ${data.files?.length ?? 0} files.` },
+      ];
+      setConversationHistory(newHistory);
+      setBuildIterationCount((n) => n + 1);
+
       // Save to build history
       addHistoryEntry({
         createdAt: Date.now(),
@@ -514,6 +562,7 @@ function AIPageInner() {
     clearTimeout(stepTimer1);
     clearTimeout(stepTimer2);
     clearTimeout(stepTimer3);
+    stageTimers.forEach(clearTimeout);
     setLoading(false);
     setLoadingStep(0);
     setIsBuildRunning(false);
@@ -585,6 +634,13 @@ function AIPageInner() {
   useEffect(() => {
     consoleEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [consoleLogs]);
+
+  // Auto-refresh iframe when preview_html changes
+  useEffect(() => {
+    if (output?.preview_html && iframeRef.current) {
+      iframeRef.current.srcdoc = output.preview_html;
+    }
+  }, [output?.preview_html]);
 
   async function handleDeploy(platform: "vercel" | "netlify") {
     if (!output?.files?.length) return;
@@ -694,14 +750,31 @@ function AIPageInner() {
     setWebsiteError(null);
     setWebsiteResult(null);
     try {
+      const newIteration = websiteIteration + 1;
+      const existingFiles = websiteResult?.files?.length ? websiteResult.files : undefined;
       const res = await fetch("/api/generate-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: `Build a complete multi-page website: ${websitePrompt}. Style: ${websiteStyle}. Include a homepage, about page, and contact page with modern design.`, model }),
+        body: JSON.stringify({
+          prompt: `Build a complete multi-page website: ${websitePrompt}. Style: ${websiteStyle}. Include a homepage, about page, and contact page with modern design.`,
+          model,
+          mode: "advanced",
+          context: websiteHistory,
+          existingFiles,
+        }),
       });
       const data = await res.json();
-      if (data.error) { setWebsiteError(data.error); }
-      else { setWebsiteResult({ files: data.files ?? [], preview_html: data.preview_html ?? "", summary: data.summary ?? "" }); }
+      if (data.error) {
+        setWebsiteError(data.error);
+      } else {
+        setWebsiteResult({ files: data.files ?? [], preview_html: data.preview_html ?? "", summary: data.summary ?? "" });
+        setWebsiteIteration(newIteration);
+        setWebsiteHistory((prev) => [
+          ...prev,
+          { role: "user" as const, content: websitePrompt },
+          { role: "assistant" as const, content: data.summary ?? `Generated ${(data.files ?? []).length} files.` },
+        ]);
+      }
     } catch { setWebsiteError("Website generation failed. Please try again."); }
     setWebsiteLoading(false);
   }
@@ -715,7 +788,11 @@ function AIPageInner() {
       const res = await fetch("/api/generate-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: `Build a ${mobileFramework} mobile app: ${mobilePrompt}. Generate the main screens with navigation, styled components, and mobile-first UI patterns. Output as a single self-contained HTML preview that simulates a mobile app interface with a phone frame.`, model }),
+        body: JSON.stringify({
+          prompt: `Build a ${mobileFramework} mobile app: ${mobilePrompt}. Generate the main screens with navigation, styled components, and mobile-first UI patterns.\n\nIMPORTANT: The preview_html MUST be a pixel-perfect HTML mockup showing the app screens in a 375x812 mobile viewport. Include a phone-frame wrapper, bottom tab navigation, and all main screens. Use real images from https://picsum.photos. Make it visually stunning.`,
+          model,
+          mode: "advanced",
+        }),
       });
       const data = await res.json();
       if (data.error) { setMobileError(data.error); }
@@ -1402,7 +1479,7 @@ function AIPageInner() {
                     ) : (
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     )}
-                    {loading ? "Building…" : "Build now ▶"}
+                    {loading ? "Building…" : buildIteration_count > 0 ? `Update ▶ (iter. ${buildIteration_count + 1})` : "Build now ▶"}
                   </button>
                   {/* Build Full App button */}
                   <button
@@ -1764,7 +1841,12 @@ function AIPageInner() {
                   )}
                   {websiteResult && (
                     <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px" }}>
-                      <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600, marginBottom: "0.35rem" }}>✓ Website generated</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
+                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600 }}>✓ Website generated</div>
+                        {websiteIteration > 1 && (
+                          <span style={{ padding: "0.1rem 0.4rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>iteration {websiteIteration}</span>
+                        )}
+                      </div>
                       <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{websiteResult.summary}</div>
                       <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{websiteResult.files.length} file(s) generated</div>
                     </div>
@@ -2369,6 +2451,9 @@ function AIPageInner() {
                       )}
                       {buildIteration > 0 && (
                         <span style={{ fontSize: "0.7rem", color: COLORS.textMuted }}>Validation pass {buildIteration}/8</span>
+                      )}
+                      {buildIteration_count > 0 && !loading && (
+                        <span style={{ padding: "0.1rem 0.4rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>iteration {buildIteration_count}</span>
                       )}
                     </div>
                     {loading && (
