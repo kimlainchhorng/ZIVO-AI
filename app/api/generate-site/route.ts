@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { WEBSITE_BUILDER_SYSTEM_PROMPT } from "../../../prompts/website-builder";
+import { fixBrokenImages } from "../../../lib/html-processor";
 
 export const runtime = "nodejs";
 
@@ -62,17 +63,22 @@ Rules:
 
 const SYSTEM_PROMPT_STANDARD = `You are ZIVO AI — the world's most advanced AI builder, generating code that rivals Lovable, v0.dev, and Bolt.new.
 
+## CRITICAL: GENERATE COMPLETE MULTI-FILE PROJECTS
+⚠️ You MUST generate a MINIMUM of 10 files. A single HTML file is NOT acceptable.
+Generate a complete Next.js project with proper structure: layout, pages, components, styles, config.
+
 ## CRITICAL: DESIGN QUALITY STANDARDS
 Your output must look like a $10,000 custom-built app. NOT a tutorial project. NOT a template. A REAL production app that users would pay for.
 
 ## MANDATORY RULES FOR EVERY BUILD
 
-### Images: NEVER USE BROKEN IMAGE TAGS
-- ALWAYS use real placeholder images from: https://picsum.photos/[width]/[height]?random=[number]
+### ⚠️ Images: MANDATORY — NEVER USE BROKEN IMAGE TAGS
+- ⚠️ REQUIRED: ALWAYS use real placeholder images from: https://picsum.photos/[width]/[height]?random=[number]
 - For product images: https://picsum.photos/400/300?random=1, ?random=2, ?random=3, etc.
 - For avatars: https://i.pravatar.cc/150?img=1, ?img=2, etc.
 - For hero backgrounds: https://picsum.photos/1920/1080?random=10
 - For logos: Use CSS-drawn SVG logos or emoji-based logos
+- ⚠️ NEVER use empty src="" or /placeholder.jpg or broken image paths
 
 ### Color & Visual Design
 - Use a UNIQUE, beautiful color palette (not default purple/white)
@@ -104,22 +110,45 @@ Your output must look like a $10,000 custom-built app. NOT a tutorial project. N
 - Sections need generous padding: padding: 5rem 1.5rem;
 - Use backdrop-filter for glass effects on navbar: backdrop-filter: blur(12px);
 
+## REQUIRED FILES TO GENERATE (minimum 10, aim for 15+)
+Always generate ALL of these:
+1. app/layout.tsx — root layout with fonts and providers
+2. app/globals.css — global styles + CSS variables
+3. app/page.tsx — homepage with all sections
+4. app/about/page.tsx — about page
+5. app/contact/page.tsx — contact form page
+6. app/not-found.tsx — 404 page
+7. components/Navbar.tsx — sticky navbar with mobile menu
+8. components/Footer.tsx — full footer with links
+9. components/Hero.tsx — hero section
+10. components/Features.tsx — features/benefits section
+11. tailwind.config.ts — Tailwind config with custom tokens
+12. package.json — all dependencies
+
+Also generate type-specific files:
+- E-commerce: components/ProductGrid.tsx, components/CartDrawer.tsx, app/products/page.tsx
+- Dashboard: components/Sidebar.tsx, components/StatsCard.tsx, app/dashboard/page.tsx
+- SaaS/Landing: components/Pricing.tsx, components/Testimonials.tsx, app/pricing/page.tsx
+- Portfolio: components/ProjectCard.tsx, components/Timeline.tsx, app/projects/page.tsx
+
 ## OUTPUT FORMAT
 Return ONLY valid JSON (no markdown fences):
 {
   "files": [
-    {
-      "path": "index.html",
-      "content": "COMPLETE self-contained HTML with all CSS + JS inline. Must be stunning.",
-      "action": "create"
-    },
-    {
-      "path": "app/page.tsx",
-      "content": "React/Next.js version of the same app",
-      "action": "create"
-    }
+    { "path": "app/layout.tsx", "content": "...", "action": "create" },
+    { "path": "app/globals.css", "content": "...", "action": "create" },
+    { "path": "app/page.tsx", "content": "...", "action": "create" },
+    { "path": "app/about/page.tsx", "content": "...", "action": "create" },
+    { "path": "app/contact/page.tsx", "content": "...", "action": "create" },
+    { "path": "app/not-found.tsx", "content": "...", "action": "create" },
+    { "path": "components/Navbar.tsx", "content": "...", "action": "create" },
+    { "path": "components/Footer.tsx", "content": "...", "action": "create" },
+    { "path": "components/Hero.tsx", "content": "...", "action": "create" },
+    { "path": "components/Features.tsx", "content": "...", "action": "create" },
+    { "path": "tailwind.config.ts", "content": "...", "action": "create" },
+    { "path": "package.json", "content": "...", "action": "create" }
   ],
-  "preview_html": "SAME as index.html content — the complete self-contained preview",
+  "preview_html": "<!DOCTYPE html>...(complete self-contained HTML preview with ALL CSS/JS inline)...",
   "summary": "What was built and key design decisions"
 }
 
@@ -185,7 +214,8 @@ async function generateFiles(
   prompt: string,
   mode: GenerateMode,
   context: ChatMessage[],
-  projectMemoryContext?: string
+  projectMemoryContext?: string,
+  existingFiles?: GeneratedFile[]
 ): Promise<GenerateSiteResponse> {
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: getSystemPrompt(mode) },
@@ -196,17 +226,24 @@ async function generateFiles(
     messages.push({ role: m.role, content: m.content });
   }
 
-  // Prepend project memory context to user prompt if available
-  const userContent = projectMemoryContext
+  // Prepend project memory context and existing files to user prompt if available
+  let userContent = projectMemoryContext
     ? `Project context:\n${projectMemoryContext}\n\nRequest: ${prompt}`
     : prompt;
+
+  if (existingFiles && existingFiles.length > 0) {
+    const filesSummary = existingFiles
+      .map((f) => `- ${f.path} (${f.content.length} chars)`)
+      .join("\n");
+    userContent = `Existing files in project:\n${filesSummary}\n\n${userContent}\n\nUpdate or extend the existing files as needed. Preserve existing functionality.`;
+  }
 
   messages.push({ role: "user", content: userContent });
 
   const response = await getClient().chat.completions.create({
     model: "gpt-4o",
     temperature: 0.3,
-    max_tokens: 16000,
+    max_tokens: 32000,
     messages,
   });
 
@@ -281,6 +318,13 @@ export async function POST(req: Request) {
           .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
       : [];
 
+    // Accept existing files for iterative builds
+    const existingFiles: GeneratedFile[] | undefined = Array.isArray(body?.existingFiles)
+      ? (body.existingFiles as GeneratedFile[]).filter(
+          (f) => typeof f.path === "string" && typeof f.content === "string"
+        )
+      : undefined;
+
     // Build project memory context string if provided
     const projectMemory = body?.projectMemory as ProjectMemoryInput | undefined;
     let projectMemoryContext: string | undefined;
@@ -315,7 +359,7 @@ export async function POST(req: Request) {
 
     let parsed: GenerateSiteResponse;
     try {
-      parsed = await generateFiles(prompt, mode, context, projectMemoryContext);
+      parsed = await generateFiles(prompt, mode, context, projectMemoryContext, existingFiles);
     } catch {
       return NextResponse.json({ error: "Invalid JSON from AI" }, { status: 500 });
     }
@@ -326,6 +370,11 @@ export async function POST(req: Request) {
 
     // Self-correction loop (max 2 retries)
     const corrected = await selfCorrect(parsed);
+
+    // Post-process: fix broken images in preview_html
+    if (corrected.preview_html) {
+      corrected.preview_html = fixBrokenImages(corrected.preview_html);
+    }
 
     return NextResponse.json(corrected);
   } catch (err: unknown) {
