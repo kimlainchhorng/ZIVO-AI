@@ -182,6 +182,12 @@ function AIPageInner() {
   const [deploying, setDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<DeployResult | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [vercelToken, setVercelToken] = useState("");
+  const [showVercelTokenInput, setShowVercelTokenInput] = useState(false);
+  const [supabaseToken, setSupabaseToken] = useState<string | null>(null);
+  const [supabaseUserEmail, setSupabaseUserEmail] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [popover, setPopover] = useState<{ x: number; y: number; text: string } | null>(null);
   const [popoverInput, setPopoverInput] = useState("");
   const [activeFile, setActiveFile] = useState<GeneratedFile | null>(null);
@@ -329,6 +335,27 @@ function AIPageInner() {
         localStorage.setItem("zivo_project_id", newId);
         setProjectId(newId);
       }
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
+
+  // Load Supabase auth token and Vercel token from localStorage on mount
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem("zivo_supabase_token");
+      if (token) {
+        setSupabaseToken(token);
+        // Try to decode email from JWT without a full verify (client-side only display)
+        try {
+          const payload = JSON.parse(atob(token.split(".")[1]));
+          if (payload?.email) setSupabaseUserEmail(payload.email as string);
+        } catch {
+          // Ignore JWT decode failures
+        }
+      }
+      const vt = localStorage.getItem("zivo_vercel_token");
+      if (vt) setVercelToken(vt);
     } catch {
       // Ignore storage errors
     }
@@ -522,9 +549,11 @@ function AIPageInner() {
     let collectedPreviewHtml: string | undefined;
 
     try {
+      const buildHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (supabaseToken) buildHeaders["Authorization"] = `Bearer ${supabaseToken}`;
       const res = await fetch("/api/build", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: buildHeaders,
         body: JSON.stringify({
           prompt: continueInstruction.trim() || buildPrompt,
           model,
@@ -1131,19 +1160,33 @@ function AIPageInner() {
 
   async function handleDeploy(platform: "vercel" | "netlify") {
     if (!output?.files?.length) return;
+
+    // If deploying to Vercel and no token available, show the token input
+    if (platform === "vercel" && !vercelToken) {
+      setShowVercelTokenInput(true);
+      return;
+    }
+
     setDeploying(true);
     setDeployError(null);
     try {
+      const body: Record<string, unknown> = { platform, files: output.files };
+      if (platform === "vercel" && vercelToken) body.token = vercelToken;
       const res = await fetch("/api/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, files: output.files }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.error) {
         setDeployError(data.error);
+        // If the error is about a missing token, show the token input
+        if (data.error.includes("VERCEL_TOKEN")) {
+          setShowVercelTokenInput(true);
+        }
       } else {
         setDeployResult(data as DeployResult);
+        setShowVercelTokenInput(false);
       }
     } catch {
       setDeployError("Deploy request failed");
@@ -1211,6 +1254,27 @@ function AIPageInner() {
       setGithubPushError("GitHub push failed. Please try again.");
     }
     setGithubPushing(false);
+  }
+
+  async function handleShare() {
+    if (!savedProjectId || !supabaseToken) return;
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/projects/${savedProjectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseToken}` },
+        body: JSON.stringify({ visibility: "public" }),
+      });
+      if (res.ok) {
+        const url = `${window.location.origin}/p/${savedProjectId}`;
+        setShareUrl(url);
+        // Best-effort clipboard copy; the URL is also displayed in the UI as a fallback
+        navigator.clipboard.writeText(url).catch(() => {});
+      }
+    } catch {
+      // Share failed silently; shareUrl remains null so user sees no change
+    }
+    setSharing(false);
   }
 
   async function handleImageGenerate() {
@@ -1868,7 +1932,32 @@ function AIPageInner() {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               Chat
             </button>
-            <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: COLORS.accentGradient, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.875rem" }}>Z</div>
+            {supabaseUserEmail ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: COLORS.accentGradient, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.875rem", cursor: "pointer" }} title={supabaseUserEmail}>
+                  {supabaseUserEmail.charAt(0).toUpperCase()}
+                </div>
+                <button
+                  className="zivo-btn"
+                  onClick={() => {
+                    localStorage.removeItem("zivo_supabase_token");
+                    setSupabaseToken(null);
+                    setSupabaseUserEmail(null);
+                    setSavedProjectId(null);
+                  }}
+                  style={{ padding: "0.3rem 0.65rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem" }}
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <a
+                href="/auth?next=/ai"
+                style={{ padding: "0.3rem 0.75rem", background: COLORS.accentGradient, borderRadius: "6px", color: "#fff", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+              >
+                Sign In
+              </a>
+            )}
           </div>
         </div>
 
@@ -2499,11 +2588,33 @@ function AIPageInner() {
               {/* ── Saved Project ID badge ── */}
               {savedProjectId && !loading && (
                 <div style={{ marginBottom: "0.75rem", padding: "0.625rem 0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "8px", animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.success }}>Project saved</span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.success }}>Saved ✓</span>
+                    </div>
+                    {supabaseToken && (
+                      <button
+                        className="zivo-btn"
+                        onClick={handleShare}
+                        disabled={sharing}
+                        style={{ padding: "0.2rem 0.55rem", background: sharing ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.35)", borderRadius: "5px", color: COLORS.accent, cursor: sharing ? "not-allowed" : "pointer", fontSize: "0.7rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem" }}
+                      >
+                        {sharing ? (
+                          <><span style={{ width: "10px", height: "10px", border: "2px solid rgba(99,102,241,0.3)", borderTopColor: COLORS.accent, borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /></>
+                        ) : (
+                          <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg> Share</>
+                        )}
+                      </button>
+                    )}
                   </div>
-                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedProjectId}</div>
+                  {shareUrl ? (
+                    <div style={{ fontSize: "0.7rem", color: COLORS.success, wordBreak: "break-all" }}>
+                      Link copied! <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.success, fontWeight: 600 }}>{shareUrl}</a>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedProjectId}</div>
+                  )}
                 </div>
               )}
               </>)}
@@ -2919,7 +3030,48 @@ function AIPageInner() {
 
             {/* Bottom Actions — Code Builder only */}
             {mode === "code" && hasFiles && (
-              <div style={{ padding: "0.875rem 1.25rem", borderTop: `1px solid ${COLORS.border}`, display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+              <div style={{ padding: "0.875rem 1.25rem", borderTop: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+                {/* Vercel token input (shown when deploy is clicked and no token exists) */}
+                {showVercelTokenInput && (
+                  <div style={{ marginBottom: "0.75rem", padding: "0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "8px", animation: "fadeIn 0.2s ease" }}>
+                    <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary, marginBottom: "0.4rem" }}>
+                      Enter your{" "}
+                      <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer" style={{ color: COLORS.accent }}>Vercel token</a>
+                      {" "}to deploy:
+                    </div>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <input
+                        type="password"
+                        value={vercelToken}
+                        onChange={(e) => setVercelToken(e.target.value)}
+                        placeholder="vercel_..."
+                        style={{ flex: 1, padding: "0.4rem 0.6rem", background: "rgba(0,0,0,0.3)", border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                      />
+                      <button
+                        className="zivo-btn"
+                        onClick={() => {
+                          if (vercelToken) {
+                            try { localStorage.setItem("zivo_vercel_token", vercelToken); } catch { /* ignore */ }
+                            setShowVercelTokenInput(false);
+                            handleDeploy("vercel");
+                          }
+                        }}
+                        disabled={!vercelToken.trim()}
+                        style={{ padding: "0.4rem 0.75rem", background: COLORS.accentGradient, border: "none", borderRadius: "6px", color: "#fff", cursor: !vercelToken.trim() ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600, flexShrink: 0 }}
+                      >
+                        Deploy
+                      </button>
+                      <button
+                        className="zivo-btn"
+                        onClick={() => setShowVercelTokenInput(false)}
+                        style={{ padding: "0.4rem 0.6rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem" }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button
                   className="zivo-btn"
                   onClick={handleDownload}
@@ -2961,6 +3113,7 @@ function AIPageInner() {
                     <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> Save</>
                   )}
                 </button>
+                </div>
               </div>
             )}
           </div>

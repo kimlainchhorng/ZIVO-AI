@@ -12,6 +12,7 @@ export interface DeployFile {
 export interface DeployRequest {
   platform: DeployPlatform;
   files: DeployFile[];
+  token?: string;
 }
 
 export interface DeployResponse {
@@ -19,9 +20,9 @@ export interface DeployResponse {
   deploymentId: string;
 }
 
-async function deployToVercel(files: DeployFile[]): Promise<DeployResponse> {
-  const token = process.env.VERCEL_TOKEN;
-  if (!token) throw new Error("VERCEL_TOKEN is missing in environment");
+async function deployToVercel(files: DeployFile[], userToken?: string): Promise<DeployResponse> {
+  const token = userToken ?? process.env.VERCEL_TOKEN;
+  if (!token) throw new Error("VERCEL_TOKEN is missing — please provide your Vercel token");
 
   const fileMap = Object.fromEntries(
     files.map((f) => [
@@ -137,7 +138,7 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => {
       return NextResponse.json({ error: "Invalid or malformed JSON in request body" }, { status: 400 });
     });
-    const { platform, files }: DeployRequest = body;
+    const { platform, files, token }: DeployRequest = body;
 
     if (!platform || !["vercel", "netlify"].includes(platform)) {
       return NextResponse.json(
@@ -155,7 +156,7 @@ export async function POST(req: Request) {
 
     const result =
       platform === "vercel"
-        ? await deployToVercel(files)
+        ? await deployToVercel(files, token)
         : await deployToNetlify(files);
 
     return NextResponse.json(result);
