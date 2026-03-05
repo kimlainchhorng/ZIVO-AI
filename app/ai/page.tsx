@@ -28,7 +28,7 @@ import AgentOrchestrator from "@/components/AgentOrchestrator";
 import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
 import { Icon } from "@/components/icons/Icon";
-import { getWebContainer } from "@/lib/webcontainer";
+import { getWebContainer, resetWebContainer } from "@/lib/webcontainer";
 import type { FileSystemTree, WebContainerProcess } from "@webcontainer/api";
 
 interface SecurityIssue {
@@ -84,6 +84,9 @@ const COLORS = {
   textSecondary: "#94a3b8",
   textMuted: "#475569",
 };
+
+/** Maximum characters to display per chat bubble in the build history sidebar. */
+const MAX_CHAT_HISTORY_DISPLAY_LENGTH = 120;
 
 const RocketIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>;
 const ClipboardIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>;
@@ -1074,17 +1077,20 @@ function AIPageInner() {
           err.message.includes("UNKNOWN") ||
           err.message.includes("syscall: 'write'") ||
           err.message.includes("write"));
-      if (retryCount < 2 && isWriteError) {
-        // Exponential backoff: 1.5s for retry 1, 3s for retry 2
-        const delay = 1500 * (retryCount + 1);
-        setWebsiteLivePreviewStatus(`Write error — retrying (attempt ${retryCount + 2}/3)…`);
+      // Allow up to 4 retries (5 total attempts) for write errors.
+      // Delays: 2s, 4s, 8s, 16s (exponential backoff starting at 2s).
+      if (retryCount < 4 && isWriteError) {
+        const delay = 2000 * Math.pow(2, retryCount);
+        setWebsiteLivePreviewStatus(`Write error — retrying (attempt ${retryCount + 2}/5)…`);
         await new Promise<void>((resolve) => setTimeout(resolve, delay));
+        // Reset the singleton so the next getWebContainer() call boots fresh.
+        resetWebContainer();
         return startWebsiteLivePreview(files, retryCount + 1);
       }
       // All retries exhausted — graceful fallback to static snapshot
       setWebsiteLivePreviewRunning(false);
       setWebsiteLivePreviewStatus(null);
-      setWebsiteLivePreviewError("Live preview unavailable — showing static snapshot");
+      setWebsiteLivePreviewError("Live preview starting… (this may take a moment in your browser)");
     }
   }
 
@@ -2252,6 +2258,49 @@ function AIPageInner() {
                 </div>
               )}
 
+              {/* Conversation History Chat Bubbles */}
+              {activeLeftTab === "prompt" && conversationHistory.length > 0 && (
+                <div style={{ marginBottom: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Build History</div>
+                  {conversationHistory.map((msg, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: msg.role === "user" ? "flex-end" : "flex-start",
+                        animation: "fadeIn 0.3s ease",
+                      }}
+                    >
+                      <div
+                        style={{
+                          maxWidth: "88%",
+                          padding: "0.5rem 0.75rem",
+                          borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+                          background: msg.role === "user" ? "rgba(99,102,241,0.2)" : COLORS.bgCard,
+                          border: `1px solid ${msg.role === "user" ? "rgba(99,102,241,0.35)" : COLORS.border}`,
+                          fontSize: "0.8rem",
+                          color: msg.role === "user" ? COLORS.textPrimary : COLORS.textSecondary,
+                          lineHeight: 1.5,
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {msg.content.length > MAX_CHAT_HISTORY_DISPLAY_LENGTH ? msg.content.slice(0, MAX_CHAT_HISTORY_DISPLAY_LENGTH) + "…" : msg.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Continue Building section header */}
+              {activeLeftTab === "prompt" && buildIterationCount > 0 && (
+                <div style={{ marginBottom: "0.625rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                  <span style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Building</span>
+                  <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                </div>
+              )}
+
               {/* Unified Prompt Box */}
               {activeLeftTab === "prompt" && (
               <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "14px", overflow: "hidden" }}>
@@ -2615,6 +2664,54 @@ function AIPageInner() {
                   ) : (
                     <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedProjectId}</div>
                   )}
+                </div>
+              )}
+              {/* Continue Building in left sidebar (code mode) */}
+              {hasFiles && !loading && mode === "code" && (
+                <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ padding: "0.5rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                    <span style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Building</span>
+                    <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                  </div>
+                  <div style={{ padding: "0.625rem" }}>
+                    <textarea
+                      className="zivo-textarea"
+                      value={continueInstruction}
+                      onChange={(e) => setContinueInstruction(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                          e.preventDefault();
+                          if (continueInstruction.trim()) {
+                            const instruction = continueInstruction;
+                            setContinueInstruction("");
+                            handleBuild(instruction);
+                          }
+                        }
+                      }}
+                      placeholder="Describe what to add or change… (e.g. Add dark mode toggle)"
+                      maxLength={1000}
+                      style={{ width: "100%", minHeight: "64px", resize: "none", background: "transparent", border: "none", color: COLORS.textPrimary, fontSize: "0.8125rem", lineHeight: 1.5, outline: "none", boxSizing: "border-box" }}
+                    />
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "0.25rem" }}>
+                      <span style={{ fontSize: "0.68rem", color: COLORS.textMuted }}>{continueInstruction.length}/1000</span>
+                    </div>
+                    <button
+                      className="zivo-btn"
+                      disabled={!continueInstruction.trim() || loading}
+                      onClick={() => {
+                        if (continueInstruction.trim()) {
+                          const instruction = continueInstruction;
+                          setContinueInstruction("");
+                          handleBuild(instruction);
+                        }
+                      }}
+                      style={{ width: "100%", padding: "0.4rem 0.75rem", background: continueInstruction.trim() ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "8px", color: "#fff", cursor: !continueInstruction.trim() || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem", opacity: !continueInstruction.trim() || loading ? 0.5 : 1, marginTop: "0.25rem" }}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      + Continue Build
+                    </button>
+                  </div>
                 </div>
               )}
               </>)}
@@ -3836,8 +3933,17 @@ function AIPageInner() {
                 </div>
                 {/* Error banner with snapshot fallback message */}
                 {websiteLivePreviewError && (
-                  <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: websiteLivePreviewError.includes("static snapshot") ? "rgba(245,158,11,0.1)" : "rgba(239,68,68,0.1)", border: `1px solid ${websiteLivePreviewError.includes("static snapshot") ? "rgba(245,158,11,0.3)" : "rgba(239,68,68,0.3)"}`, borderRadius: "8px", color: websiteLivePreviewError.includes("static snapshot") ? COLORS.warning : COLORS.error, fontSize: "0.8125rem" }}>
-                    {websiteLivePreviewError}
+                  <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", color: COLORS.warning, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                    <span>{websiteLivePreviewError}</span>
+                    {websiteResult && (
+                      <button
+                        className="zivo-btn"
+                        onClick={() => void startWebsiteLivePreview(websiteResult.files)}
+                        style={{ padding: "0.2rem 0.6rem", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "6px", color: COLORS.warning, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
+                      >
+                        Try Again
+                      </button>
+                    )}
                   </div>
                 )}
                 {!websiteResult && !websiteLoading && (
