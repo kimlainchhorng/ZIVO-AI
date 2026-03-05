@@ -63,7 +63,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const { prompt, model = "gpt-4o", existingFiles = [], projectMemory = null } = body;
+  const { prompt, model = "gpt-4o", existingFiles = [] } = body;
 
   if (!prompt?.trim()) {
     return new Response(

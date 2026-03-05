@@ -1084,60 +1084,155 @@ function AIPageInner() {
     setBuildErrors([]);
     setBuildWarnings([]);
     setBuildLogs([]);
+    setBuildIteration(0);
+    setShowDiff(false);
+
+    // Build an enriched prompt that includes app metadata so the pipeline
+    // understands the full-app context; /api/build accepts a single prompt string
+    // so we prepend the structured fields here on the client side.
+    const featureList = options.features.length > 0 ? options.features.join(", ") : "none";
+    const fullAppPrompt = [
+      `App name: ${options.appName}`,
+      `App type: ${options.appType}`,
+      `Required features: ${featureList}`,
+      options.prompt,
+    ].join("\n");
+
+    // Initialise first stage as active
+    setBuildStages((prev) => prev.map((s, i) => ({ ...s, status: i === 0 ? "active" : "pending" })));
+    setCurrentBuildStage(0);
+
+    // Create abort controller for this build, cancel any previous
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     const buildStart = Date.now();
     const stepTimer1 = setTimeout(() => setLoadingStep(1), LOADING_STEP1_DELAY);
     const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
     const stepTimer3 = setTimeout(() => setLoadingStep(3), LOADING_STEP3_DELAY);
 
+    let collectedFiles: GeneratedFile[] = [];
+    let buildSummary = "";
+
     try {
-      const res = await fetch("/api/generate-full-app", {
+      const res = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: options.prompt,
-          appName: options.appName,
-          features: options.features,
+          prompt: fullAppPrompt,
           model,
+          projectId,
         }),
+        signal: controller.signal,
       });
-      const data = await res.json() as {
-        files?: GeneratedFile[];
-        plan?: { pages: Array<{ path: string; name: string; description: string }>; components: string[]; database: Array<{ table: string; columns: string[] }> };
-        summary?: string;
-        error?: string;
-      };
 
-      if (data.error) {
-        setOutput({ error: data.error });
-        setConsoleLogs((prev) => [...prev, { text: `> Error: ${data.error}`, type: "error" }]);
-      } else if (data.files?.length) {
-        const genFiles: GeneratedFile[] = data.files.map((f) => ({ ...f, action: "create" as const }));
-        setOutput({ files: genFiles, summary: data.summary });
-        setActiveFile(genFiles[0]);
-        setDiffFiles(genFiles.map((f) => ({ path: f.path, oldContent: "", newContent: f.content })));
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; details?: unknown };
+          try {
+            evt = JSON.parse(raw) as typeof evt;
+          } catch {
+            continue;
+          }
+
+          if (evt.type === "stage" && evt.stage) {
+            const stageIdx = SSE_STAGE_TO_BUILD_INDEX[evt.stage] ?? -1;
+            if (stageIdx >= 0) {
+              setBuildStages((prev) =>
+                prev.map((s, i) => ({
+                  ...s,
+                  status:
+                    i < stageIdx ? "done" : i === stageIdx ? "active" : "pending",
+                }))
+              );
+              setCurrentBuildStage(stageIdx);
+            }
+            if (evt.message) {
+              setConsoleLogs((prev) => [...prev, { text: `> [${evt.stage}] ${evt.message}`, type: "info" }]);
+            }
+            if (evt.stage === "DONE") {
+              buildSummary = evt.message ?? buildSummary;
+            }
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files as GeneratedFile[];
+            if (collectedFiles.length > 0 && !activeFile) {
+              setActiveFile(collectedFiles[0]);
+              setActiveRightTab("files");
+            }
+            setOutput((prev) => ({ ...(prev ?? {}), files: collectedFiles }));
+          } else if (evt.type === "error") {
+            const errMsg = String(evt.message ?? "Build error");
+            setConsoleLogs((prev) => [...prev, { text: `> ❌ ${errMsg}`, type: "error" }]);
+            setOutput({ error: errMsg });
+          }
+        }
+      }
+
+      // Update output with final summary (files were already streamed incrementally)
+      setOutput((prev) => ({
+        ...(prev ?? {}),
+        files: collectedFiles,
+        summary: buildSummary || `Generated ${collectedFiles.length} files.`,
+      }));
+
+      if (collectedFiles.length > 0) {
+        setActiveFile(collectedFiles[0]);
+        setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: "", newContent: f.content })));
         setShowDiff(true);
         setActiveRightTab("files");
         setActiveTab("code");
-        const duration = Date.now() - buildStart;
-        setBuildTime(`${(duration / 1000).toFixed(1)}s`);
-        const fileLogs = genFiles.map((f) => ({ text: `> Created: ${f.path}`, type: "success" as const }));
-        setConsoleLogs((prev) => [
-          ...prev,
-          ...fileLogs,
-          { text: `> ⚡ Full app built in ${duration}ms — ${genFiles.length} files`, type: "success" },
-        ]);
-        addHistoryEntry({
-          createdAt: Date.now(),
-          prompt: options.prompt,
-          model,
-          files: genFiles.map((f) => ({ path: f.path, action: f.action })),
-          buildTimeMs: duration,
-        });
       }
-    } catch {
-      setOutput({ error: "Full app generation failed. Please try again." });
-      setConsoleLogs((prev) => [...prev, { text: "> Error: Full app generation failed", type: "error" }]);
+
+      const duration = Date.now() - buildStart;
+      setBuildTime(`${(duration / 1000).toFixed(1)}s`);
+
+      // Mark all stages done
+      setBuildStages((prev) => prev.map((s) => ({ ...s, status: "done" as const })));
+      setCurrentBuildStage(7);
+
+      const fileLogs = collectedFiles.map((f) => ({ text: `> Created: ${f.path}`, type: "success" as const }));
+      setConsoleLogs((prev) => [
+        ...prev,
+        ...fileLogs,
+        { text: `> ⚡ Full app built in ${duration}ms — ${collectedFiles.length} files`, type: "success" },
+      ]);
+
+      addHistoryEntry({
+        createdAt: Date.now(),
+        prompt: options.prompt,
+        model,
+        files: collectedFiles.map((f) => ({ path: f.path, action: f.action })),
+        buildTimeMs: duration,
+      });
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") {
+        setConsoleLogs((prev) => [...prev, { text: "> Build cancelled.", type: "info" }]);
+      } else {
+        setOutput({ error: "Full app generation failed. Please try again." });
+        setConsoleLogs((prev) => [...prev, { text: "> Error: Full app generation failed", type: "error" }]);
+      }
     }
 
     clearTimeout(stepTimer1);
