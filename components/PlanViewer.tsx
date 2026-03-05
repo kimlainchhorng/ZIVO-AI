@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { ProjectPlan, ProjectTask } from "@/lib/ai/project-planner";
 
 interface PlanViewerProps {
@@ -90,6 +90,11 @@ function LoadingSkeleton() {
 function TaskItem({ task, onGenerateTask }: { task: ProjectTask; onGenerateTask?: (task: ProjectTask) => void }) {
   const [localStatus, setLocalStatus] = useState<ProjectTask["status"]>(task.status);
   const st = taskStatusStyle(localStatus);
+
+  // Sync local status if the prop changes (e.g. parent updates task status)
+  useEffect(() => {
+    setLocalStatus(task.status);
+  }, [task.status]);
 
   const handleToggleDone = () => {
     setLocalStatus((s) => (s === "done" ? "pending" : "done"));

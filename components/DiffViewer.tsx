@@ -113,10 +113,11 @@ function FileDiffPanel({ file, onApply, onUndo }: FileDiffPanelProps): React.JSX
 
   const handleCopy = useCallback(() => {
     const content = file.newContent || file.oldContent || "";
-    navigator.clipboard.writeText(content).then(() => {
+    const onCopied = () => {
       setCopyLabel("✓ Copied");
       setTimeout(() => setCopyLabel("📋 Copy"), 2000);
-    }).catch(() => {
+    };
+    navigator.clipboard.writeText(content).then(onCopied).catch(() => {
       // Fallback for environments without clipboard API
       const el = document.createElement("textarea");
       el.value = content;
@@ -124,8 +125,7 @@ function FileDiffPanel({ file, onApply, onUndo }: FileDiffPanelProps): React.JSX
       el.select();
       document.execCommand("copy");
       document.body.removeChild(el);
-      setCopyLabel("✓ Copied");
-      setTimeout(() => setCopyLabel("📋 Copy"), 2000);
+      onCopied();
     });
   }, [file.newContent, file.oldContent]);
 

@@ -259,12 +259,13 @@ export default function FileExplorer({
   onAddFile,
 }: FileExplorerProps): React.JSX.Element {
   const [search, setSearch] = useState("");
+  const lowerSearch = search.trim().toLowerCase();
   const tree = useMemo(() => {
-    const filtered = search.trim()
-      ? files.filter((f) => f.path.toLowerCase().includes(search.toLowerCase()))
+    const filtered = lowerSearch
+      ? files.filter((f) => f.path.toLowerCase().includes(lowerSearch))
       : files;
     return buildTree(filtered);
-  }, [files, search]);
+  }, [files, lowerSearch]);
 
   const totalSize = files.reduce((acc, f) => acc + f.content.length, 0);
   const creates = files.filter((f) => f.action === "create").length;
