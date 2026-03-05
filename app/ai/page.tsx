@@ -519,13 +519,14 @@ function AIPageInner() {
     // Collected files from SSE stream
     let collectedFiles: GeneratedFile[] = [];
     let buildSummary = "";
+    let collectedPreviewHtml: string | undefined;
 
     try {
       const res = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: buildPrompt,
+          prompt: continueInstruction.trim() || buildPrompt,
           model,
           projectMemory,
           context: buildContext,
@@ -556,7 +557,7 @@ function AIPageInner() {
           const raw = line.slice(6).trim();
           if (!raw || raw === "[DONE]") continue;
 
-          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; details?: unknown; data?: Record<string, unknown> };
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; preview_html?: string; details?: unknown; data?: Record<string, unknown> };
           try {
             evt = JSON.parse(raw) as typeof evt;
           } catch {
@@ -587,6 +588,7 @@ function AIPageInner() {
             }
           } else if (evt.type === "files" && Array.isArray(evt.files)) {
             collectedFiles = evt.files as GeneratedFile[];
+            if (evt.preview_html) collectedPreviewHtml = evt.preview_html;
             // Show files incrementally
             if (collectedFiles.length > 0 && !activeFile) {
               setActiveFile(collectedFiles[0]);
@@ -605,6 +607,7 @@ function AIPageInner() {
       // Process collected files
       const data: GenerateSiteResponse = {
         files: collectedFiles,
+        preview_html: collectedPreviewHtml,
         summary: buildSummary || `Generated ${collectedFiles.length} files.`,
       };
       setOutput(data);
@@ -619,7 +622,14 @@ function AIPageInner() {
         setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: existingFileMap.get(f.path) ?? "", newContent: f.content })));
         setShowDiff(true);
 
-        void startWebsiteLivePreview(collectedFiles);
+        // If a full standalone HTML document is available, the iframe already shows it
+        // via the useEffect on output.preview_html — no WebContainer needed.
+        const isStandaloneHtmlDocument =
+          typeof data.preview_html === "string" &&
+          /^<!doctype|^<html/i.test(data.preview_html.trimStart());
+        if (!isStandaloneHtmlDocument) {
+          void startWebsiteLivePreview(collectedFiles);
+        }
         setActiveRightTab("files");
       }
 
@@ -970,6 +980,18 @@ function AIPageInner() {
     if (!files.length) return;
 
     if (retryCount === 0) {
+      // Check crossOriginIsolated before attempting WebContainer boot.
+      // If the browser doesn't have COOP/COEP headers, skip silently —
+      // the static HTML snapshot is already showing in the iframe.
+      const isCrossOriginIsolated =
+        typeof window !== 'undefined' &&
+        window.crossOriginIsolated === true;
+      if (!isCrossOriginIsolated) {
+        setWebsiteLivePreviewRunning(false);
+        setWebsiteLivePreviewStatus(null);
+        return;
+      }
+
       setWebsiteLivePreviewError(null);
       setWebsiteLivePreviewStatus("Booting live runtime…");
       setWebsiteLivePreviewRunning(true);

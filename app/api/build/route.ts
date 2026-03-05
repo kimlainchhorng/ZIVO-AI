@@ -54,6 +54,7 @@ interface StageEvent {
 interface FilesEvent {
   type: "files";
   files: GeneratedFile[];
+  preview_html?: string;
 }
 
 interface ErrorEvent {
@@ -215,7 +216,16 @@ export async function POST(req: Request): Promise<Response> {
           ).then((result) => {
             generatedFiles = result.files;
             buildSummary = result.summary;
-            send({ type: "files", files: result.files });
+            // If a standalone index.html was generated, surface it as preview_html
+            const htmlFile = result.files.find(
+              (f) => f.path === "index.html" || f.path === "public/index.html"
+            );
+            const preview_html =
+              htmlFile?.content &&
+              /^<!doctype|^<html/i.test(htmlFile.content.trimStart())
+                ? htmlFile.content
+                : undefined;
+            send({ type: "files", files: result.files, preview_html });
             send({ type: "stage", stage: "DONE", message: result.summary, progress: 100 });
           });
         }
