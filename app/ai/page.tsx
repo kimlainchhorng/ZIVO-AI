@@ -1991,7 +1991,7 @@ function AIPageInner() {
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.25rem 0.625rem", background: loading ? "rgba(245,158,11,0.08)" : "rgba(16,185,129,0.06)", border: `1px solid ${loading ? "rgba(245,158,11,0.2)" : "rgba(16,185,129,0.2)"}`, borderRadius: "20px" }}>
               <div style={{ width: "7px", height: "7px", borderRadius: "50%", background: loading ? COLORS.warning : COLORS.success, boxShadow: `0 0 5px ${loading ? COLORS.warning : COLORS.success}`, animation: loading ? "statusBlink 1.5s ease-in-out infinite" : "none" }} aria-hidden="true" />
-              <span style={{ fontSize: "0.75rem", color: loading ? COLORS.warning : COLORS.success, fontWeight: 600 }} aria-live="polite" aria-label={loading ? "Building project" : "Ready to build"}>{loading ? `Building… ${elapsedSeconds > 0 ? `${elapsedSeconds}s` : ""}` : "● Ready"}</span>
+              <span style={{ fontSize: "0.75rem", color: loading ? COLORS.warning : COLORS.success, fontWeight: 600 }} aria-live="polite" aria-label={loading ? "Building project" : "Ready to build"}>{loading ? `Building… ${elapsedSeconds > 0 ? `${elapsedSeconds}s` : ""}` : "Ready"}</span>
             </div>
             <button
               className="zivo-btn"
@@ -2469,9 +2469,9 @@ function AIPageInner() {
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.875rem", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "0.7rem", color: COLORS.textMuted, flexShrink: 0, letterSpacing: "0.04em" }}>or start from</span>
                 {[
-                  { emoji: "🎨", label: "Figma", color: "#6366f1" },
-                  { emoji: "🐙", label: "GitHub", color: "#94a3b8" },
-                  { emoji: "📋", label: "Team template", color: "#f59e0b" },
+                  { emoji: "🎨", label: "Figma" },
+                  { emoji: "🐙", label: "GitHub" },
+                  { emoji: "📋", label: "Team template" },
                 ].map((item) => (
                   <button
                     key={item.label}
@@ -3675,11 +3675,32 @@ function AIPageInner() {
                     const isSnapshot = !output?.preview_html && Boolean(previewHtml);
                     const showMobileFrame = deviceMode === "mobile" && Boolean(previewHtml);
                     const showTabletFrame = deviceMode === "tablet" && Boolean(previewHtml);
+                    const snapshotBadgeStyle: React.CSSProperties = {
+                      position: "absolute",
+                      top: showMobileFrame ? 20 : 8,
+                      left: showMobileFrame ? "50%" : "auto",
+                      right: showMobileFrame ? "auto" : 12,
+                      transform: showMobileFrame ? "translateX(-50%)" : "none",
+                      zIndex: 20,
+                      padding: "0.2rem 0.65rem",
+                      background: "rgba(10,11,20,0.85)",
+                      backdropFilter: "blur(8px)",
+                      border: "1px solid rgba(245,158,11,0.4)",
+                      borderRadius: "20px",
+                      fontSize: "0.68rem",
+                      color: "#f59e0b",
+                      fontWeight: 700,
+                      pointerEvents: "none",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.3rem",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+                    };
                     return previewHtml ? (
                       <>
                         {/* Polished HTML Snapshot badge */}
                         {isSnapshot && (
-                          <div style={{ position: "absolute", top: showMobileFrame ? 20 : 8, left: showMobileFrame ? "50%" : "auto", right: showMobileFrame ? "auto" : 12, transform: showMobileFrame ? "translateX(-50%)" : "none", zIndex: 20, padding: "0.2rem 0.65rem", background: "rgba(10,11,20,0.85)", backdropFilter: "blur(8px)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "20px", fontSize: "0.68rem", color: "#f59e0b", fontWeight: 700, pointerEvents: "none", display: "flex", alignItems: "center", gap: "0.3rem", boxShadow: "0 2px 8px rgba(0,0,0,0.4)" }}>
+                          <div style={snapshotBadgeStyle}>
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
                             HTML Snapshot
                           </div>
