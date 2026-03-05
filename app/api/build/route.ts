@@ -16,16 +16,30 @@ import { evaluateWebsiteUI, evaluateMobileUI } from "@/lib/ai/ui-evaluator";
 import { applyUIPolish } from "@/lib/ai/ui-polish";
 import { generateSvgLogo, getFallbackSvgLogo } from "@/lib/ai/logo-generator";
 import { validateAssets, summarizeAssetValidation } from "@/lib/ai/validators/assets-validator";
+import { runCompletenessGate, summarizeCompletenessGate } from "@/lib/ai/validators/completeness-gate";
+import type { ManifestFile } from "@/lib/ai/manifest";
+import { createManifest } from "@/lib/ai/manifest";
 
 export type BuildMode = "code" | "website_v2" | "mobile_v2";
 
-type SSEStageType = "BLUEPRINT" | "MANIFEST" | "GENERATING" | "VALIDATING" | "FIXING" | "DONE";
+type SSEStageType =
+  | "BLUEPRINT"
+  | "MANIFEST"
+  | "GENERATING"
+  | "VALIDATING"
+  | "FIXING"
+  | "COMPLETENESS_GATE"
+  | "COMPLETENESS_GATE_FAILED"
+  | "SECURITY_NOTE_CI"
+  | "DONE";
 
 interface StageEvent {
   type: "stage";
   stage: SSEStageType;
   message: string;
   progress?: number;
+  /** Optional extra payload (e.g. list of missing items for COMPLETENESS_GATE_FAILED) */
+  data?: unknown;
 }
 
 interface FilesEvent {
@@ -190,6 +204,14 @@ async function runWebsiteV2Pipeline(
   const totalPasses = MAX_POLISH_PASSES;
   let passNum = 1;
 
+  // Notify the UI that security scanning runs in CI (not in the build pipeline)
+  send({
+    type: "stage",
+    stage: "SECURITY_NOTE_CI",
+    message: "Security scanning (Semgrep) runs automatically in CI on every PR and push to main.",
+    progress: 2,
+  });
+
   // Stage 1: Blueprint
   send({ type: "stage", stage: "BLUEPRINT", message: "Generating website blueprint…", progress: 5 });
   const plan = await generateWebsitePlan(prompt, model);
@@ -331,7 +353,75 @@ async function runWebsiteV2Pipeline(
     });
   }
 
-  const summary = `Website "${plan.brand.name}" built: ${files.length} files, quality score ${evalResult.score}/100`;
+  // Stage 6: CompletenessGate — validates all required files/wiring exist
+  const MAX_GATE_ATTEMPTS = 2;
+  let gateAttempt = 0;
+  let gateResult = runCompletenessGate(files);
+
+  send({
+    type: "stage",
+    stage: "COMPLETENESS_GATE",
+    message: summarizeCompletenessGate(gateResult),
+    progress: 91,
+  });
+
+  while (!gateResult.passed && gateAttempt < MAX_GATE_ATTEMPTS) {
+    gateAttempt++;
+
+    send({
+      type: "stage",
+      stage: "COMPLETENESS_GATE_FAILED",
+      message: `CompletenessGate attempt ${gateAttempt}/${MAX_GATE_ATTEMPTS} failed — ${gateResult.missingItems.length} item(s) missing. Triggering targeted remediation…`,
+      progress: 92 + gateAttempt,
+      data: { missingItems: gateResult.missingItems },
+    });
+
+    // Build a small remediation manifest for missing required files and re-generate them
+    const missingPaths = gateResult.issues
+      .filter((i) => i.severity === "error" && i.rule.startsWith("required-file:"))
+      .map((i) => i.rule.replace("required-file:", ""));
+
+    if (missingPaths.length > 0) {
+      const remediationFiles = buildRemediationManifest(missingPaths, plan.brand.name, plan.brand.tagline);
+      const remediationManifest = createManifest(
+        `remediation-${Date.now()}`,
+        `Remediation for missing files in "${plan.brand.name}"`,
+        remediationFiles,
+        plan,
+        remediationFiles.length
+      );
+
+      send({
+        type: "stage",
+        stage: "FIXING",
+        message: `Generating ${missingPaths.length} missing file(s): ${missingPaths.join(", ")}`,
+        progress: 93 + gateAttempt,
+      });
+
+      const remediationGenerated = await generateFromManifest(
+        remediationManifest,
+        () => { /* silent */ },
+        model
+      );
+
+      // Merge: add new files, don't overwrite existing ones
+      const existingPaths = new Set(files.map((f) => f.path));
+      const newFiles = remediationGenerated.filter((f) => !existingPaths.has(f.path));
+      files = [...files, ...newFiles];
+      send({ type: "files", files });
+    }
+
+    gateResult = runCompletenessGate(files);
+
+    send({
+      type: "stage",
+      stage: "COMPLETENESS_GATE",
+      message: `CompletenessGate re-check: ${summarizeCompletenessGate(gateResult)}`,
+      progress: 95 + gateAttempt,
+    });
+  }
+
+  const summary = `Website "${plan.brand.name}" built: ${files.length} files, quality score ${evalResult.score}/100${gateResult.passed ? "" : " ⚠ completeness issues remain"}`;
   send({ type: "stage", stage: "DONE", message: summary, progress: 100 });
 }
 
@@ -442,6 +532,47 @@ function patchLogoIntoLayoutComponents(files: GeneratedFile[]): GeneratedFile[] 
 
     return { ...file, content: patched };
   });
+}
+
+/**
+ * Build a small remediation manifest for a list of missing file paths.
+ * Provides descriptive hints so the batch generator can create minimal stubs.
+ */
+function buildRemediationManifest(
+  missingPaths: string[],
+  brandName: string,
+  tagline: string
+): ManifestFile[] {
+  const descriptionMap: Record<string, string> = {
+    "app/page.tsx": `Home page for "${brandName}" — assembles hero, features, and CTA sections`,
+    "app/about/page.tsx": `About page for "${brandName}" — company story, team, values`,
+    "app/contact/page.tsx": `Contact page for "${brandName}" — contact form and location info`,
+    "app/features/page.tsx": `Features page for "${brandName}" — detailed feature showcase`,
+    "app/pricing/page.tsx": `Pricing page for "${brandName}" — pricing tiers with CTA`,
+    "app/faq/page.tsx": `FAQ page for "${brandName}" — accordion of common questions`,
+    "app/blog/page.tsx": `Blog list page: imports blogPosts from "@/lib/content/blog-posts", renders cards with coverImage, title, excerpt, date. Tagline: ${tagline}`,
+    "app/blog/[slug]/page.tsx": `Blog post detail page: imports blogPosts, finds post by slug, renders cover image and content`,
+    "lib/content/blog-posts.ts": `Blog post data for "${brandName}": exports BlogPost interface and blogPosts array with 3 sample posts (title, description, date, slug, author, tags, coverImage using picsum.photos)`,
+    "app/(legal)/terms/page.tsx": "Terms of Service legal page with generic placeholders",
+    "app/(legal)/privacy/page.tsx": "Privacy Policy legal page with GDPR/CCPA placeholders",
+    "app/(legal)/cookies/page.tsx": "Cookie Policy legal page with cookie-type table",
+    "app/(legal)/acceptable-use/page.tsx": "Acceptable Use Policy legal page",
+    "app/(legal)/disclaimer/page.tsx": "General Disclaimer legal page",
+    "lib/assets.ts": `Stable image assets: exports brand, brandLogoSvg, and images (hero 1600x900, features 800x600, avatars 200x200) using picsum.photos`,
+    "components/brand/Logo.tsx": `Brand Logo: renders brandLogoSvg from lib/assets via dangerouslySetInnerHTML`,
+    "components/site/Header.tsx": `Site header: imports Logo from "@/components/brand/Logo", renders nav and CTA`,
+    "components/site/Footer.tsx": `Site footer: imports Logo from "@/components/brand/Logo", renders links and brand info`,
+  };
+
+  return missingPaths.map((path, i) => ({
+    path,
+    type: "page" as const,
+    description: descriptionMap[path] ?? `Missing required file: ${path}`,
+    dependencies: [],
+    priority: 1 + i,
+    status: "pending" as const,
+    batchIndex: 0,
+  }));
 }
 
 // ─── Mobile V2 Pipeline ───────────────────────────────────────────────────────

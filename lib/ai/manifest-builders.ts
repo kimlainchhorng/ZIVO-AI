@@ -116,6 +116,17 @@ export function buildWebsiteManifest(
     );
   }
 
+  // ── Blog content data ─────────────────────────────────────────────────────
+  files.push(
+    mf(
+      "lib/content/blog-posts.ts",
+      "util",
+      'Blog post data: exports BlogPost interface and blogPosts array (min 3 posts) with title, description, date, slug, author, tags, and coverImage (use direct picsum.photos/id/N URLs — do NOT import from lib/assets). Must export: interface BlogPost { title: string; description: string; date: string; slug: string; author: string; tags: string[]; coverImage: string; }, const blogPosts: BlogPost[].',
+      ["lib/assets.ts"],
+      priority++
+    )
+  );
+
   // ── App pages ──────────────────────────────────────────────────────────────
   // Ensure core pages exist regardless of plan
   const coreRoutes = ["/", "/about", "/contact"];
@@ -136,6 +147,24 @@ export function buildWebsiteManifest(
       )
     );
   }
+
+  // ── Blog pages (always generated) ─────────────────────────────────────────
+  files.push(
+    mf(
+      "app/blog/page.tsx",
+      "page",
+      'Blog list page: imports blogPosts from "@/lib/content/blog-posts". Renders a grid of BlogCard components, each showing cover image (use coverImage field), title, excerpt, date, author, and a "Read more" link to /blog/[slug]. Use next/image for images.',
+      ["lib/content/blog-posts.ts", "lib/assets.ts", "components/site/Header.tsx", "components/site/Footer.tsx"],
+      priority++
+    ),
+    mf(
+      "app/blog/[slug]/page.tsx",
+      "page",
+      "Blog post detail page: uses generateStaticParams to pre-render all slugs. Imports blogPosts to look up the post by slug. Renders cover image at full width (next/image), post metadata (title, date, author, tags), and content sections. Falls back to 404 if slug not found.",
+      ["lib/content/blog-posts.ts", "lib/assets.ts", "components/site/Header.tsx", "components/site/Footer.tsx"],
+      priority++
+    )
+  );
 
   // ── Legal pages ────────────────────────────────────────────────────────────
   const legalPages = [
