@@ -59,6 +59,34 @@ const REQUIRED_BRAND_ASSETS = [
   "components/site/Footer.tsx",
 ] as const;
 
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the file content appears to import or use blog post data.
+ * Checks for common import patterns the AI generator produces.
+ */
+function contentUsesBlogPosts(content: string): boolean {
+  return (
+    content.includes("blogPosts") ||
+    content.includes("blog-posts") ||
+    content.includes("BlogPost")
+  );
+}
+
+/**
+ * Returns true if the file content appears to render at least one image.
+ * Checks for <img …>, next/image, and known asset helper patterns.
+ */
+function contentRendersImages(content: string): boolean {
+  return (
+    content.includes("coverImage") ||
+    content.includes("picsum.photos") ||
+    content.includes("getFeatureImageUrl") ||
+    /<img[\s>\/]/i.test(content) ||
+    /next\/image/.test(content)
+  );
+}
+
 // ─── Individual rule checks ───────────────────────────────────────────────────
 
 function checkRequiredFiles(
@@ -79,12 +107,7 @@ function checkRequiredFiles(
 function checkBlogListPageUsesPosts(files: GeneratedFile[]): CompletenessIssue | null {
   const blogList = files.find((f) => f.path === "app/blog/page.tsx");
   if (!blogList) return null; // Already caught by required-file check
-  const content = blogList.content ?? "";
-  const usesPosts =
-    content.includes("blogPosts") ||
-    content.includes("blog-posts") ||
-    content.includes("BlogPost");
-  if (!usesPosts) {
+  if (!contentUsesBlogPosts(blogList.content ?? "")) {
     return {
       rule: "blog-list-uses-posts",
       severity: "error",
@@ -99,14 +122,7 @@ function checkBlogListPageUsesPosts(files: GeneratedFile[]): CompletenessIssue |
 function checkBlogListPageUsesImages(files: GeneratedFile[]): CompletenessIssue | null {
   const blogList = files.find((f) => f.path === "app/blog/page.tsx");
   if (!blogList) return null;
-  const content = blogList.content ?? "";
-  const usesImages =
-    content.includes("coverImage") ||
-    content.includes("picsum.photos") ||
-    content.includes("getFeatureImageUrl") ||
-    /<img\s/i.test(content) ||
-    /next\/image/.test(content);
-  if (!usesImages) {
+  if (!contentRendersImages(blogList.content ?? "")) {
     return {
       rule: "blog-list-uses-images",
       severity: "warn",
@@ -120,12 +136,7 @@ function checkBlogListPageUsesImages(files: GeneratedFile[]): CompletenessIssue 
 function checkBlogPostPageUsesPosts(files: GeneratedFile[]): CompletenessIssue | null {
   const blogPost = files.find((f) => f.path === "app/blog/[slug]/page.tsx");
   if (!blogPost) return null;
-  const content = blogPost.content ?? "";
-  const usesPosts =
-    content.includes("blogPosts") ||
-    content.includes("blog-posts") ||
-    content.includes("BlogPost");
-  if (!usesPosts) {
+  if (!contentUsesBlogPosts(blogPost.content ?? "")) {
     return {
       rule: "blog-post-uses-posts",
       severity: "error",

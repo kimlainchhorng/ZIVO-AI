@@ -121,7 +121,7 @@ export function buildWebsiteManifest(
     mf(
       "lib/content/blog-posts.ts",
       "util",
-      'Blog post data: exports BlogPost interface and blogPosts array (min 3 posts) with title, description, date, slug, author, tags, and coverImage (use stable picsum.photos URL from lib/assets). Must export: interface BlogPost, const blogPosts: BlogPost[].',
+      'Blog post data: exports BlogPost interface and blogPosts array (min 3 posts) with title, description, date, slug, author, tags, and coverImage (use direct picsum.photos/id/N URLs — do NOT import from lib/assets). Must export: interface BlogPost { title: string; description: string; date: string; slug: string; author: string; tags: string[]; coverImage: string; }, const blogPosts: BlogPost[].',
       ["lib/assets.ts"],
       priority++
     )
