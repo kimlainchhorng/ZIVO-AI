@@ -441,6 +441,7 @@ function AIPageInner() {
   const [currentBuildStage, setCurrentBuildStage] = useState(0);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [consolePanelOpen, setConsolePanelOpen] = useState(false);
+  const [buildOutputOpen, setBuildOutputOpen] = useState(false);
   const [analysisTab, setAnalysisTab] = useState<"seo" | "a11y" | "perf" | "docs" | "agents">("seo");
   const [analysisPanelOpen, setAnalysisPanelOpen] = useState(false);
   const [designSystemOpen, setDesignSystemOpen] = useState(false);
@@ -511,6 +512,7 @@ function AIPageInner() {
     setAutoFixLog(null);
     setWebsiteLivePreviewError(null);
     setConsoleLogs([{ text: isIteration ? `> Iteration ${buildIterationCount + 1}: Updating project...` : "> Building project...", type: "info" }]);
+    setBuildOutputOpen(true); // auto-open build output when build starts
     setIsBuildRunning(true);
     setBuildErrors([]);
     setBuildWarnings([]);
@@ -2005,7 +2007,7 @@ function AIPageInner() {
               {/* Header */}
               <div style={{ marginBottom: "1.25rem", textAlign: "center" }}>
                 <h1 style={{ fontSize: "1.375rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>What will you build today?</h1>
-                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 0.75rem" }}>Describe your app — ZIVO generates the code instantly</p>
+                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 0.75rem" }}>Describe what to build — ZIVO AI generates the full code instantly</p>
                 <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
@@ -2316,7 +2318,7 @@ function AIPageInner() {
                       handleBuild();
                     }
                   }}
-                  placeholder="Describe the app you want to build... (e.g. A todo app with Supabase auth and dark mode)"
+                  placeholder="Build a complete e-commerce app with product listings, cart, and Stripe checkout…"
                   maxLength={2000}
                   style={{ width: "100%", minHeight: "100px", background: "transparent", border: "none", borderRadius: 0, padding: "0.875rem 0.875rem 0.25rem", resize: "none", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }}
                 />
@@ -2621,14 +2623,48 @@ function AIPageInner() {
                   <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{output.error}</>
                 </div>
               )}
-              {output?.summary && (
-                <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.8125rem", color: COLORS.textSecondary, animation: "fadeIn 0.3s ease" }}>
-                  <span style={{ color: COLORS.textPrimary, fontWeight: 600 }}>Summary:</span> {output.summary}
+              {/* ── Build Summary Card (Lovable-style) ── */}
+              {hasFiles && !loading && output?.summary && (
+                <div style={{ marginBottom: "0.875rem", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.4s ease" }}>
+                  {/* Header */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.625rem 0.875rem", borderBottom: "1px solid rgba(16,185,129,0.12)", background: "rgba(16,185,129,0.04)" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={COLORS.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: COLORS.success }}>Build complete</span>
+                    <div style={{ flex: 1 }} />
+                    <span style={{ fontSize: "0.65rem", padding: "1px 6px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", color: COLORS.success, fontWeight: 700 }}>
+                      {output.files?.length ?? 0} files
+                    </span>
+                  </div>
+                  {/* Summary text */}
+                  <div style={{ padding: "0.625rem 0.875rem", fontSize: "0.8125rem", color: COLORS.textSecondary, lineHeight: 1.55 }}>
+                    {output.summary}
+                  </div>
+                  {/* Stats row */}
+                  <div style={{ padding: "0 0.875rem 0.625rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {[
+                      { label: "Files", value: output.files?.length ?? 0, color: COLORS.accent },
+                      { label: "Routes", value: (() => { const routeFiles = output.files?.filter(f => f.path.includes("/app/") || f.path.includes("/pages/") || f.path.match(/page\.(tsx?|jsx?)$/)); return routeFiles?.length ?? 0; })(), color: "#8b5cf6" },
+                      { label: "Components", value: (() => { const comps = output.files?.filter(f => f.path.includes("/components/") || (f.path.match(/\.(tsx?)$/) && !f.path.includes("/api/") && !f.path.match(/page\.(tsx?|jsx?)$/))); return comps?.length ?? 0; })(), color: COLORS.warning },
+                    ].map(({ label, value, color }) => value > 0 && (
+                      <div key={label} style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem 0.6rem", background: "rgba(255,255,255,0.04)", border: `1px solid ${COLORS.border}`, borderRadius: "20px" }}>
+                        <span style={{ fontSize: "0.8rem", fontWeight: 700, color }}>{value}</span>
+                        <span style={{ fontSize: "0.7rem", color: COLORS.textMuted }}>{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* View in Files link */}
+                  <button
+                    className="zivo-btn"
+                    onClick={() => setActiveRightTab("files")}
+                    style={{ width: "100%", padding: "0.45rem", background: "transparent", border: "none", borderTop: "1px solid rgba(16,185,129,0.12)", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    <span>View in Files panel →</span>
+                  </button>
                 </div>
               )}
-
-              {/* File count hint (files are in the right panel) */}
-              {hasFiles && (
+              {/* File count hint (files are in the right panel) — shown only when no summary */}
+              {hasFiles && !loading && !output?.summary && (
                 <div style={{ marginBottom: "0.5rem", padding: "0.5rem 0.625rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: COLORS.textSecondary, animation: "fadeIn 0.3s ease" }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                   <span><strong style={{ color: COLORS.accent }}>{output?.files?.length ?? 0} files</strong> generated — view in the <strong style={{ color: COLORS.textPrimary }}>Files</strong> panel →</span>
@@ -2669,13 +2705,18 @@ function AIPageInner() {
               )}
               {/* Continue Building in left sidebar (code mode) */}
               {hasFiles && !loading && mode === "code" && (
-                <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ padding: "0.5rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
-                    <span style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Building</span>
-                    <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                <div style={{ marginBottom: "0.875rem", background: "rgba(99,102,241,0.05)", border: `1px solid rgba(99,102,241,0.18)`, borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  {/* Card header */}
+                  <div style={{ padding: "0.5rem 0.75rem 0.4rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <span style={{ fontSize: "0.7rem", color: COLORS.accent, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>Continue Building</span>
+                    {buildIterationCount > 0 && (
+                      <span style={{ marginLeft: "auto", fontSize: "0.65rem", padding: "1px 6px", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", color: COLORS.accent, fontWeight: 700 }}>
+                        iter. {buildIterationCount}
+                      </span>
+                    )}
                   </div>
-                  <div style={{ padding: "0.625rem" }}>
+                  <div style={{ padding: "0 0.625rem 0.625rem" }}>
                     <textarea
                       className="zivo-textarea"
                       value={continueInstruction}
@@ -2690,28 +2731,29 @@ function AIPageInner() {
                           }
                         }
                       }}
-                      placeholder="Describe what to add or change… (e.g. Add dark mode toggle)"
+                      placeholder="Add dark mode… Add auth with Supabase… Add a dashboard page…"
                       maxLength={1000}
-                      style={{ width: "100%", minHeight: "64px", resize: "none", background: "transparent", border: "none", color: COLORS.textPrimary, fontSize: "0.8125rem", lineHeight: 1.5, outline: "none", boxSizing: "border-box" }}
+                      style={{ width: "100%", minHeight: "56px", resize: "none", background: "rgba(255,255,255,0.03)", border: `1px solid rgba(99,102,241,0.15)`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", lineHeight: 1.5, outline: "none", boxSizing: "border-box", padding: "0.5rem 0.625rem", marginBottom: "0.4rem" }}
                     />
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: "0.25rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                       <span style={{ fontSize: "0.68rem", color: COLORS.textMuted }}>{continueInstruction.length}/1000</span>
+                      <div style={{ flex: 1 }} />
+                      <button
+                        className="zivo-btn"
+                        disabled={!continueInstruction.trim() || loading}
+                        onClick={() => {
+                          if (continueInstruction.trim()) {
+                            const instruction = continueInstruction;
+                            setContinueInstruction("");
+                            handleBuild(instruction);
+                          }
+                        }}
+                        style={{ padding: "0.35rem 0.875rem", background: continueInstruction.trim() ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: !continueInstruction.trim() || loading ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: !continueInstruction.trim() || loading ? 0.5 : 1 }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        Send
+                      </button>
                     </div>
-                    <button
-                      className="zivo-btn"
-                      disabled={!continueInstruction.trim() || loading}
-                      onClick={() => {
-                        if (continueInstruction.trim()) {
-                          const instruction = continueInstruction;
-                          setContinueInstruction("");
-                          handleBuild(instruction);
-                        }
-                      }}
-                      style={{ width: "100%", padding: "0.4rem 0.75rem", background: continueInstruction.trim() ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "8px", color: "#fff", cursor: !continueInstruction.trim() || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem", opacity: !continueInstruction.trim() || loading ? 0.5 : 1, marginTop: "0.25rem" }}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                      + Continue Build
-                    </button>
                   </div>
                 </div>
               )}
@@ -3128,10 +3170,10 @@ function AIPageInner() {
 
             {/* Bottom Actions — Code Builder only */}
             {mode === "code" && hasFiles && (
-              <div style={{ padding: "0.875rem 1.25rem", borderTop: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+              <div style={{ padding: "0.75rem 1rem", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
                 {/* Vercel token input (shown when deploy is clicked and no token exists) */}
                 {showVercelTokenInput && (
-                  <div style={{ marginBottom: "0.75rem", padding: "0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "8px", animation: "fadeIn 0.2s ease" }}>
+                  <div style={{ marginBottom: "0.625rem", padding: "0.625rem 0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "8px", animation: "fadeIn 0.2s ease" }}>
                     <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary, marginBottom: "0.4rem" }}>
                       Enter your{" "}
                       <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer" style={{ color: COLORS.accent }}>Vercel token</a>
@@ -3169,48 +3211,67 @@ function AIPageInner() {
                     </div>
                   </div>
                 )}
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button
-                  className="zivo-btn"
-                  onClick={handleDownload}
-                  style={{ flex: 1, padding: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                >
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> ZIP</>
-                </button>
-                <button
-                  className="zivo-btn"
-                  onClick={handleGithubPush}
-                  disabled={githubPushing}
-                  style={{ flex: 1, padding: "0.5rem", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "8px", color: COLORS.accent, cursor: githubPushing ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{display:"inline-block",flexShrink:0}}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                  {githubPushing ? "…" : "GitHub"}
-                </button>
-                <button
-                  className="zivo-btn"
-                  onClick={() => handleDeploy("vercel")}
-                  disabled={deploying}
-                  style={{ flex: 1, padding: "0.5rem", background: deploying ? "rgba(16,185,129,0.1)" : "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "8px", color: COLORS.success, cursor: deploying ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                >
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg> {deploying ? "…" : "Deploy"}</>
-                </button>
-                <button
-                  className="zivo-btn"
-                  onClick={() => {
-                    const all = output?.files?.map((f) => `// ${f.path}\n${f.content}`).join("\n\n---\n\n") ?? "";
-                    navigator.clipboard.writeText(all).then(() => {
-                      setCopyLabel("saved");
-                      setTimeout(() => setCopyLabel("save"), 2000);
-                    }).catch(() => {});
-                  }}
-                  style={{ flex: 1, padding: "0.5rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                >
-                  {copyLabel === "saved" ? (
-                    <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Saved!</>
-                  ) : (
-                    <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> Save</>
-                  )}
-                </button>
+                {/* Action row */}
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  {/* ZIP download */}
+                  <button
+                    className="zivo-btn"
+                    onClick={handleDownload}
+                    title="Download as ZIP"
+                    style={{ flex: 1, padding: "0.45rem 0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", transition: "border-color 0.15s" }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    <span>ZIP</span>
+                  </button>
+                  {/* GitHub push */}
+                  <button
+                    className="zivo-btn"
+                    onClick={handleGithubPush}
+                    disabled={githubPushing}
+                    title="Push to GitHub"
+                    style={{ flex: 1, padding: "0.45rem 0.5rem", background: githubPushing ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "8px", color: COLORS.accent, cursor: githubPushing ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem" }}
+                  >
+                    {githubPushing ? (
+                      <span style={{ display: "inline-block", width: "11px", height: "11px", border: "2px solid rgba(99,102,241,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    ) : (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                    )}
+                    <span>{githubPushing ? "Pushing…" : "GitHub"}</span>
+                  </button>
+                  {/* Deploy */}
+                  <button
+                    className="zivo-btn"
+                    onClick={() => handleDeploy("vercel")}
+                    disabled={deploying}
+                    title="Deploy to Vercel"
+                    style={{ flex: 1, padding: "0.45rem 0.5rem", background: deploying ? "rgba(16,185,129,0.06)" : "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.28)", borderRadius: "8px", color: COLORS.success, cursor: deploying ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem" }}
+                  >
+                    {deploying ? (
+                      <span style={{ display: "inline-block", width: "11px", height: "11px", border: "2px solid rgba(16,185,129,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    ) : (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                    )}
+                    <span>{deploying ? "Deploying…" : "Deploy"}</span>
+                  </button>
+                  {/* Save / copy all */}
+                  <button
+                    className="zivo-btn"
+                    onClick={() => {
+                      const all = output?.files?.map((f) => `// ${f.path}\n${f.content}`).join("\n\n---\n\n") ?? "";
+                      navigator.clipboard.writeText(all).then(() => {
+                        setCopyLabel("saved");
+                        setTimeout(() => setCopyLabel("save"), 2000);
+                      }).catch(() => {});
+                    }}
+                    title="Copy all files to clipboard"
+                    style={{ flex: 1, padding: "0.45rem 0.5rem", background: copyLabel === "saved" ? "rgba(16,185,129,0.12)" : "transparent", border: `1px solid ${copyLabel === "saved" ? "rgba(16,185,129,0.3)" : COLORS.border}`, borderRadius: "8px", color: copyLabel === "saved" ? COLORS.success : COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", transition: "background 0.2s, border-color 0.2s, color 0.2s" }}
+                  >
+                    {copyLabel === "saved" ? (
+                      <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>Saved!</span></>
+                    ) : (
+                      <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg><span>Save</span></>
+                    )}
+                  </button>
                 </div>
               </div>
             )}
@@ -3247,23 +3308,23 @@ function AIPageInner() {
 
             {/* Preview Toolbar — Code Builder mode only */}
             {mode === "code" && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
               {/* Tabs */}
-              <div style={{ display: "flex", gap: "2px", marginRight: "0.5rem" }}>
+              <div style={{ display: "flex", gap: "1px", background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "3px" }}>
                 {(["preview", "code", "console"] as const).map((tab) => (
                   <button
                     key={tab}
                     className="zivo-tab"
                     onClick={() => setActiveTab(tab)}
-                    style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeTab === tab ? "rgba(99,102,241,0.15)" : "transparent", color: activeTab === tab ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s" }}
+                    style={{ padding: "0.25rem 0.7rem", borderRadius: "6px", border: "none", background: activeTab === tab ? COLORS.bgPanel : "transparent", color: activeTab === tab ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", fontWeight: activeTab === tab ? 600 : 400, transition: "color 0.15s, background 0.15s", boxShadow: activeTab === tab ? `0 0 0 1px ${COLORS.border}` : "none" }}
                   >
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {tab === "preview" && <span style={{ marginRight: "0.25rem" }}>◻</span>}{tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
                 <button
                   className="zivo-tab"
                   onClick={() => setActiveTab("design")}
-                  style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeTab === "design" ? "rgba(99,102,241,0.15)" : "transparent", color: activeTab === "design" ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, transition: "color 0.15s" }}
+                  style={{ padding: "0.25rem 0.7rem", borderRadius: "6px", border: "none", background: activeTab === "design" ? COLORS.bgPanel : "transparent", color: activeTab === "design" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", fontWeight: activeTab === "design" ? 600 : 400, transition: "color 0.15s, background 0.15s", boxShadow: activeTab === "design" ? `0 0 0 1px ${COLORS.border}` : "none" }}
                 >
                   Design
                 </button>
@@ -3271,7 +3332,7 @@ function AIPageInner() {
                   <button
                     className="zivo-tab"
                     onClick={() => setActiveTab("diff")}
-                    style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeTab === "diff" ? "rgba(99,102,241,0.15)" : "transparent", color: activeTab === "diff" ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, transition: "color 0.15s" }}
+                    style={{ padding: "0.25rem 0.7rem", borderRadius: "6px", border: "none", background: activeTab === "diff" ? COLORS.bgPanel : "transparent", color: activeTab === "diff" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", fontWeight: activeTab === "diff" ? 600 : 400, transition: "color 0.15s, background 0.15s", boxShadow: activeTab === "diff" ? `0 0 0 1px ${COLORS.border}` : "none" }}
                   >
                     Diff
                   </button>
@@ -3279,17 +3340,17 @@ function AIPageInner() {
               </div>
 
               {/* URL bar */}
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.2rem 0.65rem", maxWidth: "260px", marginLeft: "0.25rem" }}>
                 {loading ? (
-                  <span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid rgba(99,102,241,0.3)", borderTop: `2px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                  <span style={{ display: "inline-block", width: "9px", height: "9px", border: "2px solid rgba(99,102,241,0.3)", borderTop: `2px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
                 ) : (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:output?.preview_html ? COLORS.success : COLORS.textMuted,flexShrink:0}}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: output?.preview_html ? COLORS.success : COLORS.textMuted, flexShrink: 0 }}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 )}
-                <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {loading ? "Building…" : output?.preview_html ? "localhost:3000" : "No preview"}
                 </span>
                 {output?.preview_html && !loading && (
-                  <span style={{ fontSize: "0.65rem", padding: "1px 5px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "4px", color: COLORS.success, fontWeight: 600, flexShrink: 0 }}>Live</span>
+                  <span style={{ fontSize: "0.6rem", padding: "1px 5px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "4px", color: COLORS.success, fontWeight: 700, flexShrink: 0 }}>Live</span>
                 )}
               </div>
 
@@ -3384,13 +3445,59 @@ function AIPageInner() {
 
             {/* Build progress indicator — shown during loading and briefly after completion */}
             {(loading || (buildIterationCount > 0 && !loading && mode === "code")) && (
-              <div style={{ padding: "0.5rem 1rem", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+              <div style={{ padding: "0.4rem 1rem", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
                 <BuildProgressIndicator stages={buildStages} currentStage={currentBuildStage} />
               </div>
             )}
             {loading && (
-              <div style={{ height: "3px", background: COLORS.bgCard, flexShrink: 0 }}>
+              <div style={{ height: "2px", background: COLORS.bgCard, flexShrink: 0 }}>
                 <div style={{ height: "100%", background: COLORS.accentGradient, width: loadingStep === 0 ? "20%" : loadingStep === 1 ? "45%" : loadingStep === 2 ? "75%" : "95%", transition: "width 0.8s ease" }} />
+              </div>
+            )}
+
+            {/* ── Collapsible Build Output Bar ── */}
+            {mode === "code" && (loading || consoleLogs.length > 0) && (
+              <div style={{ flexShrink: 0, borderBottom: `1px solid ${COLORS.border}` }}>
+                {/* Header / toggle */}
+                <button
+                  className="zivo-btn"
+                  onClick={() => setBuildOutputOpen((o) => !o)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 1rem", background: COLORS.bgPanel, border: "none", borderBottom: buildOutputOpen ? `1px solid ${COLORS.border}` : "none", cursor: "pointer", textAlign: "left" }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={COLORS.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: buildOutputOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="9 18 15 12 9 6"/></svg>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textSecondary, letterSpacing: "0.04em", textTransform: "uppercase" }}>Build Output</span>
+                  <div style={{ flex: 1 }} />
+                  {loading ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "1px 7px", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.warning }}>
+                      <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: COLORS.warning, animation: "statusBlink 1.2s infinite" }} />
+                      Running…
+                    </span>
+                  ) : consoleLogs.some((l) => l.type === "error") ? (
+                    <span style={{ padding: "1px 7px", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.error }}>
+                      Errors
+                    </span>
+                  ) : buildIterationCount > 0 ? (
+                    <span style={{ padding: "1px 7px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.success }}>
+                      Pass {buildIterationCount}/{buildIterationCount}
+                    </span>
+                  ) : null}
+                </button>
+                {/* Scrollable log area */}
+                {buildOutputOpen && (
+                  <div style={{ maxHeight: "140px", overflowY: "auto", background: "#000", padding: "0.5rem 1rem" }}>
+                    <div style={{ fontFamily: "'Fira Code', 'SF Mono', monospace", fontSize: "0.75rem", lineHeight: 1.7 }}>
+                      {consoleLogs.slice(-60).map((log, i) => (
+                        <div key={i} style={{ color: log.type === "error" ? COLORS.error : log.type === "success" ? COLORS.success : "#4ade80" }}>
+                          {log.text}
+                        </div>
+                      ))}
+                      {loading && (
+                        <span style={{ display: "inline-block", width: "7px", height: "1em", background: "#4ade80", verticalAlign: "middle", animation: "cursorBlink 1s step-end infinite" }} />
+                      )}
+                      <div ref={consoleEndRef} />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -3400,19 +3507,26 @@ function AIPageInner() {
 
               {/* Empty State */}
               {!loading && !output && (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", animation: "fadeIn 0.5s ease", padding: "2rem", textAlign: "center" }}>
-                  <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></div>
-                  <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.5rem", color: COLORS.textPrimary }}>Your app will appear here</h2>
-                    <p style={{ fontSize: "0.875rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app on the left and click Build to get started</p>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.25rem", animation: "fadeIn 0.5s ease", padding: "2rem", textAlign: "center" }}>
+                  {/* Logo badge */}
+                  <div style={{ position: "relative" }}>
+                    <div style={{ width: "72px", height: "72px", borderRadius: "18px", background: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15))", border: "1px solid rgba(99,102,241,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <div style={{ width: "38px", height: "38px", background: COLORS.accentGradient, borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 900, color: "#fff", letterSpacing: "-0.03em" }}>Z</div>
+                    </div>
+                    {/* Glow ring */}
+                    <div style={{ position: "absolute", inset: "-4px", borderRadius: "22px", border: "1px solid rgba(99,102,241,0.15)", pointerEvents: "none" }} />
                   </div>
-                  <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", justifyContent: "center" }}>
+                  <div>
+                    <h2 style={{ fontSize: "1.375rem", fontWeight: 700, margin: "0 0 0.5rem", color: COLORS.textPrimary, letterSpacing: "-0.02em" }}>Your app preview lives here</h2>
+                    <p style={{ fontSize: "0.875rem", color: COLORS.textSecondary, margin: 0, lineHeight: 1.6 }}>Describe what you want to build →<br />ZIVO AI generates the full app instantly</p>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", justifyContent: "center" }}>
                     {[
                       { key: "preview", label: "Instant Preview", icon: <InstantPreviewIcon /> },
                       { key: "ai", label: "AI-Powered", icon: <AiPoweredIcon /> },
                       { key: "edit", label: "Fully Editable", icon: <EditableIcon /> },
                     ].map((chip) => (
-                      <span key={chip.key} style={{ padding: "0.35rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", fontSize: "0.8125rem", color: COLORS.textSecondary, display:"inline-flex", alignItems:"center", gap:"0.35rem" }}>{chip.icon}{chip.label}</span>
+                      <span key={chip.key} style={{ padding: "0.35rem 0.875rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: "20px", fontSize: "0.8125rem", color: COLORS.textSecondary, display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>{chip.icon}{chip.label}</span>
                     ))}
                   </div>
                 </div>
