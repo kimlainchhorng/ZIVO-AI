@@ -24,6 +24,7 @@ import AccessibilityScanner from "@/components/AccessibilityScanner";
 import PerformanceAnalyzer from "@/components/PerformanceAnalyzer";
 import DocGenerator from "@/components/DocGenerator";
 import AgentOrchestrator from "@/components/AgentOrchestrator";
+import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
 
 interface SecurityIssue {
@@ -307,12 +308,16 @@ function AIPageInner() {
     }
   }, []);
 
-  // Ctrl+K / Cmd+K command palette
+  // Ctrl+K / Cmd+K command palette; Ctrl+T / Cmd+T create page
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
         setCommandPaletteOpen((o) => !o);
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "t") {
+        e.preventDefault();
+        setCreatePageModalOpen((o) => !o);
       }
     }
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -384,6 +389,11 @@ function AIPageInner() {
   // Full App Modal
   const [fullAppModalOpen, setFullAppModalOpen] = useState(false);
   const [fullAppLoading, setFullAppLoading] = useState(false);
+  // Create Page Modal
+  const [createPageModalOpen, setCreatePageModalOpen] = useState(false);
+  const [createPageName, setCreatePageName] = useState("");
+  const [createPageRoute, setCreatePageRoute] = useState("");
+  const [createPageDescription, setCreatePageDescription] = useState("");
   // Abort controller for streaming build
   const abortControllerRef = useRef<AbortController | null>(null);
   // File search (Upgrade 14b)
@@ -1618,6 +1628,16 @@ function AIPageInner() {
                   </button>
                 ))}
               </div>
+
+              {/* Template Selector — shown when prompt is empty */}
+              {!prompt.trim() && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <TemplateSelector
+                    onSelect={(p) => setPrompt(p)}
+                    onSubmit={(p) => { setPrompt(p); handleBuild(p); }}
+                  />
+                </div>
+              )}
 
               {/* Plan Panel */}
               {planOpen && (
@@ -3226,6 +3246,149 @@ function AIPageInner() {
           onConfirm={handleFullAppBuild}
           isLoading={fullAppLoading}
         />
+      )}
+
+      {/* Create Page FAB */}
+      <button
+        onClick={() => setCreatePageModalOpen(true)}
+        title="Create Page (Ctrl+T)"
+        style={{
+          position: "fixed",
+          bottom: "2rem",
+          right: "2rem",
+          width: "48px",
+          height: "48px",
+          borderRadius: "50%",
+          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+          border: "none",
+          color: "#fff",
+          fontSize: "1.25rem",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 4px 20px rgba(99,102,241,0.5)",
+          zIndex: 900,
+          transition: "transform 0.15s, box-shadow 0.15s",
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.transform = "scale(1.1)";
+          (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 6px 28px rgba(99,102,241,0.65)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)";
+          (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 4px 20px rgba(99,102,241,0.5)";
+        }}
+      >
+        +
+      </button>
+
+      {/* Create Page Modal */}
+      {createPageModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "1rem",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setCreatePageModalOpen(false); }}
+        >
+          <div
+            style={{
+              background: "#0f1120",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 14,
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: 440,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+              <span style={{ fontSize: "1rem", fontWeight: 700, color: "#f1f5f9" }}>📄 Create Page</span>
+              <button
+                onClick={() => setCreatePageModalOpen(false)}
+                style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.1rem", padding: "0 0.25rem" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Page Name</span>
+                <input
+                  type="text"
+                  value={createPageName}
+                  onChange={(e) => setCreatePageName(e.target.value)}
+                  placeholder="e.g. Settings, Profile, Pricing"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.6rem 0.75rem", color: "#f1f5f9", fontSize: "0.875rem", outline: "none", width: "100%", boxSizing: "border-box" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Route</span>
+                <input
+                  type="text"
+                  value={createPageRoute}
+                  onChange={(e) => setCreatePageRoute(e.target.value)}
+                  placeholder="e.g. /settings, /profile"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.6rem 0.75rem", color: "#f1f5f9", fontSize: "0.875rem", fontFamily: "monospace", outline: "none", width: "100%", boxSizing: "border-box" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Description</span>
+                <textarea
+                  value={createPageDescription}
+                  onChange={(e) => setCreatePageDescription(e.target.value)}
+                  placeholder="Describe what this page should do and look like…"
+                  rows={3}
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.6rem 0.75rem", color: "#f1f5f9", fontSize: "0.875rem", outline: "none", width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }}
+                />
+              </label>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.25rem" }}>
+              <button
+                onClick={() => setCreatePageModalOpen(false)}
+                style={{ flex: 1, padding: "0.6rem", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#94a3b8", fontSize: "0.875rem", cursor: "pointer", fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={!createPageName.trim()}
+                onClick={() => {
+                  const pagePrompt = `Generate a ${createPageName} page${createPageRoute ? ` at route ${createPageRoute}` : ""}. ${createPageDescription || "Make it look polished and consistent with the rest of the app."}`;
+                  setPrompt(pagePrompt);
+                  setCreatePageModalOpen(false);
+                  setCreatePageName("");
+                  setCreatePageRoute("");
+                  setCreatePageDescription("");
+                  handleBuild(pagePrompt);
+                }}
+                style={{
+                  flex: 2,
+                  padding: "0.6rem",
+                  background: !createPageName.trim() ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                  border: "none",
+                  borderRadius: 8,
+                  color: "#fff",
+                  fontSize: "0.875rem",
+                  cursor: !createPageName.trim() ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                Generate Page ▶
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
