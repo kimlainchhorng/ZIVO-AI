@@ -128,8 +128,17 @@ const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 // Mobile phone frame dimensions for preview
 const MOBILE_FRAME_WIDTH = 375;
 const MOBILE_FRAME_HEIGHT = 812;
-// Fake build-stage progress delays (ms) — one per stage transition
-const BUILD_STAGE_DELAYS = [2500, 5000, 8000, 13000, 18000, 23000, 28000] as const;
+
+// Map SSE stage names (from /api/build) to buildStages array indices:
+// buildStages: [prompt(0), parse(1), blueprint(2), generate(3), validate(4), fix(5), preview(6), deploy(7)]
+const SSE_STAGE_TO_BUILD_INDEX: Readonly<Record<string, number>> = {
+  BLUEPRINT: 2,
+  MANIFEST: 3,
+  GENERATE: 3,
+  VALIDATE: 4,
+  FIX: 5,
+  DONE: 6,
+};
 
 function getSpeechRecognitionAPI(): typeof SpeechRecognition | null {
   if (typeof window === "undefined") return null;
@@ -450,18 +459,9 @@ function AIPageInner() {
     const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
     const stepTimer3 = setTimeout(() => setLoadingStep(3), LOADING_STEP3_DELAY);
 
-    // Fake build progress: advance stages every ~3s while loading
+    // Initialise first stage as active
     setBuildStages((prev) => prev.map((s, i) => ({ ...s, status: i === 0 ? "active" : "pending" })));
     setCurrentBuildStage(0);
-    const stageTimers = BUILD_STAGE_DELAYS.map((delay, idx) =>
-      setTimeout(() => {
-        setBuildStages((prev) => prev.map((s, i) => ({
-          ...s,
-          status: i < idx + 1 ? "done" : i === idx + 1 ? "active" : "pending",
-        })));
-        setCurrentBuildStage(idx + 1);
-      }, delay)
-    );
 
     // Create abort controller for this build, cancel any previous
     if (abortControllerRef.current) {
@@ -473,8 +473,12 @@ function AIPageInner() {
     // Build conversation context for iterative builds
     const buildContext = isIteration ? conversationHistory : [];
 
+    // Collected files from SSE stream
+    let collectedFiles: GeneratedFile[] = [];
+    let buildSummary = "";
+
     try {
-      const res = await fetch("/api/generate-site", {
+      const res = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -487,19 +491,87 @@ function AIPageInner() {
         }),
         signal: controller.signal,
       });
-      const data: GenerateSiteResponse = await res.json();
+
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; details?: unknown };
+          try {
+            evt = JSON.parse(raw) as typeof evt;
+          } catch {
+            continue;
+          }
+
+          if (evt.type === "stage" && evt.stage) {
+            const stageIdx = SSE_STAGE_TO_BUILD_INDEX[evt.stage] ?? -1;
+            if (stageIdx >= 0) {
+              setBuildStages((prev) =>
+                prev.map((s, i) => ({
+                  ...s,
+                  status:
+                    i < stageIdx ? "done" : i === stageIdx ? "active" : "pending",
+                }))
+              );
+              setCurrentBuildStage(stageIdx);
+            }
+            if (evt.message) {
+              setConsoleLogs((prev) => [...prev, { text: `> [${evt.stage}] ${evt.message}`, type: "info" }]);
+            }
+            if (evt.stage === "DONE") {
+              buildSummary = evt.message ?? buildSummary;
+            }
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files as GeneratedFile[];
+            // Show files incrementally
+            if (collectedFiles.length > 0 && !activeFile) {
+              setActiveFile(collectedFiles[0]);
+              setActiveRightTab("files");
+            }
+            setOutput((prev) => ({ ...(prev ?? {}), files: collectedFiles }));
+          } else if (evt.type === "error") {
+            const errMsg = String(evt.message ?? "Build error");
+            setConsoleLogs((prev) => [...prev, { text: `> ❌ ${errMsg}`, type: "error" }]);
+            setOutput({ error: errMsg });
+          }
+        }
+      }
+
+      // Process collected files
+      const data: GenerateSiteResponse = {
+        files: collectedFiles,
+        summary: buildSummary || `Generated ${collectedFiles.length} files.`,
+      };
       setOutput(data);
-      if (data.files?.length) {
-        setActiveFile(data.files[0]);
+
+      if (collectedFiles.length > 0) {
+        setActiveFile(collectedFiles[0]);
         // Build a lookup map for O(1) access to existing file content
         const existingFileMap = new Map(
           (existingFilesForBuild ?? []).map((ef) => [ef.path, ef.content])
         );
-        setDiffFiles(data.files.map((f) => ({ path: f.path, oldContent: existingFileMap.get(f.path) ?? "", newContent: f.content })));
+        setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: existingFileMap.get(f.path) ?? "", newContent: f.content })));
         setShowDiff(true);
         setActiveRightTab("files");
       }
-      if (data.preview_html) setActiveTab("preview");
+
       const duration = Date.now() - buildStart;
       setBuildTime(`${(duration / 1000).toFixed(1)}s`);
 
@@ -514,12 +586,7 @@ function AIPageInner() {
         { role: "assistant", content: data.summary ?? `Generated ${data.files?.length ?? 0} files.` },
       ];
       setConversationHistory(newHistory);
-      // Use iterationCount from server response if available, otherwise increment locally
-      if (typeof data.iterationCount === "number") {
-        setBuildIterationCount(data.iterationCount);
-      } else {
-        setBuildIterationCount((n) => n + 1);
-      }
+      setBuildIterationCount((n) => n + 1);
 
       // Save to build history
       addHistoryEntry({
@@ -536,7 +603,7 @@ function AIPageInner() {
         { text: `> Build complete in ${duration}ms ✓`, type: "success" },
       ]);
 
-      // Save project memory after successful build (Upgrade 11)
+      // Save project memory after successful build
       if (data.files?.length) {
         const pages = data.files
           .filter((f) => f.path.endsWith("page.tsx") || f.path.endsWith("page.ts"))
@@ -556,7 +623,7 @@ function AIPageInner() {
         try { localStorage.setItem("zivo_project_memory", JSON.stringify(updatedMemory)); } catch { /* ignore */ }
       }
 
-      // Auto-fix errors loop (Upgrade 9) — validate generated files and fix any errors
+      // Auto-fix errors loop — validate generated files and fix any errors
       if (data.files?.length) {
         const { validateFiles } = await import("@/agents/validator");
         const validationResult = validateFiles(data.files.map((f) => ({ path: f.path, content: f.content })));
@@ -605,7 +672,6 @@ function AIPageInner() {
     clearTimeout(stepTimer1);
     clearTimeout(stepTimer2);
     clearTimeout(stepTimer3);
-    stageTimers.forEach(clearTimeout);
     setLoading(false);
     setLoadingStep(0);
     setIsBuildRunning(false);
