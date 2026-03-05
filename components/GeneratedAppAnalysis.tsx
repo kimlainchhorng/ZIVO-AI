@@ -227,7 +227,7 @@ export default function GeneratedAppAnalysis({ files }: GeneratedAppAnalysisProp
                   maxHeight: showFullHomepage ? '400px' : '140px',
                   overflowY: 'auto',
                   whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-all',
+                  wordBreak: 'break-word',
                   transition: 'max-height 0.3s ease',
                 }}
               >

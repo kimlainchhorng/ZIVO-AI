@@ -1337,6 +1337,7 @@ function AIPageInner() {
   }
 
   async function handleShare() {
+    if (!savedProjectId || !supabaseToken) return;
     setSharing(true);
     try {
       const res = await fetch(`/api/projects/${savedProjectId}`, {
