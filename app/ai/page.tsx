@@ -377,7 +377,11 @@ function AIPageInner() {
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const [buildIteration, setBuildIteration] = useState(0);
   const [isBuildRunning, setIsBuildRunning] = useState(false);
-  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows" | "generate" | "blueprint">("prompt");
+  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows" | "generate" | "blueprint" | "projects">("prompt");
+  // Supabase-persisted project ID (set after a successful build when user is authenticated)
+  const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
+  // Instruction input for continuing an existing project build
+  const [continueInstruction, setContinueInstruction] = useState("");
   const [activeRightTab, setActiveRightTab] = useState<"files" | "code" | "diff">("files");
   const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
   const [showDiff, setShowDiff] = useState(false);
@@ -521,7 +525,7 @@ function AIPageInner() {
           const raw = line.slice(6).trim();
           if (!raw || raw === "[DONE]") continue;
 
-          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; details?: unknown };
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; details?: unknown; data?: Record<string, unknown> };
           try {
             evt = JSON.parse(raw) as typeof evt;
           } catch {
@@ -545,6 +549,10 @@ function AIPageInner() {
             }
             if (evt.stage === "DONE") {
               buildSummary = evt.message ?? buildSummary;
+              // Capture persisted projectId returned from the server when authenticated
+              if (evt.data?.projectId && typeof evt.data.projectId === "string") {
+                setSavedProjectId(evt.data.projectId);
+              }
             }
           } else if (evt.type === "files" && Array.isArray(evt.files)) {
             collectedFiles = evt.files as GeneratedFile[];
@@ -696,6 +704,8 @@ function AIPageInner() {
       localStorage.setItem("zivo_project_id", newId);
     } catch { /* ignore */ }
     setProjectId(newId);
+    setSavedProjectId(null);
+    setContinueInstruction("");
     // Reset all build state
     setOutput(null);
     setActiveFile(null);
@@ -706,12 +716,6 @@ function AIPageInner() {
     setPlan(null);
     setPlanData(null);
     setConsoleLogs([{ text: "> 🆕 New project started.", type: "info" }]);
-    // Create a fresh project entry in server-side memory
-    fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "create", projectId: newId, prompt: "" }),
-    }).catch((err) => console.error("[ZIVO] Failed to reset server-side project memory:", err));
   }
 
   async function handlePlan() {
@@ -1486,7 +1490,7 @@ function AIPageInner() {
                 <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
-              {/* Prompt / Plan / Templates / Workflows / Generate / Blueprint Tabs */}
+              {/* Prompt / Plan / Templates / Workflows / Generate / Blueprint / Projects Tabs */}
               <div style={{ display: "flex", gap: "4px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px" }}>
                 {([
                   ["prompt", "Prompt"],
@@ -1495,6 +1499,7 @@ function AIPageInner() {
                   ["workflows", "Workflows"],
                   ["generate", "Generate"],
                   ["blueprint", "Blueprint"],
+                  ["projects", "Projects"],
                 ] as const).map(([tab, label]) => (
                   <button
                     key={tab}
@@ -1702,6 +1707,36 @@ function AIPageInner() {
                 <div style={{ animation: "fadeIn 0.3s ease" }}>
                   <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>App Blueprint</div>
                   <BlueprintPanel prompt={prompt} />
+                </div>
+              )}
+
+              {/* Projects Tab — My Saved Projects */}
+              {activeLeftTab === "projects" && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>My Projects</div>
+                  {savedProjectId ? (
+                    <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", padding: "0.875rem", marginBottom: "0.875rem" }}>
+                      <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, marginBottom: "0.35rem" }}>Current Project (saved)</div>
+                      <div style={{ fontSize: "0.8125rem", color: COLORS.accent, fontFamily: "monospace", wordBreak: "break-all", marginBottom: "0.5rem" }}>{savedProjectId}</div>
+                      <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>
+                        This project is persisted in Supabase. Use the <strong style={{ color: COLORS.textPrimary }}>Continue Building</strong> input below the output to add features.
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "1rem", marginBottom: "0.875rem", textAlign: "center" }}>
+                      <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, marginBottom: "0.35rem" }}>No active saved project</div>
+                      <div style={{ fontSize: "0.75rem", color: COLORS.textMuted }}>Build a project while authenticated to save it here.</div>
+                    </div>
+                  )}
+                  <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "1rem" }}>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textPrimary, marginBottom: "0.35rem" }}>How It Works</div>
+                    <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.8 }}>
+                      <li>Sign in with Supabase to enable project persistence.</li>
+                      <li>After each build, your project files are saved automatically.</li>
+                      <li>Use <strong style={{ color: COLORS.textPrimary }}>Continue Building</strong> to patch the project iteratively.</li>
+                      <li>All projects default to <strong style={{ color: COLORS.textPrimary }}>public</strong> visibility.</li>
+                    </ul>
+                  </div>
                 </div>
               )}
 
@@ -2035,6 +2070,62 @@ function AIPageInner() {
                 <div style={{ marginBottom: "0.5rem", padding: "0.5rem 0.625rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: COLORS.textSecondary, animation: "fadeIn 0.3s ease" }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                   <span><strong style={{ color: COLORS.accent }}>{output?.files?.length ?? 0} files</strong> generated — view in the <strong style={{ color: COLORS.textPrimary }}>Files</strong> panel →</span>
+                </div>
+              )}
+
+              {/* ── Saved Project ID badge ── */}
+              {savedProjectId && !loading && (
+                <div style={{ marginBottom: "0.75rem", padding: "0.625rem 0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "8px", animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.25rem" }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.success }}>Project saved</span>
+                  </div>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedProjectId}</div>
+                </div>
+              )}
+
+              {/* ── Continue Building input ── */}
+              {hasFiles && !loading && (
+                <div style={{ marginBottom: "0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ padding: "0.5rem 0.75rem 0.25rem", fontSize: "0.7rem", color: COLORS.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    Continue Building
+                  </div>
+                  <textarea
+                    className="zivo-textarea"
+                    value={continueInstruction}
+                    onChange={(e) => setContinueInstruction(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                        e.preventDefault();
+                        if (continueInstruction.trim()) {
+                          setPrompt(continueInstruction);
+                          setContinueInstruction("");
+                          handleBuild(continueInstruction);
+                        }
+                      }
+                    }}
+                    placeholder="Describe what to add or change… (e.g. Add dark mode toggle)"
+                    maxLength={1000}
+                    rows={2}
+                    style={{ width: "100%", background: "transparent", border: "none", padding: "0.5rem 0.75rem", resize: "none", color: COLORS.textPrimary, fontSize: "0.8125rem", lineHeight: 1.5, outline: "none", boxSizing: "border-box" }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", padding: "0.35rem 0.625rem 0.5rem", borderTop: `1px solid ${COLORS.border}` }}>
+                    <button
+                      className="zivo-btn"
+                      disabled={!continueInstruction.trim() || loading}
+                      onClick={() => {
+                        if (continueInstruction.trim()) {
+                          setPrompt(continueInstruction);
+                          setContinueInstruction("");
+                          handleBuild(continueInstruction);
+                        }
+                      }}
+                      style={{ padding: "0.3rem 0.85rem", background: continueInstruction.trim() && !loading ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: !continueInstruction.trim() || loading ? "not-allowed" : "pointer", fontSize: "0.75rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: !continueInstruction.trim() || loading ? 0.5 : 1 }}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                      Continue Build
+                    </button>
+                  </div>
                 </div>
               )}
               </>)}
