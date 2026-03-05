@@ -2624,7 +2624,11 @@ function AIPageInner() {
                 </div>
               )}
               {/* ── Build Summary Card (Lovable-style) ── */}
-              {hasFiles && !loading && output?.summary && (
+              {hasFiles && !loading && output?.summary && (() => {
+                const buildFiles = output?.files ?? [];
+                const routeCount = buildFiles.filter(f => f.path.includes("/app/") || f.path.includes("/pages/") || f.path.match(/page\.(tsx?|jsx?)$/)).length;
+                const componentCount = buildFiles.filter(f => f.path.includes("/components/") || (f.path.match(/\.(tsx?)$/) && !f.path.includes("/api/") && !f.path.match(/page\.(tsx?|jsx?)$/))).length;
+                return (
                 <div style={{ marginBottom: "0.875rem", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.4s ease" }}>
                   {/* Header */}
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.625rem 0.875rem", borderBottom: "1px solid rgba(16,185,129,0.12)", background: "rgba(16,185,129,0.04)" }}>
@@ -2632,7 +2636,7 @@ function AIPageInner() {
                     <span style={{ fontSize: "0.75rem", fontWeight: 700, color: COLORS.success }}>Build complete</span>
                     <div style={{ flex: 1 }} />
                     <span style={{ fontSize: "0.65rem", padding: "1px 6px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", color: COLORS.success, fontWeight: 700 }}>
-                      {output.files?.length ?? 0} files
+                      {buildFiles.length} files
                     </span>
                   </div>
                   {/* Summary text */}
@@ -2642,9 +2646,9 @@ function AIPageInner() {
                   {/* Stats row */}
                   <div style={{ padding: "0 0.875rem 0.625rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                     {[
-                      { label: "Files", value: output.files?.length ?? 0, color: COLORS.accent },
-                      { label: "Routes", value: (() => { const routeFiles = output.files?.filter(f => f.path.includes("/app/") || f.path.includes("/pages/") || f.path.match(/page\.(tsx?|jsx?)$/)); return routeFiles?.length ?? 0; })(), color: "#8b5cf6" },
-                      { label: "Components", value: (() => { const comps = output.files?.filter(f => f.path.includes("/components/") || (f.path.match(/\.(tsx?)$/) && !f.path.includes("/api/") && !f.path.match(/page\.(tsx?|jsx?)$/))); return comps?.length ?? 0; })(), color: COLORS.warning },
+                      { label: "Files", value: buildFiles.length, color: COLORS.accent },
+                      { label: "Routes", value: routeCount, color: "#8b5cf6" },
+                      { label: "Components", value: componentCount, color: COLORS.warning },
                     ].map(({ label, value, color }) => value > 0 && (
                       <div key={label} style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem 0.6rem", background: "rgba(255,255,255,0.04)", border: `1px solid ${COLORS.border}`, borderRadius: "20px" }}>
                         <span style={{ fontSize: "0.8rem", fontWeight: 700, color }}>{value}</span>
@@ -2662,7 +2666,8 @@ function AIPageInner() {
                     <span>View in Files panel →</span>
                   </button>
                 </div>
-              )}
+                );
+              })()}
               {/* File count hint (files are in the right panel) — shown only when no summary */}
               {hasFiles && !loading && !output?.summary && (
                 <div style={{ marginBottom: "0.5rem", padding: "0.5rem 0.625rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: COLORS.textSecondary, animation: "fadeIn 0.3s ease" }}>
@@ -3318,7 +3323,7 @@ function AIPageInner() {
                     onClick={() => setActiveTab(tab)}
                     style={{ padding: "0.25rem 0.7rem", borderRadius: "6px", border: "none", background: activeTab === tab ? COLORS.bgPanel : "transparent", color: activeTab === tab ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", fontWeight: activeTab === tab ? 600 : 400, transition: "color 0.15s, background 0.15s", boxShadow: activeTab === tab ? `0 0 0 1px ${COLORS.border}` : "none" }}
                   >
-                    {tab === "preview" && <span style={{ marginRight: "0.25rem" }}>◻</span>}{tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {tab === "preview" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: "0.25rem", verticalAlign: "middle" }}><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>}{tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
                 <button
@@ -3478,7 +3483,7 @@ function AIPageInner() {
                     </span>
                   ) : buildIterationCount > 0 ? (
                     <span style={{ padding: "1px 7px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.success }}>
-                      Pass {buildIterationCount}/{buildIterationCount}
+                      Pass {buildIterationCount} ✓
                     </span>
                   ) : null}
                 </button>
