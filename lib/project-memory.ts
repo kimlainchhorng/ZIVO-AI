@@ -111,3 +111,101 @@ export class ProjectMemory {
 
 /** Default shared ProjectMemory instance. */
 export const projectMemory = new ProjectMemory();
+
+// ── Lightweight global context store (cross-prompt project settings) ──────────
+
+export interface ProjectContext {
+  framework: string;
+  uiLibrary: string;
+  database: string;
+  theme: string;
+  pages: string[];
+  components: string[];
+  colorPrimary: string;
+  lastPrompt: string;
+  updatedAt: number;
+}
+
+const DEFAULT_CONTEXT: ProjectContext = {
+  framework: "Next.js",
+  uiLibrary: "shadcn/ui",
+  database: "Supabase",
+  theme: "dark",
+  pages: [],
+  components: [],
+  colorPrimary: "#6366f1",
+  lastPrompt: "",
+  updatedAt: 0,
+};
+
+// Server-side in-memory store
+let _serverContext: ProjectContext = { ...DEFAULT_CONTEXT };
+
+function _isClient(): boolean {
+  return typeof window !== "undefined";
+}
+
+function _loadFromStorage(): ProjectContext {
+  if (!_isClient()) return _serverContext;
+  try {
+    const raw = window.localStorage.getItem("zivo_project_context");
+    if (!raw) return { ...DEFAULT_CONTEXT };
+    return JSON.parse(raw) as ProjectContext;
+  } catch {
+    return { ...DEFAULT_CONTEXT };
+  }
+}
+
+function _saveToStorage(ctx: ProjectContext): void {
+  if (!_isClient()) {
+    _serverContext = ctx;
+    return;
+  }
+  try {
+    window.localStorage.setItem("zivo_project_context", JSON.stringify(ctx));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+/** Returns the current project context. */
+export function getMemory(): ProjectContext {
+  if (_isClient()) return _loadFromStorage();
+  return { ..._serverContext };
+}
+
+/** Merges partial updates into the current project context. */
+export function updateMemory(partial: Partial<ProjectContext>): void {
+  const current = getMemory();
+  const updated: ProjectContext = {
+    ...current,
+    ...partial,
+    updatedAt: Date.now(),
+  };
+  _saveToStorage(updated);
+}
+
+/** Resets the project context to defaults. */
+export function clearMemory(): void {
+  const cleared: ProjectContext = { ...DEFAULT_CONTEXT, updatedAt: Date.now() };
+  _saveToStorage(cleared);
+}
+
+/**
+ * Returns a formatted string suitable for injection into AI prompts,
+ * summarizing the current project context.
+ */
+export function buildMemoryContext(): string {
+  const ctx = getMemory();
+  const parts: string[] = [
+    `Framework: ${ctx.framework}`,
+    `UI Library: ${ctx.uiLibrary}`,
+    `Database: ${ctx.database}`,
+    `Theme: ${ctx.theme}`,
+    `Primary Color: ${ctx.colorPrimary}`,
+  ];
+  if (ctx.pages.length > 0) parts.push(`Pages: ${ctx.pages.join(", ")}`);
+  if (ctx.components.length > 0) parts.push(`Components: ${ctx.components.join(", ")}`);
+  if (ctx.lastPrompt) parts.push(`Last Prompt: ${ctx.lastPrompt.slice(0, 120)}${ctx.lastPrompt.length > 120 ? "…" : ""}`);
+  return parts.join("\n");
+}
