@@ -13,6 +13,7 @@ import CommandPalette from "@/components/CommandPalette";
 import DesignSystemPanel from "@/components/DesignSystemPanel";
 import DesignPanel from "@/components/DesignPanel";
 import FullAppModal, { type FullAppOptions } from "@/components/FullAppModal";
+import BlueprintPanel from "@/components/BlueprintPanel";
 import type { ProjectPlan } from "@/lib/ai/project-planner";
 import type { BuildError, BuildWarning } from "@/lib/ai/fix-loop";
 import type { ArchitecturePlan } from "@/app/api/plan/route";
@@ -108,6 +109,7 @@ const MODELS = [
 
 const LOADING_STEP1_DELAY = 800;
 const LOADING_STEP2_DELAY = 2000;
+const LOADING_STEP3_DELAY = 8000;
 // Debounce delay for AI prompt suggestions (ms)
 const SUGGEST_DEBOUNCE_MS = 800;
 // Max characters of existing code sent to the enhance endpoint
@@ -315,7 +317,7 @@ function AIPageInner() {
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const [buildIteration, setBuildIteration] = useState(0);
   const [isBuildRunning, setIsBuildRunning] = useState(false);
-  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows" | "generate">("prompt");
+  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows" | "generate" | "blueprint">("prompt");
   const [activeRightTab, setActiveRightTab] = useState<"files" | "code" | "diff">("files");
   const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
   const [showDiff, setShowDiff] = useState(false);
@@ -378,6 +380,7 @@ function AIPageInner() {
     const buildStart = Date.now();
     const stepTimer1 = setTimeout(() => setLoadingStep(1), LOADING_STEP1_DELAY);
     const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
+    const stepTimer3 = setTimeout(() => setLoadingStep(3), LOADING_STEP3_DELAY);
 
     // Create abort controller for this build, cancel any previous
     if (abortControllerRef.current) {
@@ -487,6 +490,7 @@ function AIPageInner() {
     abortControllerRef.current = null;
     clearTimeout(stepTimer1);
     clearTimeout(stepTimer2);
+    clearTimeout(stepTimer3);
     setLoading(false);
     setLoadingStep(0);
     setIsBuildRunning(false);
@@ -850,6 +854,7 @@ function AIPageInner() {
     const buildStart = Date.now();
     const stepTimer1 = setTimeout(() => setLoadingStep(1), LOADING_STEP1_DELAY);
     const stepTimer2 = setTimeout(() => setLoadingStep(2), LOADING_STEP2_DELAY);
+    const stepTimer3 = setTimeout(() => setLoadingStep(3), LOADING_STEP3_DELAY);
 
     try {
       const res = await fetch("/api/generate-full-app", {
@@ -903,6 +908,7 @@ function AIPageInner() {
 
     clearTimeout(stepTimer1);
     clearTimeout(stepTimer2);
+    clearTimeout(stepTimer3);
     setLoading(false);
     setLoadingStep(0);
     setFullAppLoading(false);
@@ -1073,7 +1079,7 @@ function AIPageInner() {
                 <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
-              {/* Prompt / Plan / Templates / Workflows / Generate Tabs */}
+              {/* Prompt / Plan / Templates / Workflows / Generate / Blueprint Tabs */}
               <div style={{ display: "flex", gap: "4px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px" }}>
                 {([
                   ["prompt", "Prompt"],
@@ -1081,6 +1087,7 @@ function AIPageInner() {
                   ["templates", "Templates"],
                   ["workflows", "Workflows"],
                   ["generate", "Generate"],
+                  ["blueprint", "Blueprint"],
                 ] as const).map(([tab, label]) => (
                   <button
                     key={tab}
@@ -1280,6 +1287,14 @@ function AIPageInner() {
                       </button>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Blueprint Panel */}
+              {activeLeftTab === "blueprint" && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>App Blueprint</div>
+                  <BlueprintPanel prompt={prompt} />
                 </div>
               )}
 
@@ -2143,7 +2158,7 @@ function AIPageInner() {
             {/* Loading progress bar */}
             {loading && (
               <div style={{ height: "3px", background: COLORS.bgCard, flexShrink: 0 }}>
-                <div style={{ height: "100%", background: COLORS.accentGradient, width: loadingStep === 0 ? "20%" : loadingStep === 1 ? "60%" : "90%", transition: "width 0.8s ease" }} />
+                <div style={{ height: "100%", background: COLORS.accentGradient, width: loadingStep === 0 ? "20%" : loadingStep === 1 ? "45%" : loadingStep === 2 ? "75%" : "95%", transition: "width 0.8s ease" }} />
               </div>
             )}
 
@@ -2176,9 +2191,10 @@ function AIPageInner() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", width: "100%", maxWidth: "320px" }}>
                     {[
-                      "Understanding your prompt...",
-                      "Generating files...",
-                      "Starting preview...",
+                      "🧠 Analyzing prompt…",
+                      "📐 Planning architecture…",
+                      "⚡ Generating files…",
+                      "✅ Build complete",
                     ].map((step, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", animation: i <= loadingStep ? "fadeIn 0.4s ease" : "none", opacity: i <= loadingStep ? 1 : 0.3 }}>
                         <span style={{ display:"inline-flex", alignItems:"center" }}>
