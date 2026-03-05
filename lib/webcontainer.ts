@@ -17,7 +17,7 @@ export async function getWebContainer(): Promise<WebContainer> {
 
 /** Tears down the current WebContainer instance so the next call to
  *  getWebContainer() will boot a fresh one.  Call this before retrying
- *  after an UNKNOWN write error (errno -4094). */
-export function resetWebContainer(): void {
+ *  after an UNKNOWN write error (errno -4094) or a progress timeout. */
+export function invalidateWebContainer(): void {
   wc = null;
 }
