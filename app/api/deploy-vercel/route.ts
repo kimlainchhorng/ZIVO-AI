@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildDeployConfig, validateForDeploy, type DeployTarget } from "../../../lib/deployer";
+import { buildDeployConfig, validateForDeploy } from "../../../lib/deployer";
 
 export const runtime = "nodejs";
 

@@ -12,7 +12,6 @@ export type PlanTier = "free" | "pro" | "team";
  * Once Stripe is integrated, replace this implementation with a real
  * subscription check using `STRIPE_SECRET_KEY`.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function getPlanTierForUser(_userId: string): Promise<PlanTier> {
   // TODO: look up Stripe subscription for userId and return 'pro' or 'team' accordingly.
   return "free";

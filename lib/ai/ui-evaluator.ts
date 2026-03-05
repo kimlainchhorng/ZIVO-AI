@@ -222,7 +222,6 @@ function computeScore(files: GeneratedFile[], issues: Issue[]): number {
  */
 export function evaluateWebsiteUI(
   files: GeneratedFile[],
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _plan: WebsitePlan
 ): EvaluationResult {
   const allIssues: Issue[] = [];
@@ -261,7 +260,6 @@ export function evaluateWebsiteUI(
  */
 export function evaluateMobileUI(
   files: GeneratedFile[],
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _plan: MobilePlan
 ): EvaluationResult {
   const allIssues: Issue[] = [];
