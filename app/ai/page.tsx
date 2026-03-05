@@ -152,7 +152,7 @@ function AIPageInner() {
   const [popover, setPopover] = useState<{ x: number; y: number; text: string } | null>(null);
   const [popoverInput, setPopoverInput] = useState("");
   const [activeFile, setActiveFile] = useState<GeneratedFile | null>(null);
-  const [activeTab, setActiveTab] = useState<"preview" | "code" | "console" | "diff">("preview");
+  const [activeTab, setActiveTab] = useState<"preview" | "code" | "console" | "diff" | "design">("preview");
   const [deviceMode, setDeviceMode] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [model, setModel] = useState("gpt-4o");
   const [isRecording, setIsRecording] = useState(false);
@@ -255,6 +255,16 @@ function AIPageInner() {
     setConnectedGithubRepo(token && repo ? repo : null);
   }, []);
 
+  // Load project memory from localStorage on mount (Upgrade 11)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("zivo_project_memory");
+      if (stored) setProjectMemory(JSON.parse(stored));
+    } catch {
+      // Ignore invalid stored data
+    }
+  }, []);
+
   // Ctrl+K / Cmd+K command palette
   useEffect(() => {
     function handleGlobalKeyDown(e: KeyboardEvent) {
@@ -314,6 +324,17 @@ function AIPageInner() {
   const [designSystemOpen, setDesignSystemOpen] = useState(false);
   // Abort controller for streaming build
   const abortControllerRef = useRef<AbortController | null>(null);
+  // File search (Upgrade 14b)
+  const [fileSearchQuery, setFileSearchQuery] = useState("");
+  // Auto-fix state (Upgrade 9)
+  const [autoFixing, setAutoFixing] = useState(false);
+  const [autoFixLog, setAutoFixLog] = useState<string | null>(null);
+  // Project memory (Upgrade 11)
+  const [projectMemory, setProjectMemory] = useState<Record<string, unknown> | null>(null);
+  // Design tab settings (Upgrade 6)
+  const [designPrimaryColor, setDesignPrimaryColor] = useState("#6366f1");
+  const [designFontFamily, setDesignFontFamily] = useState("Inter");
+  const [designSpacing, setDesignSpacing] = useState("normal");
 
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
@@ -327,6 +348,8 @@ function AIPageInner() {
     setDeployError(null);
     setDownloadError(null);
     setActiveFile(null);
+    setFileSearchQuery("");
+    setAutoFixLog(null);
     setConsoleLogs([{ text: "> Building project...", type: "info" }]);
     setIsBuildRunning(true);
     setBuildErrors([]);
@@ -360,7 +383,7 @@ function AIPageInner() {
       const res = await fetch("/api/generate-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: buildPrompt, model }),
+        body: JSON.stringify({ prompt: buildPrompt, model, projectMemory }),
         signal: controller.signal,
       });
       const data: GenerateSiteResponse = await res.json();
@@ -388,6 +411,56 @@ function AIPageInner() {
         ...fileLogs,
         { text: `> Build complete in ${duration}ms ✓`, type: "success" },
       ]);
+
+      // Save project memory after successful build (Upgrade 11)
+      if (data.files?.length) {
+        const pages = data.files
+          .filter((f) => f.path.endsWith("page.tsx") || f.path.endsWith("page.ts"))
+          .map((f) => ({ route: "/" + f.path.replace(/^app\//, "").replace(/\/page\.(tsx|ts)$/, ""), description: f.path }));
+        const componentPaths = data.files
+          .filter((f) => f.path.startsWith("components/"))
+          .map((f) => f.path);
+        const updatedMemory: Record<string, unknown> = {
+          ...(projectMemory ?? {}),
+          name: (projectMemory as Record<string, unknown> | null)?.name ?? "My App",
+          framework: "next.js",
+          lastUpdated: Date.now(),
+          pages,
+          components: componentPaths,
+        };
+        setProjectMemory(updatedMemory);
+        try { localStorage.setItem("zivo_project_memory", JSON.stringify(updatedMemory)); } catch { /* ignore */ }
+      }
+
+      // Auto-fix errors loop (Upgrade 9)
+      if (buildErrors.length > 0 && data.files?.length) {
+        let currentFiles = data.files;
+        let iteration = 0;
+        const MAX_FIX_ITERATIONS = 3;
+        setAutoFixing(true);
+        setConsoleLogs((prev) => [...prev, { text: "> 🔧 Auto-fixing errors…", type: "info" }]);
+        while (buildErrors.length > 0 && iteration < MAX_FIX_ITERATIONS) {
+          try {
+            const fixRes = await fetch("/api/fix-errors", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ files: currentFiles, errors: buildErrors, iteration }),
+            });
+            const fixData = await fixRes.json();
+            if (fixData.files?.length) {
+              currentFiles = fixData.files;
+              setOutput((prev) => prev ? { ...prev, files: fixData.files } : prev);
+            }
+            setAutoFixLog(fixData.summary ?? null);
+            setConsoleLogs((prev) => [...prev, { text: `> 🔧 ${fixData.summary}`, type: "success" }]);
+            if (fixData.fixed === 0) break;
+          } catch {
+            break;
+          }
+          iteration++;
+        }
+        setAutoFixing(false);
+      }
     } catch (err: unknown) {
       if ((err as Error)?.name === "AbortError") {
         setConsoleLogs((prev) => [...prev, { text: "> Build stopped by user.", type: "error" }]);
@@ -1834,6 +1907,13 @@ function AIPageInner() {
                     {tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
+                <button
+                  className="zivo-tab"
+                  onClick={() => setActiveTab("design")}
+                  style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeTab === "design" ? "rgba(99,102,241,0.15)" : "transparent", color: activeTab === "design" ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, transition: "color 0.15s" }}
+                >
+                  Design
+                </button>
                 {showDiff && diffFiles.length > 0 && (
                   <button
                     className="zivo-tab"
@@ -2122,6 +2202,143 @@ function AIPageInner() {
               {!loading && activeTab === "diff" && showDiff && diffFiles.length > 0 && (
                 <div style={{ width: "100%", height: "100%", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
                   <DiffViewer files={diffFiles} />
+                </div>
+              )}
+
+              {/* Design Tab (Upgrade 6) */}
+              {activeTab === "design" && (
+                <div style={{ width: "100%", height: "100%", overflow: "auto", padding: "1.5rem", animation: "fadeIn 0.3s ease" }}>
+                  <h2 style={{ fontSize: "1rem", fontWeight: 600, color: COLORS.textPrimary, margin: "0 0 1rem" }}>Visual Design Settings</h2>
+
+                  {/* Color Picker */}
+                  <div style={{ marginBottom: "1.25rem" }}>
+                    <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary, display: "block", marginBottom: "0.5rem" }}>Primary Color</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                      <input
+                        type="color"
+                        value={designPrimaryColor}
+                        onChange={(e) => {
+                          setDesignPrimaryColor(e.target.value);
+                          try {
+                            const iframe = iframeRef.current;
+                            if (iframe?.contentDocument?.documentElement) {
+                              iframe.contentDocument.documentElement.style.setProperty("--color-primary", e.target.value);
+                            }
+                          } catch { /* cross-origin */ }
+                        }}
+                        style={{ width: "40px", height: "40px", borderRadius: "8px", border: `1px solid ${COLORS.border}`, cursor: "pointer", padding: "2px", background: "transparent" }}
+                      />
+                      <span style={{ fontSize: "0.875rem", color: COLORS.textPrimary, fontFamily: "monospace" }}>{designPrimaryColor}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                      {["#6366f1", "#8b5cf6", "#ec4899", "#14b8a6", "#f59e0b", "#ef4444", "#10b981", "#3b82f6"].map((color) => (
+                        <button
+                          key={color}
+                          onClick={() => {
+                            setDesignPrimaryColor(color);
+                            try {
+                              const iframe = iframeRef.current;
+                              if (iframe?.contentDocument?.documentElement) {
+                                iframe.contentDocument.documentElement.style.setProperty("--color-primary", color);
+                              }
+                            } catch { /* cross-origin */ }
+                          }}
+                          style={{ width: "24px", height: "24px", borderRadius: "6px", background: color, border: designPrimaryColor === color ? "2px solid #fff" : "2px solid transparent", cursor: "pointer" }}
+                          title={color}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Font Selector */}
+                  <div style={{ marginBottom: "1.25rem" }}>
+                    <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary, display: "block", marginBottom: "0.5rem" }}>Font Family</label>
+                    <select
+                      value={designFontFamily}
+                      onChange={(e) => {
+                        setDesignFontFamily(e.target.value);
+                        try {
+                          const iframe = iframeRef.current;
+                          if (iframe?.contentDocument?.documentElement) {
+                            iframe.contentDocument.documentElement.style.setProperty("--font-family", e.target.value);
+                          }
+                        } catch { /* cross-origin */ }
+                      }}
+                      style={{ padding: "0.375rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textPrimary, fontSize: "0.875rem", width: "100%", maxWidth: "280px" }}
+                    >
+                      {["Inter", "Plus Jakarta Sans", "Outfit", "DM Sans", "Geist", "Roboto", "Open Sans"].map((f) => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Spacing Presets */}
+                  <div style={{ marginBottom: "1.25rem" }}>
+                    <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary, display: "block", marginBottom: "0.5rem" }}>Spacing Preset</label>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      {["compact", "normal", "relaxed"].map((sp) => (
+                        <button
+                          key={sp}
+                          onClick={() => {
+                            setDesignSpacing(sp);
+                            try {
+                              const iframe = iframeRef.current;
+                              if (iframe?.contentDocument?.documentElement) {
+                                const val = sp === "compact" ? "0.75rem" : sp === "relaxed" ? "1.5rem" : "1rem";
+                                iframe.contentDocument.documentElement.style.setProperty("--spacing-base", val);
+                              }
+                            } catch { /* cross-origin */ }
+                          }}
+                          style={{
+                            padding: "0.375rem 0.875rem", borderRadius: "6px",
+                            background: designSpacing === sp ? "rgba(99,102,241,0.15)" : COLORS.bgCard,
+                            border: `1px solid ${designSpacing === sp ? "rgba(99,102,241,0.4)" : COLORS.border}`,
+                            color: designSpacing === sp ? COLORS.accent : COLORS.textSecondary,
+                            cursor: "pointer", fontSize: "0.8125rem", textTransform: "capitalize", fontWeight: 500,
+                          }}
+                        >
+                          {sp}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Device Preview */}
+                  <div>
+                    <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary, display: "block", marginBottom: "0.5rem" }}>Device Preview</label>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      {([["desktop", <DesktopIcon key="d" />], ["tablet", <TabletIcon key="t" />], ["mobile", <MobileIcon key="m" />]] as Array<[string, React.ReactElement]>).map(([d, icon]) => (
+                        <button
+                          key={d}
+                          onClick={() => setDeviceMode(d as "desktop" | "tablet" | "mobile")}
+                          style={{
+                            padding: "0.375rem 0.875rem", borderRadius: "6px", display: "flex", alignItems: "center", gap: "0.375rem",
+                            background: deviceMode === d ? "rgba(99,102,241,0.15)" : COLORS.bgCard,
+                            border: `1px solid ${deviceMode === d ? "rgba(99,102,241,0.4)" : COLORS.border}`,
+                            color: deviceMode === d ? COLORS.accent : COLORS.textSecondary,
+                            cursor: "pointer", fontSize: "0.8125rem", textTransform: "capitalize", fontWeight: 500,
+                          }}
+                        >
+                          {icon} {d}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Auto-fix status */}
+                  {(autoFixing || autoFixLog) && (
+                    <div style={{ marginTop: "1.25rem", padding: "0.75rem", background: "rgba(99,102,241,0.08)", border: `1px solid rgba(99,102,241,0.2)`, borderRadius: "8px" }}>
+                      {autoFixing && (
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                          <span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(99,102,241,0.3)", borderTop: `2px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                          <span style={{ fontSize: "0.8125rem", color: COLORS.accent }}>🔧 Auto-fixing errors…</span>
+                        </div>
+                      )}
+                      {autoFixLog && !autoFixing && (
+                        <p style={{ fontSize: "0.8125rem", color: COLORS.success, margin: 0 }}>✓ {autoFixLog}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -2448,12 +2665,27 @@ function AIPageInner() {
 
               {/* Files tab */}
               {activeRightTab === "files" && (
-                <div style={{ flex: 1, overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
-                  <FileExplorer
-                    files={(output?.files ?? []) as Array<{ path: string; content: string; action: "create" | "update" | "delete" }>}
-                    activeFilePath={activeFile?.path ?? null}
-                    onFileSelect={(f) => { setActiveFile(f); setActiveRightTab("code"); }}
-                  />
+                <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", animation: "fadeIn 0.3s ease" }}>
+                  {/* File search (Upgrade 14b) */}
+                  <div style={{ padding: "0.5rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+                    <div style={{ position: "relative" }}>
+                      <svg style={{ position: "absolute", left: "0.5rem", top: "50%", transform: "translateY(-50%)", color: COLORS.textMuted, pointerEvents: "none" }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
+                      <input
+                        type="text"
+                        placeholder="Search files…"
+                        value={fileSearchQuery}
+                        onChange={(e) => setFileSearchQuery(e.target.value)}
+                        style={{ width: "100%", padding: "0.3rem 0.5rem 0.3rem 1.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "5px", color: COLORS.textPrimary, fontSize: "0.75rem", outline: "none" }}
+                      />
+                    </div>
+                  </div>
+                  <div style={{ flex: 1, overflow: "hidden" }}>
+                    <FileExplorer
+                      files={(output?.files ?? []).filter((f) => !fileSearchQuery || f.path.toLowerCase().includes(fileSearchQuery.toLowerCase())) as Array<{ path: string; content: string; action: "create" | "update" | "delete" }>}
+                      activeFilePath={activeFile?.path ?? null}
+                      onFileSelect={(f) => { setActiveFile(f); setActiveRightTab("code"); }}
+                    />
+                  </div>
                 </div>
               )}
 

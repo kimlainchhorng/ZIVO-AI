@@ -171,7 +171,8 @@ function getSystemPrompt(mode: GenerateMode): string {
 async function generateFiles(
   prompt: string,
   mode: GenerateMode,
-  context: ChatMessage[]
+  context: ChatMessage[],
+  projectMemoryContext?: string
 ): Promise<GenerateSiteResponse> {
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: getSystemPrompt(mode) },
@@ -182,7 +183,12 @@ async function generateFiles(
     messages.push({ role: m.role, content: m.content });
   }
 
-  messages.push({ role: "user", content: prompt });
+  // Prepend project memory context to user prompt if available
+  const userContent = projectMemoryContext
+    ? `Project context:\n${projectMemoryContext}\n\nRequest: ${prompt}`
+    : prompt;
+
+  messages.push({ role: "user", content: userContent });
 
   const response = await getClient().chat.completions.create({
     model: "gpt-4o",
@@ -262,6 +268,29 @@ export async function POST(req: Request) {
           .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
       : [];
 
+    // Build project memory context string if provided
+    const projectMemory = body?.projectMemory as Record<string, unknown> | undefined;
+    let projectMemoryContext: string | undefined;
+    if (projectMemory && typeof projectMemory === "object") {
+      const parts: string[] = [];
+      if (projectMemory.name) parts.push(`App name: ${projectMemory.name}`);
+      if (projectMemory.framework) parts.push(`Framework: ${projectMemory.framework}`);
+      if (projectMemory.designSystem && typeof projectMemory.designSystem === "object") {
+        const ds = projectMemory.designSystem as Record<string, string>;
+        parts.push(`Design system: primaryColor=${ds.primaryColor ?? ""}, fontFamily=${ds.fontFamily ?? ""}, borderRadius=${ds.borderRadius ?? ""}`);
+      }
+      if (Array.isArray(projectMemory.pages) && projectMemory.pages.length) {
+        const pagesStr = (projectMemory.pages as Array<{ route: string; description: string }>)
+          .map((p) => `${p.route}: ${p.description}`)
+          .join(", ");
+        parts.push(`Existing pages: ${pagesStr}`);
+      }
+      if (Array.isArray(projectMemory.components) && projectMemory.components.length) {
+        parts.push(`Existing components: ${(projectMemory.components as string[]).join(", ")}`);
+      }
+      if (parts.length) projectMemoryContext = parts.join("\n");
+    }
+
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
         { error: "OPENAI_API_KEY is missing in .env.local" },
@@ -275,7 +304,7 @@ export async function POST(req: Request) {
 
     let parsed: GenerateSiteResponse;
     try {
-      parsed = await generateFiles(prompt, mode, context);
+      parsed = await generateFiles(prompt, mode, context, projectMemoryContext);
     } catch {
       return NextResponse.json({ error: "Invalid JSON from AI" }, { status: 500 });
     }
