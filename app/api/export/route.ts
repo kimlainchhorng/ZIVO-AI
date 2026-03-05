@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { exportProjectAsJSON, exportProjectAsZip, type ProjectMetadata } from "@/lib/project-io";
 
 export const runtime = "nodejs";
