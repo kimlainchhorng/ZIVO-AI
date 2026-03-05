@@ -8,7 +8,6 @@ import { addHistoryEntry } from "@/lib/history-store";
 import PlanViewer from "@/components/PlanViewer";
 import BuildOutputPanel from "@/components/BuildOutputPanel";
 import DiffViewer from "@/components/DiffViewer";
-import FileExplorer from "@/components/FileExplorer";
 import ModelSelector from "@/components/ModelSelector";
 import CommandPalette from "@/components/CommandPalette";
 import DesignSystemPanel from "@/components/DesignSystemPanel";
@@ -30,6 +29,9 @@ import type { LogEntry } from "@/lib/logger";
 import { Icon } from "@/components/icons/Icon";
 import { getWebContainer, resetWebContainer } from "@/lib/webcontainer";
 import type { FileSystemTree, WebContainerProcess } from "@webcontainer/api";
+import GeneratedAppAnalysis from "@/components/GeneratedAppAnalysis";
+import FileTree from "@/components/FileTree";
+import VoiceInput from "@/components/VoiceInput";
 
 interface SecurityIssue {
   id: string;
@@ -251,6 +253,12 @@ function AIPageInner() {
   const [githubPushResult, setGithubPushResult] = useState<string | null>(null);
   const [githubPushError, setGithubPushError] = useState<string | null>(null);
   const [connectedGithubRepo, setConnectedGithubRepo] = useState<string | null>(null);
+  // GitHub push modal
+  const [githubModalOpen, setGithubModalOpen] = useState(false);
+  const [githubModalOwner, setGithubModalOwner] = useState("");
+  const [githubModalRepo, setGithubModalRepo] = useState("");
+  const [githubModalBranch, setGithubModalBranch] = useState("main");
+  const [githubModalToken, setGithubModalToken] = useState("");
 
   // Mode switcher
   const [mode, setMode] = useState<"code" | "security" | "website" | "mobile" | "image" | "video" | "3d">("code");
@@ -474,7 +482,7 @@ function AIPageInner() {
   // Abort controller for streaming build
   const abortControllerRef = useRef<AbortController | null>(null);
   // File search (Upgrade 14b)
-  const [fileSearchQuery, setFileSearchQuery] = useState("");
+  const [_fileSearchQuery, setFileSearchQuery] = useState("");
   // Auto-fix state (Upgrade 9)
   const [autoFixing, setAutoFixing] = useState(false);
   const [autoFixLog, setAutoFixLog] = useState<string | null>(null);
@@ -1281,8 +1289,54 @@ function AIPageInner() {
     setGithubPushing(false);
   }
 
+  async function handleGithubModalPush() {
+    if (!output?.files?.length) return;
+    const token = githubModalToken.trim() || (typeof window !== "undefined" ? localStorage.getItem("zivo_github_token") : null);
+    const repoFull = githubModalOwner.trim() && githubModalRepo.trim()
+      ? `${githubModalOwner.trim()}/${githubModalRepo.trim()}`
+      : connectedGithubRepo ?? (typeof window !== "undefined" ? localStorage.getItem("zivo_github_repo") : null);
+    if (!token || !repoFull) {
+      setGithubPushError("Enter owner/repo and a GitHub token.");
+      return;
+    }
+    setGithubPushing(true);
+    setGithubPushResult(null);
+    setGithubPushError(null);
+    setGithubModalOpen(false);
+    try {
+      const res = await fetch("/api/github", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "upsert",
+          token,
+          repo: repoFull,
+          branch: githubModalBranch.trim() || "main",
+          files: output.files.map((f) => ({
+            path: f.path,
+            content: f.content,
+            message: `ZIVO AI: ${prompt.slice(0, 60)}`,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setGithubPushError(data.error);
+      } else {
+        setGithubPushResult(`https://github.com/${repoFull}/tree/${githubModalBranch.trim() || "main"}`);
+        // Persist token and repo for future use
+        try {
+          localStorage.setItem("zivo_github_token", token);
+          localStorage.setItem("zivo_github_repo", repoFull);
+        } catch { /* ignore */ }
+      }
+    } catch {
+      setGithubPushError("GitHub push failed. Please try again.");
+    }
+    setGithubPushing(false);
+  }
+
   async function handleShare() {
-    if (!savedProjectId || !supabaseToken) return;
     setSharing(true);
     try {
       const res = await fetch(`/api/projects/${savedProjectId}`, {
@@ -2361,7 +2415,7 @@ function AIPageInner() {
                     </select>
                     <span style={{ position: "absolute", right: "0.45rem", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: "0.6rem", color: COLORS.accent }}>▾</span>
                   </div>
-                  {/* Voice input */}
+                  {/* Voice input (Web Speech API) */}
                   <button
                     className="zivo-btn"
                     onClick={handleVoiceInput}
@@ -2370,6 +2424,10 @@ function AIPageInner() {
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
                   </button>
+                  {/* Voice input (AI transcription) */}
+                  <VoiceInput
+                    onTranscription={(text) => { setPrompt((prev) => prev ? `${prev} ${text}` : text); }}
+                  />
                   <div style={{ flex: 1 }} />
                   {/* Char count */}
                   <span style={{ fontSize: "0.68rem", color: COLORS.textMuted, flexShrink: 0 }}>{prompt.length}/2000</span>
@@ -3285,7 +3343,13 @@ function AIPageInner() {
                   {/* GitHub push */}
                   <button
                     className="zivo-btn"
-                    onClick={handleGithubPush}
+                    onClick={() => {
+                      if (connectedGithubRepo) {
+                        handleGithubPush();
+                      } else {
+                        setGithubModalOpen(true);
+                      }
+                    }}
                     disabled={githubPushing}
                     title="Push to GitHub"
                     style={{ flex: 1, padding: "0.45rem 0.5rem", background: githubPushing ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "8px", color: COLORS.accent, cursor: githubPushing ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem" }}
@@ -3466,6 +3530,28 @@ function AIPageInner() {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/></svg>
                 <span>Design</span>
               </button>
+              {/* HTML Snapshot button */}
+              {(output?.preview_html || (output?.files?.length ?? 0) > 0) && (
+                <button
+                  className="zivo-btn"
+                  onClick={() => {
+                    const html = output?.preview_html ?? (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
+                    if (!html) return;
+                    const blob = new Blob([html], { type: "text/html" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "snapshot.html";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  title="Download HTML Snapshot"
+                  style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                  <span>HTML Snapshot</span>
+                </button>
+              )}
               {/* Design Panel button (visual token editor) */}
               <button
                 className="zivo-btn"
@@ -3558,6 +3644,11 @@ function AIPageInner() {
                   </div>
                 )}
               </div>
+            )}
+
+            {/* ── Generated App Analysis (below build output, above preview) ── */}
+            {mode === "code" && !loading && (output?.files?.length ?? 0) > 0 && (
+              <GeneratedAppAnalysis files={(output?.files ?? []) as Array<{ path: string; content: string; action?: "create" | "update" | "delete" }>} />
             )}
 
             {/* ── Code Builder Right Panel ── */}
@@ -4407,26 +4498,11 @@ function AIPageInner() {
               {/* Files tab */}
               {activeRightTab === "files" && (
                 <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", animation: "fadeIn 0.3s ease" }}>
-                  {/* File search (Upgrade 14b) */}
-                  <div style={{ padding: "0.5rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
-                    <div style={{ position: "relative" }}>
-                      <svg style={{ position: "absolute", left: "0.5rem", top: "50%", transform: "translateY(-50%)", color: COLORS.textMuted, pointerEvents: "none" }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
-                      <input
-                        type="text"
-                        placeholder="Search files…"
-                        value={fileSearchQuery}
-                        onChange={(e) => setFileSearchQuery(e.target.value)}
-                        style={{ width: "100%", padding: "0.3rem 0.5rem 0.3rem 1.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "5px", color: COLORS.textPrimary, fontSize: "0.75rem", outline: "none" }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, overflow: "hidden" }}>
-                    <FileExplorer
-                      files={(output?.files ?? []).filter((f) => !fileSearchQuery || f.path.toLowerCase().includes(fileSearchQuery.toLowerCase())) as Array<{ path: string; content: string; action: "create" | "update" | "delete" }>}
-                      activeFilePath={activeFile?.path ?? null}
-                      onFileSelect={(f) => { setActiveFile(f); setEditedContent(f.content); setSaveStatus("idle"); setActiveRightTab("code"); }}
-                    />
-                  </div>
+                  <FileTree
+                    files={(output?.files ?? []) as Array<{ path: string; content: string; action?: "create" | "update" | "delete" }>}
+                    activeFile={activeFile?.path ?? null}
+                    onFileSelect={(f) => { setActiveFile(f as { path: string; content: string; action: "create" | "update" | "delete" }); setEditedContent(f.content); setSaveStatus("idle"); setActiveRightTab("code"); }}
+                  />
                 </div>
               )}
 
@@ -4831,6 +4907,137 @@ function AIPageInner() {
                 }}
               >
                 Generate Page ▶
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GitHub Push Modal */}
+      {githubModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1001,
+            padding: "1rem",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setGithubModalOpen(false); }}
+        >
+          <div
+            style={{
+              background: "#0f1120",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 14,
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: 460,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+              animation: "fadeIn 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill={COLORS.textPrimary}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                <span style={{ fontSize: "1rem", fontWeight: 700, color: COLORS.textPrimary }}>Push to GitHub</span>
+              </div>
+              <button
+                onClick={() => setGithubModalOpen(false)}
+                style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1.1rem", padding: "0 0.25rem" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Owner</span>
+                  <input
+                    type="text"
+                    value={githubModalOwner}
+                    onChange={(e) => setGithubModalOwner(e.target.value)}
+                    placeholder="your-username"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Repository</span>
+                  <input
+                    type="text"
+                    value={githubModalRepo}
+                    onChange={(e) => setGithubModalRepo(e.target.value)}
+                    placeholder="my-app"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
+                  />
+                </label>
+              </div>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Branch</span>
+                <input
+                  type="text"
+                  value={githubModalBranch}
+                  onChange={(e) => setGithubModalBranch(e.target.value)}
+                  placeholder="main"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", fontFamily: "monospace", outline: "none" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  GitHub Token{" "}
+                  <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" style={{ color: COLORS.accent, textTransform: "none", fontWeight: 400 }}>(generate)</a>
+                </span>
+                <input
+                  type="password"
+                  value={githubModalToken}
+                  onChange={(e) => setGithubModalToken(e.target.value)}
+                  placeholder="ghp_... (leave blank to use saved token)"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", fontFamily: "monospace", outline: "none" }}
+                />
+              </label>
+
+              <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, background: "rgba(255,255,255,0.03)", border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "0.5rem 0.65rem" }}>
+                Pushing <strong style={{ color: COLORS.textSecondary }}>{output?.files?.length ?? 0} files</strong> to GitHub. Token is saved locally for future pushes.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.25rem" }}>
+              <button
+                onClick={() => setGithubModalOpen(false)}
+                style={{ flex: 1, padding: "0.6rem", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: COLORS.textMuted, fontSize: "0.875rem", cursor: "pointer", fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={githubPushing}
+                onClick={handleGithubModalPush}
+                style={{
+                  flex: 2,
+                  padding: "0.6rem",
+                  background: githubPushing ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                  border: "none",
+                  borderRadius: 8,
+                  color: "#fff",
+                  fontSize: "0.875rem",
+                  cursor: githubPushing ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.4rem",
+                }}
+              >
+                {githubPushing ? (
+                  <><span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Pushing…</>
+                ) : (
+                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" x2="12" y1="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Push to GitHub</>
+                )}
               </button>
             </div>
           </div>
