@@ -3,6 +3,8 @@ import OpenAI from "openai";
 import { WEBSITE_BUILDER_SYSTEM_PROMPT } from "../../../prompts/website-builder";
 import { fixBrokenImages } from "../../../lib/html-processor";
 import { generateFullProject } from "../../../lib/ai/master-project-generator";
+import { runMultiPassGeneration } from "../../../lib/ai/multi-pass-generator";
+import type { ProjectBlueprint } from "../../../lib/ai/passes/pass1-plan";
 
 export const runtime = "nodejs";
 
@@ -32,6 +34,8 @@ export interface GenerateSiteResponse {
   warnings?: string[];
   missing_env?: string[];
   next_steps?: string[];
+  blueprint?: ProjectBlueprint;
+  passLog?: string[];
 }
 
 export interface ChatMessage {
@@ -332,6 +336,11 @@ export async function POST(req: Request) {
         )
       : [];
 
+    // Multi-pass mode: default true for SaaS/complex, false for simple landing pages
+    const multiPass: boolean = typeof body?.multiPass === "boolean"
+      ? body.multiPass
+      : mode !== "minimal";
+
     // Build project memory context string if provided
     const projectMemory = body?.projectMemory as ProjectMemoryInput | undefined;
     let projectMemoryContext: string | undefined;
@@ -364,7 +373,53 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
     }
 
-    // Use master project generator for standard/advanced modes; fall back to minimal generator
+    // Use multi-pass generator when requested (plan → generate → validate+fix)
+    if (multiPass && mode !== "minimal") {
+      let multiPassResult: Awaited<ReturnType<typeof runMultiPassGeneration>>;
+      try {
+        const fullPrompt = projectMemoryContext
+          ? `Project context:\n${projectMemoryContext}\n\nRequest: ${prompt}`
+          : prompt;
+        multiPassResult = await runMultiPassGeneration(fullPrompt, existingFiles);
+      } catch (error) {
+        console.error("Multi-pass generator failed:", error);
+        return NextResponse.json(
+          { error: `Multi-pass generation failed: ${error instanceof Error ? error.message : "Unknown error"}` },
+          { status: 500 }
+        );
+      }
+
+      const { blueprint, output, pass3Result, passLog } = multiPassResult;
+
+      // Post-process: fix broken images in preview_html
+      if (output.preview_html) {
+        output.preview_html = fixBrokenImages(output.preview_html);
+      }
+
+      const allWarnings = [
+        ...(output.warnings ?? []),
+        ...pass3Result.remainingIssues,
+      ];
+
+      const response: GenerateSiteResponse = {
+        thinking: output.thinking,
+        files: output.files as GeneratedFile[],
+        preview_html: output.preview_html,
+        summary: output.summary,
+        env: output.env,
+        routes: output.routes,
+        commands: output.commands,
+        warnings: allWarnings,
+        missing_env: output.missing_env,
+        next_steps: output.next_steps,
+        blueprint,
+        passLog,
+      };
+
+      return NextResponse.json(response);
+    }
+
+    // Use master project generator for standard/advanced modes (single-pass)
     if (mode !== "minimal") {
       let result: Awaited<ReturnType<typeof generateFullProject>>;
       try {
