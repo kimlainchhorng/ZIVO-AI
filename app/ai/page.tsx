@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
+import Image from "next/image";
 import { Suspense } from "react";
 import { addHistoryEntry } from "../history/page";
 import PlanViewer from "@/components/PlanViewer";
@@ -26,7 +27,7 @@ import DocGenerator from "@/components/DocGenerator";
 import AgentOrchestrator from "@/components/AgentOrchestrator";
 import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
-import { Icon, type IconName } from "@/components/icons/Icon";
+import { Icon } from "@/components/icons/Icon";
 
 interface SecurityIssue {
   id: string;
@@ -235,7 +236,7 @@ function AIPageInner() {
   const [websiteError, setWebsiteError] = useState<string | null>(null);
   // Website iteration tracking
   const [websiteIteration, setWebsiteIteration] = useState(0);
-  const [websiteHistory, setWebsiteHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [, setWebsiteHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
   // Website v2 pass counter for SSE progress
   const [websitePassMessage, setWebsitePassMessage] = useState<string | null>(null);
 
@@ -1553,11 +1554,6 @@ function AIPageInner() {
     }
     setChatLoading(false);
   }
-
-  const previewSrc = output?.preview_html
-    ? `data:text/html;charset=utf-8,${encodeURIComponent(output.preview_html)}`
-    : null;
-
   const hasFiles = Boolean(output?.files?.length);
 
   return (
@@ -3267,9 +3263,12 @@ function AIPageInner() {
                 )}
                 {imageResult && (
                   <div style={{ width: "100%", maxWidth: "640px", animation: "fadeIn 0.4s ease" }}>
-                    <img
+                    <Image
                       src={imageResult.dataUrl}
                       alt={imageResult.prompt}
+                      width={1024}
+                      height={1024}
+                      unoptimized
                       style={{ width: "100%", borderRadius: "12px", border: `1px solid ${COLORS.border}`, display: "block" }}
                     />
                     <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem" }}>
