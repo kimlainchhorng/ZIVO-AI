@@ -125,6 +125,8 @@ const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 // Mobile phone frame dimensions for preview
 const MOBILE_FRAME_WIDTH = 375;
 const MOBILE_FRAME_HEIGHT = 812;
+// Fake build-stage progress delays (ms) — one per stage transition
+const BUILD_STAGE_DELAYS = [2500, 5000, 8000, 13000, 18000, 23000, 28000] as const;
 
 function getSpeechRecognitionAPI(): typeof SpeechRecognition | null {
   if (typeof window === "undefined") return null;
@@ -179,7 +181,7 @@ function AIPageInner() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
   // Iteration tracking for iterative builds
-  const [buildIteration_count, setBuildIterationCount] = useState(0);
+  const [buildIterationCount, setBuildIterationCount] = useState(0);
   const [conversationHistory, setConversationHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
   // Chat panel state
@@ -383,7 +385,7 @@ function AIPageInner() {
 
     // Capture existing files before resetting output (for iterative builds)
     const existingFilesForBuild = output?.files?.length ? output.files : undefined;
-    const isIteration = buildIteration_count > 0;
+    const isIteration = buildIterationCount > 0;
 
     setLoading(true);
     setLoadingStep(0);
@@ -394,7 +396,7 @@ function AIPageInner() {
     setActiveFile(null);
     setFileSearchQuery("");
     setAutoFixLog(null);
-    setConsoleLogs([{ text: isIteration ? `> Iteration ${buildIteration_count + 1}: Updating project...` : "> Building project...", type: "info" }]);
+    setConsoleLogs([{ text: isIteration ? `> Iteration ${buildIterationCount + 1}: Updating project...` : "> Building project...", type: "info" }]);
     setIsBuildRunning(true);
     setBuildErrors([]);
     setBuildWarnings([]);
@@ -420,7 +422,7 @@ function AIPageInner() {
     // Fake build progress: advance stages every ~3s while loading
     setBuildStages((prev) => prev.map((s, i) => ({ ...s, status: i === 0 ? "active" : "pending" })));
     setCurrentBuildStage(0);
-    const stageTimers = [2500, 5000, 8000, 13000, 18000, 23000, 28000].map((delay, idx) =>
+    const stageTimers = BUILD_STAGE_DELAYS.map((delay, idx) =>
       setTimeout(() => {
         setBuildStages((prev) => prev.map((s, i) => ({
           ...s,
@@ -457,7 +459,11 @@ function AIPageInner() {
       setOutput(data);
       if (data.files?.length) {
         setActiveFile(data.files[0]);
-        setDiffFiles(data.files.map((f) => ({ path: f.path, oldContent: existingFilesForBuild?.find((ef) => ef.path === f.path)?.content ?? "", newContent: f.content })));
+        // Build a lookup map for O(1) access to existing file content
+        const existingFileMap = new Map(
+          (existingFilesForBuild ?? []).map((ef) => [ef.path, ef.content])
+        );
+        setDiffFiles(data.files.map((f) => ({ path: f.path, oldContent: existingFileMap.get(f.path) ?? "", newContent: f.content })));
         setShowDiff(true);
         setActiveRightTab("files");
       }
@@ -1479,7 +1485,7 @@ function AIPageInner() {
                     ) : (
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                     )}
-                    {loading ? "Building…" : buildIteration_count > 0 ? `Update ▶ (iter. ${buildIteration_count + 1})` : "Build now ▶"}
+                    {loading ? "Building…" : buildIterationCount > 0 ? `Update ▶ (iter. ${buildIterationCount + 1})` : "Build now ▶"}
                   </button>
                   {/* Build Full App button */}
                   <button
@@ -2452,8 +2458,8 @@ function AIPageInner() {
                       {buildIteration > 0 && (
                         <span style={{ fontSize: "0.7rem", color: COLORS.textMuted }}>Validation pass {buildIteration}/8</span>
                       )}
-                      {buildIteration_count > 0 && !loading && (
-                        <span style={{ padding: "0.1rem 0.4rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>iteration {buildIteration_count}</span>
+                      {buildIterationCount > 0 && !loading && (
+                        <span style={{ padding: "0.1rem 0.4rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>iteration {buildIterationCount}</span>
                       )}
                     </div>
                     {loading && (
