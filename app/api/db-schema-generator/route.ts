@@ -182,6 +182,12 @@ export async function POST(req: Request): Promise<Response> {
   }
 }
 
+function toPascalCase(name: string): string {
+  return name
+    .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+    .replace(/^[a-z]/, (c) => c.toUpperCase());
+}
+
 function buildTypeScriptTypes(tables: DbTable[], appName: string): string {
   const typeMap: Record<string, string> = {
     uuid: "string",
@@ -199,9 +205,7 @@ function buildTypeScriptTypes(tables: DbTable[], appName: string): string {
   };
 
   const tableTypes = tables.map((table) => {
-    const typeName = table.name
-      .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
-      .replace(/^[a-z]/, (c) => c.toUpperCase());
+    const typeName = toPascalCase(table.name);
 
     const columns = table.columns
       .map((col) => {
@@ -226,9 +230,7 @@ ${tableTypes.join("\n")}
 
 ${tables
   .map((table) => {
-    const typeName = table.name
-      .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
-      .replace(/^[a-z]/, (c) => c.toUpperCase());
+    const typeName = toPascalCase(table.name);
     return `export type ${typeName} = Database["public"]["Tables"]["${table.name}"]["Row"];`;
   })
   .join("\n")}

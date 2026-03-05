@@ -105,7 +105,10 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const effectiveAppName = typeof appName === "string" && appName.trim() ? appName.trim() : "My App";
+  const effectiveAppName = typeof appName === "string" && appName.trim()
+    // Sanitize: strip characters that could be used for prompt injection
+    ? appName.trim().replace(/[`"'\\<>{}[\]]/g, "").slice(0, 64) || "My App"
+    : "My App";
 
   const providerInstructions: Record<string, string> = {
     supabase: "Use Supabase Auth (@supabase/supabase-js, @supabase/ssr). Include createClient helpers for server and client components.",

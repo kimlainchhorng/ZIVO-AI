@@ -76,6 +76,11 @@ function getClient(): OpenAI {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
+const VALID_MODELS = new Set([
+  "gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo",
+  "o1", "o1-mini", "o1-preview", "gpt-4.1", "gpt-4.1-mini",
+]);
+
 export async function POST(req: Request): Promise<Response> {
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ error: "OPENAI_API_KEY is not configured" }, { status: 500 });
@@ -93,10 +98,12 @@ export async function POST(req: Request): Promise<Response> {
     return NextResponse.json({ error: "prompt is required" }, { status: 400 });
   }
 
+  const resolvedModel = typeof model === "string" && VALID_MODELS.has(model) ? model : "gpt-4o";
+
   try {
     const client = getClient();
     const response = await client.chat.completions.create({
-      model: model ?? "gpt-4o",
+      model: resolvedModel,
       temperature: 0.3,
       max_tokens: 3000,
       messages: [

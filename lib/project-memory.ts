@@ -183,14 +183,12 @@ export function updateMemory(partial: Partial<ProjectContext>): void {
     updatedAt: Date.now(),
   };
   _saveToStorage(updated);
-  if (!_isClient()) _serverContext = updated;
 }
 
 /** Resets the project context to defaults. */
 export function clearMemory(): void {
   const cleared: ProjectContext = { ...DEFAULT_CONTEXT, updatedAt: Date.now() };
   _saveToStorage(cleared);
-  if (!_isClient()) _serverContext = { ...cleared };
 }
 
 /**
