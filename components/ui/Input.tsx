@@ -1,90 +1,51 @@
-// components/ui/Input.tsx — Accessible text input using design tokens
-'use client';
-
+// components/ui/Input.tsx — Accessible labeled input using Tailwind
 import * as React from 'react';
+import { cn } from '@/lib/utils';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
-  helperText?: string;
-  errorText?: string;
-  leftAddon?: React.ReactNode;
-  rightAddon?: React.ReactNode;
-  containerStyle?: React.CSSProperties;
+  error?: string;
+  hint?: string;
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  (
-    {
-      label,
-      helperText,
-      errorText,
-      leftAddon,
-      rightAddon,
-      containerStyle,
-      id,
-      style,
-      ...props
-    },
-    ref
-  ) => {
+  ({ label, error, hint, className, id, ...props }, ref) => {
     const generatedId = React.useId();
-    const inputId = id ?? generatedId;
-    const hasError = Boolean(errorText);
-
-    const wrapperStyle: React.CSSProperties = {
-      display: 'flex',
-      alignItems: 'center',
-      background: 'rgba(255,255,255,0.04)',
-      border: `1px solid ${hasError ? '#ef4444' : 'rgba(255,255,255,0.12)'}`,
-      borderRadius: '8px',
-      overflow: 'hidden',
-      transition: 'border-color 0.2s',
-    };
-
-    const inputStyle: React.CSSProperties = {
-      flex: 1,
-      background: 'transparent',
-      border: 'none',
-      outline: 'none',
-      padding: '0.625rem 0.875rem',
-      fontSize: '0.9375rem',
-      color: '#f1f5f9',
-      fontFamily: 'inherit',
-      ...style,
-    };
-
+    const inputId = id ?? (label ? generatedId : undefined);
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', ...containerStyle }}>
+      <div className="flex flex-col gap-1.5">
         {label && (
-          <label
-            htmlFor={inputId}
-            style={{ fontSize: '0.875rem', fontWeight: 500, color: '#f1f5f9' }}
-          >
+          <label htmlFor={inputId} className="text-xs font-medium text-slate-300">
             {label}
           </label>
         )}
-        <div style={wrapperStyle}>
-          {leftAddon && (
-            <span style={{ padding: '0 0.75rem', color: '#94a3b8', flexShrink: 0 }}>
-              {leftAddon}
-            </span>
+        <input
+          id={inputId}
+          ref={ref}
+          className={cn(
+            'w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500',
+            'focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500',
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            error && 'border-red-500/60 focus:border-red-500 focus:ring-red-500',
+            className
           )}
-          <input ref={ref} id={inputId} style={inputStyle} {...props} />
-          {rightAddon && (
-            <span style={{ padding: '0 0.75rem', color: '#94a3b8', flexShrink: 0 }}>
-              {rightAddon}
-            </span>
-          )}
-        </div>
-        {errorText && (
-          <span style={{ fontSize: '0.8125rem', color: '#ef4444' }}>{errorText}</span>
+          aria-invalid={!!error}
+          aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
+          {...props}
+        />
+        {error && (
+          <p id={`${inputId}-error`} className="text-xs text-red-400" role="alert">
+            {error}
+          </p>
         )}
-        {helperText && !errorText && (
-          <span style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>{helperText}</span>
+        {!error && hint && (
+          <p id={`${inputId}-hint`} className="text-xs text-slate-500">
+            {hint}
+          </p>
         )}
       </div>
     );
   }
 );
-
 Input.displayName = 'Input';
+
