@@ -1,95 +1,44 @@
-// components/ui/Card.tsx — Card container using design tokens
-'use client';
-
+// components/ui/Card.tsx — Card container with sub-components using Tailwind
 import * as React from 'react';
+import { cn } from '@/lib/utils';
 
-export interface CardProps {
-  children: React.ReactNode;
-  header?: React.ReactNode;
-  footer?: React.ReactNode;
-  padding?: 'none' | 'sm' | 'md' | 'lg';
-  shadow?: boolean;
-  bordered?: boolean;
-  hoverable?: boolean;
-  style?: React.CSSProperties;
-  className?: string;
-}
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {}
 
-const paddingMap: Record<'none' | 'sm' | 'md' | 'lg', string> = {
-  none: '0',
-  sm: '0.75rem',
-  md: '1.25rem',
-  lg: '1.75rem',
-};
-
-export function Card({
-  children,
-  header,
-  footer,
-  padding = 'md',
-  shadow = true,
-  bordered = true,
-  hoverable = false,
-  style,
-  className,
-}: CardProps): React.ReactElement {
-  const cardStyle: React.CSSProperties = {
-    background: 'rgba(255,255,255,0.04)',
-    borderRadius: '12px',
-    border: bordered ? '1px solid rgba(255,255,255,0.08)' : 'none',
-    boxShadow: shadow ? '0 4px 6px -1px rgb(0 0 0 / 0.1)' : 'none',
-    overflow: 'hidden',
-    transition: hoverable ? 'border-color 0.2s, box-shadow 0.2s, transform 0.2s' : undefined,
-    ...style,
-  };
-
+export function Card({ className, ...props }: CardProps) {
   return (
     <div
-      className={className}
-      style={cardStyle}
-      onMouseEnter={
-        hoverable
-          ? (e) => {
-              (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(255,255,255,0.16)';
-              (e.currentTarget as HTMLDivElement).style.boxShadow = '0 10px 15px -3px rgb(0 0 0 / 0.2)';
-              (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-1px)';
-            }
-          : undefined
-      }
-      onMouseLeave={
-        hoverable
-          ? (e) => {
-              (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(255,255,255,0.08)';
-              (e.currentTarget as HTMLDivElement).style.boxShadow = shadow ? '0 4px 6px -1px rgb(0 0 0 / 0.1)' : 'none';
-              (e.currentTarget as HTMLDivElement).style.transform = 'translateY(0)';
-            }
-          : undefined
-      }
-    >
-      {header && (
-        <div
-          style={{
-            padding: paddingMap[padding],
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            fontWeight: 600,
-            color: '#f1f5f9',
-          }}
-        >
-          {header}
-        </div>
+      className={cn(
+        'rounded-xl border border-white/[0.08] bg-white/[0.04] p-4 shadow-sm transition-colors',
+        className
       )}
-      <div style={{ padding: paddingMap[padding] }}>{children}</div>
-      {footer && (
-        <div
-          style={{
-            padding: paddingMap[padding],
-            borderTop: '1px solid rgba(255,255,255,0.08)',
-            color: '#94a3b8',
-          }}
-        >
-          {footer}
-        </div>
-      )}
-    </div>
+      {...props}
+    />
   );
 }
+
+export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('mb-4 flex items-center justify-between', className)} {...props} />;
+}
+
+export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
+  return (
+    <h3
+      className={cn('text-sm font-semibold tracking-tight text-slate-100', className)}
+      {...props}
+    />
+  );
+}
+
+export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('text-sm text-slate-400', className)} {...props} />;
+}
+
+export function CardFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn('mt-4 flex items-center gap-2 border-t border-white/[0.08] pt-4', className)}
+      {...props}
+    />
+  );
+}
+

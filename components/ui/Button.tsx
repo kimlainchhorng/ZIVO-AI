@@ -1,109 +1,88 @@
-// components/ui/Button.tsx — Reusable Button primitive using design tokens
+// components/ui/Button.tsx — CVA-based reusable Button
 'use client';
 
 import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
+import { cn } from '@/lib/utils';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
-export type ButtonSize = 'sm' | 'md' | 'lg';
+const buttonVariants = cva(
+  'inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0b14] disabled:pointer-events-none disabled:opacity-50',
+  {
+    variants: {
+      variant: {
+        default:
+          'bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow hover:brightness-110 active:scale-[0.98]',
+        outline:
+          'border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10 hover:border-white/20',
+        ghost:
+          'bg-transparent text-slate-400 hover:bg-white/5 hover:text-slate-200',
+        destructive:
+          'bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30',
+        success:
+          'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30',
+      },
+      size: {
+        sm: 'h-7 px-2.5 text-xs',
+        md: 'h-9 px-4',
+        lg: 'h-11 px-6 text-base',
+        icon: 'h-8 w-8 p-0',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      size: 'md',
+    },
+  }
+);
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  isLoading?: boolean;
-  leftIcon?: React.ReactNode;
-  rightIcon?: React.ReactNode;
-  fullWidth?: boolean;
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  loading?: boolean;
 }
 
-const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
-  primary: {
-    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
-    color: '#ffffff',
-    border: '1px solid transparent',
-  },
-  secondary: {
-    background: 'rgba(99,102,241,0.12)',
-    color: '#818cf8',
-    border: '1px solid rgba(99,102,241,0.3)',
-  },
-  outline: {
-    background: 'transparent',
-    color: '#f1f5f9',
-    border: '1px solid rgba(255,255,255,0.16)',
-  },
-  ghost: {
-    background: 'transparent',
-    color: '#94a3b8',
-    border: '1px solid transparent',
-  },
-  danger: {
-    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-    color: '#ffffff',
-    border: '1px solid transparent',
-  },
-};
-
-const sizeStyles: Record<ButtonSize, React.CSSProperties> = {
-  sm: { padding: '0.375rem 0.75rem', fontSize: '0.8125rem', borderRadius: '6px', height: '32px' },
-  md: { padding: '0.5rem 1rem', fontSize: '0.9375rem', borderRadius: '8px', height: '40px' },
-  lg: { padding: '0.75rem 1.5rem', fontSize: '1rem', borderRadius: '10px', height: '48px' },
-};
-
-export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  (
-    {
-      variant = 'primary',
-      size = 'md',
-      isLoading = false,
-      leftIcon,
-      rightIcon,
-      fullWidth = false,
-      children,
-      disabled,
-      style,
-      ...props
-    },
-    ref
-  ) => {
-    const baseStyle: React.CSSProperties = {
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: '0.5rem',
-      fontWeight: 600,
-      lineHeight: 1,
-      cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
-      opacity: disabled || isLoading ? 0.6 : 1,
-      transition: 'all 0.2s',
-      outline: 'none',
-      whiteSpace: 'nowrap',
-      width: fullWidth ? '100%' : undefined,
-      ...variantStyles[variant],
-      ...sizeStyles[size],
-      ...style,
-    };
-
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, loading, children, disabled, ...props }, ref) => {
     return (
-      <button ref={ref} disabled={disabled || isLoading} style={baseStyle} {...props}>
-        {isLoading && (
-          <span
-            style={{
-              display: 'inline-block',
-              width: '14px',
-              height: '14px',
-              border: '2px solid rgba(255,255,255,0.3)',
-              borderTop: '2px solid currentColor',
-              borderRadius: '50%',
-              animation: 'spin 0.7s linear infinite',
-            }}
-          />
+      <button
+        ref={ref}
+        className={cn(buttonVariants({ variant, size }), className)}
+        disabled={disabled || loading}
+        aria-busy={loading}
+        {...props}
+      >
+        {loading && (
+          <svg
+            className="h-4 w-4 animate-spin"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+            />
+          </svg>
         )}
-        {!isLoading && leftIcon}
         {children}
-        {!isLoading && rightIcon}
       </button>
     );
   }
 );
-
 Button.displayName = 'Button';
+
+export { Button, buttonVariants };
+// Legacy type aliases for backwards compatibility
+export type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']>;
+export type ButtonSize = NonNullable<VariantProps<typeof buttonVariants>['size']>;
+

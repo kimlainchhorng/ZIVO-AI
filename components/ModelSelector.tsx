@@ -1,182 +1,84 @@
-"use client";
+'use client';
 
-import React, { useState } from "react";
-import { SUPPORTED_MODELS, MODEL_ROUTING, type ModelConfig, type TaskType } from "@/lib/ai/model-router";
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-// ─── New ModelOption interface (standalone, without model-router dependency) ──
+export type BuildTask = 'code' | 'website' | 'mobile' | '3d' | 'image' | 'video';
 
 export interface ModelOption {
   id: string;
-  name: string;
-  provider: "openai" | "anthropic" | "google";
-  quality: "fast" | "medium" | "high";
-  costPer1k: number;
-  description?: string;
+  label: string;
+  provider: 'openai' | 'anthropic' | 'google';
+  tier: 'fast' | 'medium' | 'powerful';
+  pricePerK: string;
 }
 
-export const DEFAULT_MODELS: ModelOption[] = [
-  {
-    id: "gpt-4o",
-    name: "GPT-4o",
-    provider: "openai",
-    quality: "high",
-    costPer1k: 0.005,
-    description: "Best for most tasks",
-  },
-  {
-    id: "gpt-4o-mini",
-    name: "GPT-4o Mini",
-    provider: "openai",
-    quality: "medium",
-    costPer1k: 0.00015,
-    description: "Fast & affordable",
-  },
-  {
-    id: "o1-mini",
-    name: "o1-mini",
-    provider: "openai",
-    quality: "high",
-    costPer1k: 0.003,
-    description: "Best for reasoning & logic",
-  },
-  {
-    id: "o1",
-    name: "o1",
-    provider: "openai",
-    quality: "high",
-    costPer1k: 0.015,
-    description: "Most powerful reasoning",
-  },
+const MODELS: ModelOption[] = [
+  { id: 'gpt-4o',       label: 'GPT-4o',       provider: 'openai', tier: 'medium',   pricePerK: '$0.00500' },
+  { id: 'gpt-4o-mini',  label: 'GPT-4o mini',  provider: 'openai', tier: 'fast',     pricePerK: '$0.00015' },
+  { id: 'gpt-4.1',      label: 'GPT-4.1',      provider: 'openai', tier: 'powerful', pricePerK: '$0.00800' },
+  { id: 'gpt-4.1-mini', label: 'GPT-4.1 mini', provider: 'openai', tier: 'fast',     pricePerK: '$0.00040' },
+  { id: 'o4-mini',      label: 'o4-mini',       provider: 'openai', tier: 'powerful', pricePerK: '$0.01100' },
 ];
 
-// ─── Shared badge helpers ─────────────────────────────────────────────────────
-
-const SPEED_BADGE: Record<ModelConfig["speed"], string> = {
-  fast: "bg-green-500/20 text-green-400",
-  medium: "bg-yellow-500/20 text-yellow-400",
-  slow: "bg-red-500/20 text-red-400",
-};
-
-const QUALITY_BADGE_ROUTER: Record<ModelConfig["quality"], string> = {
-  high: "bg-green-500/20 text-green-400 border border-green-500/30",
-  medium: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30",
-  economy: "bg-zinc-700/60 text-zinc-400 border border-zinc-600/30",
-};
-
-const QUALITY_LABEL: Record<ModelConfig["quality"], string> = {
-  high: "⭐⭐⭐",
-  medium: "⭐⭐",
-  economy: "⭐",
-};
-
-const PROVIDER_BADGE: Record<string, string> = {
-  openai: "bg-indigo-600/25 text-indigo-300 border border-indigo-500/30",
-  anthropic: "bg-orange-600/25 text-orange-300 border border-orange-500/30",
-  google: "bg-blue-600/25 text-blue-300 border border-blue-500/30",
-};
-
-function _formatCost(costPer1kTokens: number): string {
-  return `$${costPer1kTokens.toFixed(5)}/1k`;
+interface ModelSelectorProps {
+  task?: BuildTask | string;
+  value?: string;
+  onChange?: (modelId: string) => void;
+  className?: string;
 }
 
-function _groupByProvider(
-  models: Record<string, ModelConfig>
-): Record<string, ModelConfig[]> {
-  const groups: Record<string, ModelConfig[]> = {};
-  for (const model of Object.values(models)) {
-    if (!groups[model.provider]) groups[model.provider] = [];
-    groups[model.provider].push(model);
-  }
-  return groups;
-}
+const TIER_COLORS: Record<ModelOption['tier'], string> = {
+  fast:     'text-emerald-400',
+  medium:   'text-amber-400',
+  powerful: 'text-violet-400',
+};
 
-// ─── Task-based selector (used by app/ai/page.tsx) ────────────────────────────
-
-interface TaskModelSelectorProps {
-  task: TaskType;
-  value: string;
-  onChange: (modelId: string) => void;
-  models?: never;
-}
-
-// ─── Standalone selector (used by new Builder page) ──────────────────────────
-
-interface StandaloneModelSelectorProps {
-  task?: never;
-  value: string;
-  onChange: (modelId: string) => void;
-  models?: ModelOption[];
-}
-
-type ModelSelectorProps = TaskModelSelectorProps | StandaloneModelSelectorProps;
-
-// ─── Standalone variant sub-component ────────────────────────────────────────
-
-function StandaloneModelSelector({
-  value,
-  onChange,
-  models = DEFAULT_MODELS,
-}: {
-  value: string;
-  onChange: (modelId: string) => void;
-  models: ModelOption[];
-}) {
+export function ModelSelector({ value, onChange, className }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
-  const selected = models.find((m) => m.id === value) ?? models[0];
-
-  // ModelOption uses "fast"|"medium"|"high" while QUALITY_BADGE_ROUTER uses the router quality type.
-  // Add "fast" mapping to the standalone badge map.
-  const standaloneBadge: Record<string, string> = {
-    ...QUALITY_BADGE_ROUTER,
-    fast: "bg-blue-500/20 text-blue-400 border border-blue-500/30",
-  };
+  const selected = MODELS.find((m) => m.id === value) ?? MODELS[0];
 
   return (
-    <div className="relative">
+    <div className={cn('relative', className)}>
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 transition hover:border-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        aria-expanded={open}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-200 hover:border-white/20 hover:bg-white/[0.08] focus:outline-none focus:ring-1 focus:ring-indigo-500"
         aria-haspopup="listbox"
+        aria-expanded={open}
       >
         <span className="flex items-center gap-2">
-          <span>{selected.name}</span>
-          <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${standaloneBadge[selected.quality] ?? ""}`}>
-            {selected.quality}
-          </span>
+          <span className="font-semibold">{selected.label}</span>
+          <span className={cn('text-[10px]', TIER_COLORS[selected.tier])}>{selected.tier}</span>
         </span>
-        <span className="text-zinc-500">{open ? "▲" : "▼"}</span>
+        <span className="text-slate-500 text-[10px]">{selected.pricePerK}/1k</span>
+        <ChevronDown className={cn('h-3 w-3 text-slate-400 transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
         <ul
           role="listbox"
-          className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-xl"
+          className="absolute left-0 z-50 mt-1 w-full rounded-lg border border-white/10 bg-[#0f1120] py-1 shadow-xl"
         >
-          {models.map((m) => (
-            <li key={m.id} role="option" aria-selected={m.id === value}>
-              <button
-                onClick={() => { onChange(m.id); setOpen(false); }}
-                className={`flex w-full flex-col gap-0.5 px-3 py-2 text-left text-sm transition hover:bg-zinc-800 ${
-                  m.id === value ? "bg-zinc-800" : ""
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-zinc-100">{m.name}</span>
-                  <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${PROVIDER_BADGE[m.provider] ?? ""}`}>
-                    {m.provider}
-                  </span>
-                  <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${standaloneBadge[m.quality] ?? ""}`}>
-                    {m.quality}
-                  </span>
-                  <span className="ml-auto text-xs text-zinc-500">
-                    ${m.costPer1k.toFixed(5)}/1k
-                  </span>
-                </div>
-                {m.description && (
-                  <span className="text-xs text-zinc-500">{m.description}</span>
-                )}
-              </button>
+          {MODELS.map((model) => (
+            <li
+              key={model.id}
+              role="option"
+              aria-selected={model.id === selected.id}
+              onClick={() => { onChange?.(model.id); setOpen(false); }}
+              className={cn(
+                'flex cursor-pointer items-center justify-between px-3 py-2 text-xs transition-colors',
+                model.id === selected.id
+                  ? 'bg-indigo-500/15 text-slate-100'
+                  : 'text-slate-300 hover:bg-white/5 hover:text-slate-100'
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <span className="font-medium">{model.label}</span>
+                <span className={cn('text-[10px]', TIER_COLORS[model.tier])}>{model.tier}</span>
+              </span>
+              <span className="text-slate-500">{model.pricePerK}</span>
             </li>
           ))}
         </ul>
@@ -185,69 +87,4 @@ function StandaloneModelSelector({
   );
 }
 
-// ─── Default export — unified component ──────────────────────────────────────
-
-export default function ModelSelector(props: ModelSelectorProps) {
-  // Standalone (no task) variant
-  if (!props.task) {
-    return (
-      <StandaloneModelSelector
-        value={props.value}
-        onChange={props.onChange}
-        models={props.models ?? DEFAULT_MODELS}
-      />
-    );
-  }
-
-  // Task-based variant (original implementation)
-  const { task, value, onChange } = props;
-  const taskModelIds = new Set(MODEL_ROUTING[task]);
-  const taskModels = Object.fromEntries(
-    Object.entries(SUPPORTED_MODELS).filter(([id]) => taskModelIds.has(id))
-  ) as Record<string, ModelConfig>;
-  const groups = _groupByProvider(taskModels);
-  const selected: ModelConfig | undefined = SUPPORTED_MODELS[value];
-
-  return (
-    <div className="flex flex-col gap-3">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100
-                   focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-zinc-900 dark:text-zinc-100"
-      >
-        {Object.entries(groups).map(([provider, models]) => (
-          <optgroup key={provider} label={provider.toUpperCase()}>
-            {models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} · {m.speed} · {_formatCost(m.costPer1kTokens)}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-
-      {selected && (
-        <div className="rounded-lg border border-zinc-700 bg-zinc-800/50 p-3 text-xs text-zinc-300 dark:bg-zinc-800/50">
-          <div className="mb-2 flex items-center justify-between">
-            <span className="font-semibold text-zinc-100">{selected.name}</span>
-            <span className={`rounded px-2 py-0.5 text-xs font-medium ${PROVIDER_BADGE[selected.provider] ?? "bg-indigo-600/30 text-indigo-300"}`}>
-              {selected.provider}
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            <span className={`rounded px-2 py-0.5 font-medium ${SPEED_BADGE[selected.speed]}`}>
-              {selected.speed}
-            </span>
-            <span className={`rounded px-2 py-0.5 font-medium ${QUALITY_BADGE_ROUTER[selected.quality]}`}>
-              {selected.quality} {QUALITY_LABEL[selected.quality]}
-            </span>
-            <span className="rounded bg-zinc-700/60 px-2 py-0.5 text-zinc-400">
-              {_formatCost(selected.costPer1kTokens)} per 1k tokens
-            </span>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+export default ModelSelector;
