@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: RouteParams) {
     if (dnsRes.ok) {
       const dnsData = await dnsRes.json() as { Answer?: Array<{ data: string }> };
       const answers = dnsData.Answer ?? [];
-      verified = answers.some((a) => a.data.includes(domainRow.verification_token as string));
+      verified = answers.some((a) => a.data.replace(/"/g, '') === domainRow.verification_token);
     }
   } catch { /* DNS lookup failed — keep verified=false */ }
 

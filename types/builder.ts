@@ -114,3 +114,4 @@ export type ProjectDomain = z.infer<typeof ProjectDomainSchema>;
 export type ProjectMember = z.infer<typeof ProjectMemberSchema>;
 export type DomainStatus = z.infer<typeof DomainStatusEnum>;
 export type MemberRole = z.infer<typeof MemberRoleEnum>;
+export type MemberStatus = z.infer<typeof MemberStatusEnum>;
