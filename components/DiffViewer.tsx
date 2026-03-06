@@ -1,13 +1,17 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 
-interface DiffViewerProps {
+export interface DiffFile {
+  path: string;
   oldContent: string;
   newContent: string;
-  filePath: string;
-  onAccept?: () => void;
-  onReject?: () => void;
+}
+
+interface DiffViewerProps {
+  files: DiffFile[];
+  onApply?: (filePath: string) => void;
+  onUndo?: (filePath: string) => void;
 }
 
 type DiffLineType = "add" | "remove" | "context";
@@ -79,28 +83,51 @@ const LINE_STYLES: Record<DiffLineType, { bg: string; prefix: string; prefixColo
   context: { bg: "transparent", prefix: " ", prefixColor: "#94a3b8" },
 };
 
-export default function DiffViewer({
-  oldContent,
-  newContent,
-  filePath,
-  onAccept,
-  onReject,
-}: DiffViewerProps): React.JSX.Element {
+interface FileDiffPanelProps {
+  file: DiffFile;
+  onApply?: (filePath: string) => void;
+  onUndo?: (filePath: string) => void;
+}
+
+function FileDiffPanel({ file, onApply, onUndo }: FileDiffPanelProps): React.JSX.Element {
   const [collapsed, setCollapsed] = useState(false);
+  const [copyLabel, setCopyLabel] = useState<"📋 Copy" | "✓ Copied">("📋 Copy");
 
   const { diffLines, additions, deletions } = useMemo(() => {
-    if (!oldContent && !newContent) {
+    if (!file.oldContent && !file.newContent) {
       return { diffLines: [], additions: 0, deletions: 0 };
     }
-    const oldLines = oldContent ? oldContent.split("\n") : [];
-    const newLines = newContent ? newContent.split("\n") : [];
+    const oldLines = file.oldContent ? file.oldContent.split("\n") : [];
+    const newLines = file.newContent ? file.newContent.split("\n") : [];
     const lines = computeDiff(oldLines, newLines);
     const adds = lines.filter((l) => l.type === "add").length;
     const dels = lines.filter((l) => l.type === "remove").length;
     return { diffLines: lines, additions: adds, deletions: dels };
-  }, [oldContent, newContent]);
+  }, [file.oldContent, file.newContent]);
 
-  const isEmpty = !oldContent && !newContent;
+  const isEmpty = !file.oldContent && !file.newContent;
+
+  // Derive file status from content presence
+  const isNew = !file.oldContent && !!file.newContent;
+  const isDeleted = !!file.oldContent && !file.newContent;
+
+  const handleCopy = useCallback(() => {
+    const content = file.newContent || file.oldContent || "";
+    const onCopied = () => {
+      setCopyLabel("✓ Copied");
+      setTimeout(() => setCopyLabel("📋 Copy"), 2000);
+    };
+    navigator.clipboard.writeText(content).then(onCopied).catch(() => {
+      // Fallback for environments without clipboard API
+      const el = document.createElement("textarea");
+      el.value = content;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      onCopied();
+    });
+  }, [file.newContent, file.oldContent]);
 
   return (
     <div
@@ -142,7 +169,7 @@ export default function DiffViewer({
             {collapsed ? "▶" : "▼"}
           </button>
           <span
-            title={filePath}
+            title={file.path}
             style={{
               color: "#f1f5f9",
               fontSize: 13,
@@ -152,23 +179,67 @@ export default function DiffViewer({
               whiteSpace: "nowrap",
             }}
           >
-            {filePath || "(untitled)"}
+            {file.path || "(untitled)"}
           </span>
+
+          {/* Status badge */}
+          <span
+            style={{
+              padding: "1px 6px",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 700,
+              background: isNew
+                ? "rgba(16,185,129,0.2)"
+                : isDeleted
+                  ? "rgba(239,68,68,0.2)"
+                  : "rgba(99,102,241,0.2)",
+              color: isNew ? "#10b981" : isDeleted ? "#ef4444" : "#a5b4fc",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {isNew ? "NEW" : isDeleted ? "DELETED" : "MODIFIED"}
+          </span>
+
           {!isEmpty && (
             <span style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" }}>
               <span style={{ color: "#10b981" }}>+{additions}</span>
-              {" / "}
+              {" "}
               <span style={{ color: "#ef4444" }}>-{deletions}</span>
             </span>
           )}
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          {onReject && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Keyboard shortcut hints */}
+          <span style={{ fontSize: 10, color: "#475569", whiteSpace: "nowrap" }}>
+            A to apply, U to undo
+          </span>
+
+          <button
+            onClick={handleCopy}
+            title="Copy file content"
+            style={{
+              padding: "5px 10px",
+              borderRadius: 6,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.05)",
+              color: "#94a3b8",
+              fontSize: 11,
+              cursor: "pointer",
+              fontWeight: 500,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {copyLabel}
+          </button>
+
+          {onUndo && (
             <button
-              onClick={onReject}
+              onClick={() => onUndo(file.path)}
+              title="Undo (U)"
               style={{
-                padding: "5px 14px",
+                padding: "5px 12px",
                 borderRadius: 6,
                 border: "1px solid rgba(239,68,68,0.4)",
                 background: "rgba(239,68,68,0.1)",
@@ -176,16 +247,18 @@ export default function DiffViewer({
                 fontSize: 12,
                 cursor: "pointer",
                 fontWeight: 500,
+                whiteSpace: "nowrap",
               }}
             >
-              Reject
+              ↩ Undo
             </button>
           )}
-          {onAccept && (
+          {onApply && (
             <button
-              onClick={onAccept}
+              onClick={() => onApply(file.path)}
+              title="Apply (A)"
               style={{
-                padding: "5px 14px",
+                padding: "5px 12px",
                 borderRadius: 6,
                 border: "1px solid rgba(16,185,129,0.4)",
                 background: "rgba(16,185,129,0.1)",
@@ -193,9 +266,10 @@ export default function DiffViewer({
                 fontSize: 12,
                 cursor: "pointer",
                 fontWeight: 500,
+                whiteSpace: "nowrap",
               }}
             >
-              Accept
+              ✓ Apply
             </button>
           )}
         </div>
@@ -290,3 +364,167 @@ export default function DiffViewer({
     </div>
   );
 }
+
+export default function DiffViewer({
+  files,
+  onApply,
+  onUndo,
+}: DiffViewerProps): React.JSX.Element {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  // Totals across all files
+  const totalAdded = useMemo(
+    () =>
+      files.reduce((acc, f) => {
+        const newLines = f.newContent ? f.newContent.split("\n") : [];
+        const oldLines = f.oldContent ? f.oldContent.split("\n") : [];
+        const diff = computeDiff(oldLines, newLines);
+        return acc + diff.filter((l) => l.type === "add").length;
+      }, 0),
+    [files]
+  );
+
+  const totalRemoved = useMemo(
+    () =>
+      files.reduce((acc, f) => {
+        const newLines = f.newContent ? f.newContent.split("\n") : [];
+        const oldLines = f.oldContent ? f.oldContent.split("\n") : [];
+        const diff = computeDiff(oldLines, newLines);
+        return acc + diff.filter((l) => l.type === "remove").length;
+      }, 0),
+    [files]
+  );
+
+  if (files.length === 0) {
+    return (
+      <div
+        style={{
+          padding: "48px 16px",
+          textAlign: "center",
+          color: "#94a3b8",
+          fontSize: 13,
+          background: "#0f1120",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 8,
+        }}
+      >
+        No changes to display.
+      </div>
+    );
+  }
+
+  const safeIndex = Math.min(activeIndex, files.length - 1);
+  const activeFile = files[safeIndex];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* Summary bar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          padding: "8px 14px",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          background: "#0a0b14",
+          flexShrink: 0,
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>
+          <span style={{ color: "#10b981", fontWeight: 700 }}>+{totalAdded}</span>
+          {" added  "}
+          <span style={{ color: "#ef4444", fontWeight: 700 }}>-{totalRemoved}</span>
+          {" removed"}
+          {files.length > 1 && (
+            <span style={{ color: "#6366f1" }}>{"  ·  "}{files.length} files</span>
+          )}
+        </span>
+        <div style={{ flex: 1 }} />
+        {onApply && (
+          <button
+            onClick={() => files.forEach((f) => onApply(f.path))}
+            style={{
+              padding: "4px 14px",
+              borderRadius: 6,
+              border: "1px solid rgba(16,185,129,0.4)",
+              background: "rgba(16,185,129,0.1)",
+              color: "#10b981",
+              fontSize: 12,
+              cursor: "pointer",
+              fontWeight: 500,
+            }}
+          >
+            Apply All
+          </button>
+        )}
+        {onUndo && (
+          <button
+            onClick={() => files.forEach((f) => onUndo(f.path))}
+            style={{
+              padding: "4px 14px",
+              borderRadius: 6,
+              border: "1px solid rgba(239,68,68,0.4)",
+              background: "rgba(239,68,68,0.1)",
+              color: "#ef4444",
+              fontSize: 12,
+              cursor: "pointer",
+              fontWeight: 500,
+            }}
+          >
+            Undo All
+          </button>
+        )}
+      </div>
+
+      {/* File selector tabs */}
+      {files.length > 1 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 4,
+            padding: "6px 10px",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+            background: "#0f1120",
+            overflowX: "auto",
+            flexShrink: 0,
+          }}
+        >
+          {files.map((f, i) => (
+            <button
+              key={f.path}
+              onClick={() => setActiveIndex(i)}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 5,
+                border: `1px solid ${safeIndex === i ? "rgba(99,102,241,0.4)" : "rgba(255,255,255,0.08)"}`,
+                background: safeIndex === i ? "rgba(99,102,241,0.15)" : "transparent",
+                color: safeIndex === i ? "#6366f1" : "#94a3b8",
+                cursor: "pointer",
+                fontSize: 11,
+                fontFamily: "monospace",
+                whiteSpace: "nowrap",
+                transition: "background 0.12s",
+              }}
+            >
+              {f.path}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Active file diff */}
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {activeFile && (
+          <FileDiffPanel
+            key={activeFile.path}
+            file={activeFile}
+            onApply={onApply}
+            onUndo={onUndo}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+

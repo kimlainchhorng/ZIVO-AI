@@ -14,7 +14,7 @@ export interface DeployFile {
 }
 
 export interface GenerateDeployRequest {
-  platforms?: Array<"vercel" | "docker" | "github-actions" | "aws" | "railway">;
+  platforms?: Array<"vercel" | "docker" | "github-actions" | "aws" | "railway" | "cloudflare" | "netlify">;
   appName?: string;
   nodeVersion?: string;
 }
@@ -44,6 +44,8 @@ Generate configs for all requested platforms:
 - GitHub Actions: .github/workflows/deploy.yml (CI/CD pipeline)
 - AWS: Elastic Beanstalk / Lambda / ECS config files
 - Railway/Render: railway.json or render.yaml
+- Cloudflare Pages: wrangler.toml + .github/workflows/cloudflare.yml
+- Netlify: netlify.toml (with build settings, redirects, headers) + _redirects file
 
 Return ONLY valid JSON, no markdown fences, no extra text.`;
 
@@ -69,7 +71,7 @@ Node.js version: ${nodeVersion}
 Target platforms: ${platforms.join(", ")}
 
 Include:
-${platforms.includes("vercel") ? "- vercel.json with environment variable configuration\n" : ""}${platforms.includes("docker") ? "- Dockerfile (multi-stage, production-optimized for Next.js)\n- docker-compose.yml with Redis and PostgreSQL services\n" : ""}${platforms.includes("github-actions") ? "- .github/workflows/deploy.yml (test, build, deploy pipeline)\n" : ""}${platforms.includes("aws") ? "- .ebextensions/ for Elastic Beanstalk\n- aws/task-definition.json for ECS\n" : ""}${platforms.includes("railway") ? "- railway.json for Railway deployment\n- render.yaml for Render deployment\n" : ""}`;
+${platforms.includes("vercel") ? "- vercel.json with environment variable configuration\n" : ""}${platforms.includes("docker") ? "- Dockerfile (multi-stage, production-optimized for Next.js)\n- docker-compose.yml with Redis and PostgreSQL services\n" : ""}${platforms.includes("github-actions") ? "- .github/workflows/deploy.yml (test, build, deploy pipeline)\n" : ""}${platforms.includes("aws") ? "- .ebextensions/ for Elastic Beanstalk\n- aws/task-definition.json for ECS\n" : ""}${platforms.includes("railway") ? "- railway.json for Railway deployment\n- render.yaml for Render deployment\n" : ""}${platforms.includes("cloudflare") ? "- wrangler.toml for Cloudflare Pages configuration\n- .github/workflows/cloudflare.yml for Cloudflare Pages CI/CD\n" : ""}${platforms.includes("netlify") ? "- netlify.toml with build settings, redirects, and headers\n- _redirects file for SPA routing\n" : ""}`;
 
     const response = await getClient().chat.completions.create({
       model: "gpt-4o",

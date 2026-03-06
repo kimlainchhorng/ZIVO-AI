@@ -79,6 +79,29 @@ interface TestApiResult {
   data?: unknown;
 }
 
+interface RecentCommit {
+  sha: string;
+  message: string;
+  author: string;
+  date: string;
+  url: string;
+}
+
+interface GitHubCommitItem {
+  sha: string;
+  commit: {
+    message: string;
+    author: {
+      name: string;
+      date: string;
+    };
+  };
+  html_url: string;
+}
+
+const SHORT_SHA_LENGTH = 7;
+const MAX_COMMIT_MESSAGE_LENGTH = 80;
+
 async function callTestApi(
   type: 'github' | 'supabase' | 'stripe' | 'resend',
   credentials: Record<string, string>
@@ -150,6 +173,9 @@ const ConnectorComponent = () => {
   // Lazy initializer loads persisted state from localStorage on first render
   const [connState, setConnState] = useState<ConnectorState>(loadConnectorState);
   const [githubError, setGithubError] = useState<string>('');
+  const [commits, setCommits] = useState<RecentCommit[]>([]);
+  const [commitsLoading, setCommitsLoading] = useState(false);
+  const [commitsError, setCommitsError] = useState('');
   const [supabaseError, setSupabaseError] = useState<string>('');
   const [stripeError, setStripeError] = useState<string>('');
   const [stripeLoading, setStripeLoading] = useState(false);
@@ -183,6 +209,40 @@ const ConnectorComponent = () => {
   function handleGithubDisconnect() {
     updateState({ githubConnected: false, modalToken: '', modalRepo: '' });
     setGithubError('');
+    setCommits([]);
+    setCommitsError('');
+  }
+
+  async function handleFetchCommits() {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('zivo_github_token') : null;
+    const repo = connState.modalRepo;
+    if (!token || !repo) {
+      setCommitsError('No GitHub token found. Please reconnect.');
+      return;
+    }
+    setCommitsLoading(true);
+    setCommitsError('');
+    try {
+      const res = await fetch(`/api/github/commits?repo=${encodeURIComponent(repo)}&per_page=5`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json() as { commits?: GitHubCommitItem[]; error?: string };
+      if (!res.ok) {
+        setCommitsError(data.error ?? 'Failed to fetch commits');
+      } else {
+        const mapped: RecentCommit[] = (data.commits ?? []).map((c) => ({
+          sha: c.sha.slice(0, SHORT_SHA_LENGTH),
+          message: c.commit.message.split('\n')[0].slice(0, MAX_COMMIT_MESSAGE_LENGTH),
+          author: c.commit.author.name,
+          date: c.commit.author.date,
+          url: c.html_url,
+        }));
+        setCommits(mapped);
+      }
+    } catch {
+      setCommitsError('Network error fetching commits.');
+    }
+    setCommitsLoading(false);
   }
 
   function handleSupabaseConnect(e: React.FormEvent) {
@@ -310,10 +370,50 @@ const ConnectorComponent = () => {
         </div>
         {connState.githubConnected ? (
           <div>
-            <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: '#d1d5db' }}>
-              Repository: <strong>{connState.modalRepo}</strong>
-            </p>
-            <button onClick={handleGithubDisconnect} style={disconnectBtnStyle}>Disconnect</button>
+            {/* Repo info + status */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+              <span style={{ color: '#4ade80', fontSize: '1.1rem' }}>✅</span>
+              <p style={{ margin: 0, fontSize: '0.9rem', color: '#d1d5db' }}>
+                Connected to: <strong style={{ color: '#f9fafb' }}>{connState.modalRepo}</strong>
+              </p>
+            </div>
+
+            {/* Recent commits panel */}
+            <div style={{ background: '#111827', borderRadius: 8, padding: '0.75rem', marginBottom: '0.75rem', border: '1px solid #374151' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.82rem', color: '#9ca3af', fontWeight: 600 }}>Recent Commits</span>
+                <button
+                  onClick={handleFetchCommits}
+                  disabled={commitsLoading}
+                  style={{ fontSize: '0.78rem', background: 'transparent', border: '1px solid #374151', color: '#60a5fa', borderRadius: 5, padding: '2px 8px', cursor: 'pointer' }}
+                >
+                  {commitsLoading ? '...' : '🔄 Refresh'}
+                </button>
+              </div>
+              {commitsError && <p style={{ color: '#f87171', fontSize: '0.8rem', margin: 0 }}>{commitsError}</p>}
+              {commits.length === 0 && !commitsLoading && !commitsError && (
+                <p style={{ color: '#6b7280', fontSize: '0.8rem', margin: 0 }}>Click Refresh to load recent commits</p>
+              )}
+              {commits.map((c: RecentCommit) => (
+                <div key={c.sha} style={{ borderBottom: '1px solid #1f2937', padding: '0.35rem 0', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#e2e8f0' }}>• {c.message}</span>
+                  <span style={{ color: '#6b7280', marginLeft: '0.5rem' }}>— {c.author} · {new Date(c.date).toLocaleDateString()}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <a
+                href={`https://github.com/${connState.modalRepo}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ padding: '0.4rem 0.9rem', background: '#1f2937', border: '1px solid #374151', color: '#d1d5db', borderRadius: 7, fontSize: '0.85rem', textDecoration: 'none' }}
+              >
+                🐙 View on GitHub
+              </a>
+              <button onClick={handleGithubDisconnect} style={disconnectBtnStyle}>Disconnect</button>
+            </div>
           </div>
         ) : (
           <form onSubmit={handleGithubConnect}>

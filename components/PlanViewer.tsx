@@ -1,11 +1,12 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import type { ProjectPlan, ProjectTask } from "@/lib/ai/project-planner";
 
 interface PlanViewerProps {
   plan: ProjectPlan | null;
   isLoading: boolean;
+  onGenerateTask?: (task: ProjectTask) => void;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -86,8 +87,22 @@ function LoadingSkeleton() {
 
 // ─── Task Item ───────────────────────────────────────────────────────────────
 
-function TaskItem({ task }: { task: ProjectTask }) {
-  const st = taskStatusStyle(task.status);
+function TaskItem({ task, onGenerateTask }: { task: ProjectTask; onGenerateTask?: (task: ProjectTask) => void }) {
+  const [localStatus, setLocalStatus] = useState<ProjectTask["status"]>(task.status);
+  const [prevPropStatus, setPrevPropStatus] = useState<ProjectTask["status"]>(task.status);
+
+  // Sync local status when the prop changes using the React "adjusting state during render" pattern
+  // (avoids useEffect which triggers cascading-render lint errors).
+  if (prevPropStatus !== task.status) {
+    setPrevPropStatus(task.status);
+    setLocalStatus(task.status);
+  }
+
+  const st = taskStatusStyle(localStatus);
+
+  const handleToggleDone = () => {
+    setLocalStatus((s) => (s === "done" ? "pending" : "done"));
+  };
 
   return (
     <div
@@ -102,7 +117,9 @@ function TaskItem({ task }: { task: ProjectTask }) {
       }}
     >
       {/* Status icon / checkbox */}
-      <div
+      <button
+        onClick={handleToggleDone}
+        title={localStatus === "done" ? "Mark as Todo" : "Mark as Done"}
         style={{
           flexShrink: 0,
           width: 22,
@@ -116,13 +133,15 @@ function TaskItem({ task }: { task: ProjectTask }) {
           fontSize: 12,
           color: st.color,
           marginTop: 1,
+          cursor: "pointer",
+          padding: 0,
           ...(st.pulse
             ? { boxShadow: `0 0 6px ${st.color}` }
             : {}),
         }}
       >
         {st.icon}
-      </div>
+      </button>
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9" }}>{task.title}</div>
@@ -151,29 +170,55 @@ function TaskItem({ task }: { task: ProjectTask }) {
             ))}
           </div>
         )}
+        {/* Estimated file count */}
+        {task.files.length > 0 && (
+          <div style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+            ~{task.files.length} file{task.files.length !== 1 ? "s" : ""}
+          </div>
+        )}
       </div>
 
-      <span
-        style={{
-          flexShrink: 0,
-          fontSize: 11,
-          color: st.color,
-          background: st.bg,
-          border: `1px solid ${st.border}`,
-          borderRadius: 4,
-          padding: "2px 7px",
-          textTransform: "capitalize",
-        }}
-      >
-        {task.status}
-      </span>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, flexShrink: 0 }}>
+        <span
+          style={{
+            fontSize: 11,
+            color: st.color,
+            background: st.bg,
+            border: `1px solid ${st.border}`,
+            borderRadius: 4,
+            padding: "2px 7px",
+            textTransform: "capitalize",
+          }}
+        >
+          {localStatus}
+        </span>
+
+        {onGenerateTask && (
+          <button
+            onClick={() => onGenerateTask(task)}
+            style={{
+              padding: "3px 9px",
+              borderRadius: 5,
+              border: "1px solid rgba(99,102,241,0.4)",
+              background: "rgba(99,102,241,0.1)",
+              color: "#a5b4fc",
+              fontSize: 11,
+              cursor: "pointer",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+            }}
+          >
+            ▶ Generate
+          </button>
+        )}
+      </div>
     </div>
   );
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export default function PlanViewer({ plan, isLoading }: PlanViewerProps): React.JSX.Element {
+export default function PlanViewer({ plan, isLoading, onGenerateTask }: PlanViewerProps): React.JSX.Element {
   if (isLoading) {
     return (
       <div
@@ -349,7 +394,7 @@ export default function PlanViewer({ plan, isLoading }: PlanViewerProps): React.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
               {plan.tasks.map((task) => (
-                <TaskItem key={task.id} task={task} />
+                <TaskItem key={task.id} task={task} onGenerateTask={onGenerateTask} />
               ))}
             </div>
           </div>

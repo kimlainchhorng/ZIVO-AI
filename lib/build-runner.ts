@@ -79,3 +79,43 @@ export async function runBuildChecks(
   const duration = Date.now() - start;
   return { success: errors.length === 0, errors, warnings, duration };
 }
+
+// ── New BuildRunResult interface (compatible with lib/ai/fix-loop.ts BuildResult) ──
+
+export interface BuildRunResult {
+  success: boolean;
+  errors: BuildError[];
+  warnings: BuildWarning[];
+  logs: string[];
+  duration: number;
+}
+
+/**
+ * Runs build validation and returns a structured BuildRunResult with logs.
+ * Compatible with the BuildError / BuildWarning types from lib/ai/fix-loop.ts.
+ */
+export async function runBuild(
+  files: Array<{ path: string; content: string }>
+): Promise<BuildRunResult> {
+  const generatedFiles: GeneratedFile[] = files.map((f) => ({
+    path: f.path,
+    content: f.content,
+  }));
+
+  const result = await runBuildChecks(generatedFiles);
+
+  const logs: string[] = [
+    `Build started — ${files.length} file(s)`,
+    ...result.errors.map((e) => `ERROR [${e.file}] ${e.message}`),
+    ...result.warnings.map((w) => `WARN  [${w.file}] ${w.message}`),
+    result.success ? `Build succeeded in ${result.duration}ms` : `Build failed in ${result.duration}ms`,
+  ];
+
+  return {
+    success: result.success,
+    errors: result.errors,
+    warnings: result.warnings,
+    logs,
+    duration: result.duration,
+  };
+}

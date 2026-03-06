@@ -1,213 +1,873 @@
 'use client';
-import { useState, useCallback } from 'react';
 
-type ComponentType = 'Hero' | 'Features' | 'Navbar' | 'Footer' | 'Card' | 'Button' | 'Text' | 'Image';
+// ─── Imports ─────────────────────────────────────────────────────────────────
 
-interface CanvasComponent {
-  id: string;
-  type: ComponentType;
-  props: Record<string, string>;
+import { useState, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import type { Section, Page, UIOutput, StylePreset } from '@/types/builder';
+import StylePresetPicker from '@/components/builder/StylePresetPicker';
+import PromptTemplateCards from '@/components/builder/PromptTemplateCards';
+import SectionList from '@/components/builder/SectionList';
+import ExportMenu from '@/components/builder/ExportMenu';
+import DeployMenu from '@/components/builder/DeployMenu';
+import VersionHistoryPanel from '@/components/builder/VersionHistoryPanel';
+import VersionCompare from '@/components/builder/VersionCompare';
+
+/** Cross-browser safe UUID generator with fallback for non-secure contexts. */
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
-const COMPONENT_BLOCKS: ComponentType[] = ['Hero', 'Features', 'Navbar', 'Footer', 'Card', 'Button', 'Text', 'Image'];
+const COLORS = {
+  bg: "#0a0b14",
+  bgPanel: "#0f1120",
+  bgCard: "rgba(255,255,255,0.04)",
+  border: "rgba(255,255,255,0.08)",
+  accent: "#6366f1",
+  textPrimary: "#f1f5f9",
+  textSecondary: "#94a3b8",
+  textMuted: "#475569",
+} as const;
 
-const componentPreviews: Record<ComponentType, string> = {
-  Hero: 'bg-gradient-to-r from-indigo-600 to-purple-600 h-24 rounded flex items-center justify-center text-white font-bold',
-  Features: 'bg-[#1a1a2e] h-16 rounded border border-[#6366f1]/30 flex items-center justify-center text-gray-300 text-sm',
-  Navbar: 'bg-[#111] h-10 rounded flex items-center px-4 text-white text-sm border border-white/10',
-  Footer: 'bg-[#0d0d0d] h-10 rounded flex items-center px-4 text-gray-500 text-xs border border-white/10',
-  Card: 'bg-[#1a1a1a] h-16 rounded-lg border border-white/10 flex items-center justify-center text-white text-sm',
-  Button: 'bg-[#6366f1] h-10 rounded-lg flex items-center justify-center text-white text-sm font-semibold w-32',
-  Text: 'bg-transparent h-8 flex items-center text-gray-300 text-sm px-2 border-b border-white/10',
-  Image: 'bg-[#1a1a1a] h-20 rounded border-2 border-dashed border-white/20 flex items-center justify-center text-gray-500 text-xs',
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+type DeviceFrame = 'desktop' | 'tablet' | 'mobile';
+type RightTab = 'sections' | 'versions';
+
+interface BuildState {
+  output: UIOutput | null;
+  pages: Page[];
+  activePage: number;
+  sections: Section[];
+  projectId: string | null;
+  githubRepo?: string;
+  vercelUrl?: string;
+  deployStatus?: string;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const DEVICE_WIDTHS: Record<DeviceFrame, string> = {
+  desktop: '100%',
+  tablet: '768px',
+  mobile: '390px',
 };
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function VisualBuilderPage() {
-  const [canvas, setCanvas] = useState<CanvasComponent[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const [history, setHistory] = useState<CanvasComponent[][]>([[]]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [exporting, setExporting] = useState(false);
-  const [exportedCode, setExportedCode] = useState('');
+  // ── Build state ──
+  const [prompt, setPrompt] = useState('');
+  const [stylePreset, setStylePreset] = useState<StylePreset>('premium');
+  const [selectedTemplate, setSelectedTemplate] = useState<string | undefined>();
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [isBuilding, setIsBuilding] = useState(false);
+  const [continuePrompt, setContinuePrompt] = useState('');
+  const [isContinuing, setIsContinuing] = useState(false);
+  const [buildError, setBuildError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const selectedComponent = canvas.find(c => c.id === selected);
+  // ── UI state ──
+  const [device, setDevice] = useState<DeviceFrame>('desktop');
+  const [zoom, setZoom] = useState(100);
+  const [rightTab, setRightTab] = useState<RightTab>('sections');
 
-  const pushHistory = useCallback((newCanvas: CanvasComponent[]) => {
-    setHistory(prev => {
-      const trimmed = prev.slice(0, historyIndex + 1);
-      return [...trimmed, newCanvas];
-    });
-    setHistoryIndex(prev => prev + 1);
-  }, [historyIndex]);
+  // ── Version compare ──
+  const [compareVersions, setCompareVersions] = useState<{ a: string; b: string } | null>(null);
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const type = e.dataTransfer.getData('text/plain') as ComponentType;
-    if (!type) return;
-    const newComponent: CanvasComponent = {
-      id: `${type}-${Date.now()}`,
-      type,
-      props: { label: type },
-    };
-    const newCanvas = [...canvas, newComponent];
-    setCanvas(newCanvas);
-    pushHistory(newCanvas);
-    setSelected(newComponent.id);
+  // ── Build result ──
+  const [buildState, setBuildState] = useState<BuildState>({
+    output: null,
+    pages: [],
+    activePage: 0,
+    sections: [],
+    projectId: null,
+  });
+
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  const getAuthToken = () =>
+    typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+
+  // ── Build handler ──────────────────────────────────────────────────────────
+  const handleBuild = useCallback(
+    async (overridePrompt?: string) => {
+      const text = overridePrompt ?? prompt;
+      if (!text.trim()) return;
+      setIsBuilding(true);
+      setBuildError(null);
+
+      try {
+        const token = getAuthToken();
+        const res = await fetch('/api/generate-ui', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            prompt: text,
+            stylePreset,
+            projectId: buildState.projectId ?? undefined,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json() as { error?: string };
+          throw new Error(err.error ?? `HTTP ${res.status}`);
+        }
+
+        const data = await res.json() as UIOutput & { projectId?: string };
+        const pages: Page[] = data.pages ?? [];
+        const sections: Section[] = pages[0]?.sections ?? [];
+
+        setBuildState({
+          output: data,
+          pages,
+          activePage: 0,
+          sections,
+          projectId: data.projectId ?? buildState.projectId,
+        });
+
+        // Inject into iframe
+        if (data.generatedCode && iframeRef.current) {
+          const iframe = iframeRef.current;
+          const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+          if (doc) {
+            doc.open();
+            doc.write(data.generatedCode);
+            doc.close();
+          }
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Build failed';
+        setBuildError(msg);
+      } finally {
+        setIsBuilding(false);
+      }
+    },
+    [prompt, stylePreset, buildState.projectId]
+  );
+
+  const handleContinue = async () => {
+    if (!continuePrompt.trim()) return;
+    setIsContinuing(true);
+    await handleBuild(continuePrompt);
+    setContinuePrompt('');
+    setIsContinuing(false);
   };
 
-  const undo = () => {
-    if (historyIndex <= 0) return;
-    const newIndex = historyIndex - 1;
-    setHistoryIndex(newIndex);
-    setCanvas(history[newIndex]);
-    setSelected(null);
-  };
-
-  const removeComponent = (id: string) => {
-    const newCanvas = canvas.filter(c => c.id !== id);
-    setCanvas(newCanvas);
-    pushHistory(newCanvas);
-    if (selected === id) setSelected(null);
-  };
-
-  const updateProp = (key: string, value: string) => {
-    if (!selected) return;
-    const newCanvas = canvas.map(c =>
-      c.id === selected ? { ...c, props: { ...c.props, [key]: value } } : c
-    );
-    setCanvas(newCanvas);
-  };
-
-  const handleExport = async () => {
-    setExporting(true);
+  // ── Save handler ──────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    if (!buildState.projectId) return;
+    setIsSaving(true);
     try {
-      const res = await fetch('/api/visual-builder/export', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ components: canvas }),
+      const token = getAuthToken();
+      await fetch(`/api/projects/${buildState.projectId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ pages: buildState.pages, sections: buildState.sections }),
       });
-      const data = await res.json() as { code?: string; error?: string };
-      setExportedCode(data.code ?? data.error ?? 'Error exporting');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (err) {
+      console.error('[save]', err);
     } finally {
-      setExporting(false);
+      setIsSaving(false);
     }
   };
 
+  // ── Section operations ────────────────────────────────────────────────────
+  const handleSectionReorder = (reordered: Section[]) => {
+    setBuildState((prev) => ({ ...prev, sections: reordered }));
+  };
+
+  const handleSectionDelete = (id: string) => {
+    setBuildState((prev) => ({ ...prev, sections: prev.sections.filter((s) => s.id !== id) }));
+  };
+
+  const handleSectionRegenerate = async (id: string) => {
+    const section = buildState.sections.find((s) => s.id === id);
+    if (!section) return;
+    const token = getAuthToken();
+    try {
+      const res = await fetch('/api/generate-section', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ sectionType: section.type, stylePreset }),
+      });
+      const data = await res.json() as { section?: Section };
+      if (data.section) {
+        setBuildState((prev) => ({
+          ...prev,
+          sections: prev.sections.map((s) =>
+            s.id === id ? { ...data.section!, id, order: s.order } : s
+          ),
+        }));
+      }
+    } catch (err) {
+      console.error('[regenerate-section]', err);
+    }
+  };
+
+  const handleInsertSection = () => {
+    const newSection: Section = {
+      id: generateId(),
+      type: 'custom',
+      title: 'New Section',
+      content: '<div style="padding:4rem 2rem;text-align:center;color:#94a3b8;">New section — regenerate to fill with content</div>',
+      order: buildState.sections.length,
+      bgColor: COLORS.bgCard,
+      textColor: COLORS.textPrimary,
+      spacing: 'md',
+      fontSize: 'md',
+      borderRadius: 'md',
+    };
+    setBuildState((prev) => ({ ...prev, sections: [...prev.sections, newSection] }));
+  };
+
+  // ── Restore version ────────────────────────────────────────────────────────
+  const handleRestoreVersion = async (versionId: string) => {
+    if (!buildState.projectId) return;
+    const token = getAuthToken();
+    try {
+      const res = await fetch(`/api/projects/${buildState.projectId}/versions/${versionId}/restore`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const data = await res.json() as { pages?: Page[] };
+      if (data.pages) {
+        const sections = data.pages[0]?.sections ?? [];
+        setBuildState((prev) => ({ ...prev, pages: data.pages!, sections, activePage: 0 }));
+      }
+    } catch (err) {
+      console.error('[restore-version]', err);
+    }
+  };
+
+  // ── Active page sections ───────────────────────────────────────────────────
+  const activeSections = buildState.sections;
+  const hasOutput = buildState.output !== null;
+
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col">
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 bg-[#111]">
-        <h1 className="text-lg font-bold text-[#6366f1] mr-4">Visual Builder</h1>
-        <button
-          onClick={undo}
-          disabled={historyIndex <= 0}
-          className="px-3 py-1.5 text-sm bg-white/5 hover:bg-white/10 rounded disabled:opacity-40 transition"
-        >
-          ↩ Undo
-        </button>
-        <button
-          onClick={handleExport}
-          disabled={exporting || canvas.length === 0}
-          className="px-3 py-1.5 text-sm bg-[#6366f1] hover:bg-[#5254cc] rounded disabled:opacity-40 transition font-semibold"
-        >
-          {exporting ? 'Exporting…' : '⬇ Export'}
-        </button>
-        <span className="text-xs text-gray-500 ml-auto">{canvas.length} component{canvas.length !== 1 ? 's' : ''}</span>
-      </div>
+    <>
+      <style>{`
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        button { font-family: inherit; }
+        input, textarea { font-family: inherit; }
+      `}</style>
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left sidebar – component blocks */}
-        <aside className="w-44 border-r border-white/10 p-3 flex flex-col gap-2 bg-[#0d0d0d]">
-          <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">Components</p>
-          {COMPONENT_BLOCKS.map(type => (
-            <div
-              key={type}
-              draggable
-              onDragStart={e => e.dataTransfer.setData('text/plain', type)}
-              className="px-3 py-2 bg-[#1a1a1a] hover:bg-[#6366f1]/20 border border-white/10 rounded cursor-grab text-sm transition select-none"
-            >
-              {type}
-            </div>
-          ))}
-        </aside>
-
-        {/* Center canvas */}
-        <div className="flex-1 p-4 overflow-y-auto">
-          <div
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            className={`min-h-96 rounded-xl border-2 border-dashed transition p-4 flex flex-col gap-3 ${
-              dragOver ? 'border-[#6366f1] bg-[#6366f1]/5' : 'border-white/10 bg-[#111]'
-            }`}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh',
+          background: COLORS.bg,
+          color: COLORS.textPrimary,
+          fontFamily: "'Inter','Segoe UI',system-ui,sans-serif",
+          overflow: 'hidden',
+        }}
+      >
+        {/* ── Header ─────────────────────────────────────────────────────────── */}
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.75rem',
+            padding: '0 1.25rem',
+            height: '48px',
+            borderBottom: `1px solid ${COLORS.border}`,
+            background: COLORS.bgPanel,
+            flexShrink: 0,
+            zIndex: 10,
+          }}
+        >
+          <a
+            href="/ai"
+            style={{
+              fontSize: '0.8125rem',
+              color: COLORS.textMuted,
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+            }}
           >
-            {canvas.length === 0 && (
-              <div className="flex-1 flex items-center justify-center text-gray-600 text-sm">
-                Drag components here
-              </div>
-            )}
-            {canvas.map(comp => (
-              <div
-                key={comp.id}
-                onClick={() => setSelected(comp.id)}
-                className={`group relative cursor-pointer rounded-lg transition ${
-                  selected === comp.id ? 'ring-2 ring-[#6366f1]' : 'ring-1 ring-white/5'
-                }`}
+            ← Back
+          </a>
+          <div style={{ width: '1px', height: '16px', background: COLORS.border }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '1.125rem' }}>⚡</span>
+            <h1 style={{ fontSize: '0.9375rem', fontWeight: 700, color: COLORS.textPrimary, margin: 0, letterSpacing: '-0.01em' }}>
+              ZIVO AI Builder
+            </h1>
+          </div>
+          <div style={{ flex: 1 }} />
+
+          {/* Device switcher */}
+          <div
+            style={{
+              display: 'flex',
+              gap: '2px',
+              background: 'rgba(255,255,255,0.04)',
+              borderRadius: '8px',
+              padding: '2px',
+              border: `1px solid ${COLORS.border}`,
+            }}
+          >
+            {(['desktop', 'tablet', 'mobile'] as DeviceFrame[]).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDevice(d)}
+                title={d.charAt(0).toUpperCase() + d.slice(1)}
+                style={{
+                  padding: '0.25rem 0.625rem',
+                  fontSize: '0.6875rem',
+                  fontWeight: 600,
+                  background: device === d ? COLORS.accent : 'transparent',
+                  border: 'none',
+                  borderRadius: '6px',
+                  color: device === d ? '#fff' : COLORS.textMuted,
+                  cursor: 'pointer',
+                }}
               >
-                <div className={componentPreviews[comp.type]}>
-                  {comp.props.label || comp.type}
-                </div>
-                <button
-                  onClick={e => { e.stopPropagation(); removeComponent(comp.id); }}
-                  className="absolute top-1 right-1 text-xs bg-red-500/80 hover:bg-red-500 px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 hover:opacity-100 transition"
-                >
-                  ✕
-                </button>
-              </div>
+                {d === 'desktop' ? '🖥' : d === 'tablet' ? '📱' : '📲'}
+              </button>
             ))}
           </div>
-        </div>
 
-        {/* Right sidebar – property inspector */}
-        <aside className="w-56 border-l border-white/10 p-4 bg-[#0d0d0d]">
-          <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-3">Properties</p>
-          {selectedComponent ? (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm font-semibold text-[#6366f1]">{selectedComponent.type}</p>
-              {Object.entries(selectedComponent.props).map(([key, value]) => (
-                <label key={key} className="flex flex-col gap-1">
-                  <span className="text-xs text-gray-400 capitalize">{key}</span>
-                  <input
-                    value={value}
-                    onChange={e => updateProp(key, e.target.value)}
-                    className="bg-[#1a1a1a] border border-white/10 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-[#6366f1]"
-                  />
-                </label>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-gray-600">Select a component to edit properties</p>
-          )}
-        </aside>
-      </div>
-
-      {/* Export output */}
-      {exportedCode && (
-        <div className="border-t border-white/10 p-4 bg-[#0d0d0d]">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Exported Code</p>
+          {/* Zoom */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
-              onClick={() => navigator.clipboard.writeText(exportedCode)}
-              className="text-xs text-[#6366f1] hover:underline"
+              onClick={() => setZoom((z) => Math.max(50, z - 10))}
+              style={{ padding: '0.25rem 0.4rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '5px', color: COLORS.textMuted, cursor: 'pointer', fontSize: '0.75rem' }}
             >
-              Copy
+              −
+            </button>
+            <span style={{ fontSize: '0.6875rem', color: COLORS.textMuted, minWidth: '36px', textAlign: 'center' }}>
+              {zoom}%
+            </span>
+            <button
+              onClick={() => setZoom((z) => Math.min(150, z + 10))}
+              style={{ padding: '0.25rem 0.4rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '5px', color: COLORS.textMuted, cursor: 'pointer', fontSize: '0.75rem' }}
+            >
+              +
             </button>
           </div>
-          <pre className="bg-[#111] rounded p-3 text-xs text-green-400 overflow-x-auto max-h-48">{exportedCode}</pre>
+        </header>
+
+        {/* ── Body ───────────────────────────────────────────────────────────── */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+
+          {/* ── Left panel ─────────────────────────────────────────────────── */}
+          <aside
+            style={{
+              width: '320px',
+              flexShrink: 0,
+              background: COLORS.bgPanel,
+              borderRight: `1px solid ${COLORS.border}`,
+              display: 'flex',
+              flexDirection: 'column',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+
+              {/* Prompt */}
+              <div>
+                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: COLORS.textMuted, display: 'block', marginBottom: '0.375rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Describe your UI
+                </label>
+                <div style={{ position: 'relative' }}>
+                  <textarea
+                    value={prompt}
+                    onChange={(e) => {
+                      if (e.target.value.length <= 2000) setPrompt(e.target.value);
+                    }}
+                    placeholder="Build a modern SaaS landing page with pricing, features, and a hero section..."
+                    rows={5}
+                    style={{
+                      width: '100%',
+                      padding: '0.625rem 0.75rem',
+                      paddingBottom: '1.5rem',
+                      background: COLORS.bgCard,
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: '8px',
+                      color: COLORS.textPrimary,
+                      fontSize: '0.8125rem',
+                      lineHeight: 1.5,
+                      resize: 'none',
+                      outline: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      bottom: '0.375rem',
+                      right: '0.5rem',
+                      fontSize: '0.5625rem',
+                      color: prompt.length > 1800 ? '#f59e0b' : COLORS.textMuted,
+                    }}
+                  >
+                    {prompt.length}/2000
+                  </span>
+                </div>
+              </div>
+
+              {/* Style preset */}
+              <div>
+                <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: COLORS.textMuted, display: 'block', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Style Preset
+                </label>
+                <StylePresetPicker value={stylePreset} onChange={setStylePreset} />
+              </div>
+
+              {/* Template cards (collapsible) */}
+              <div>
+                <button
+                  onClick={() => setShowTemplates((v) => !v)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                    padding: '0.5rem 0',
+                    background: 'none',
+                    border: 'none',
+                    color: COLORS.textMuted,
+                    fontSize: '0.6875rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  <span>Templates</span>
+                  <span style={{ transform: showTemplates ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+                    ▾
+                  </span>
+                </button>
+                <AnimatePresence>
+                  {showTemplates && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      <PromptTemplateCards
+                        onSelect={(p) => {
+                          setPrompt(p);
+                          setSelectedTemplate(p);
+                          setShowTemplates(false);
+                        }}
+                        selectedTemplate={selectedTemplate}
+                      />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Build button */}
+              <motion.button
+                onClick={() => handleBuild()}
+                disabled={isBuilding || !prompt.trim()}
+                whileTap={{ scale: 0.97 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '0.5rem',
+                  padding: '0.75rem',
+                  background: isBuilding
+                    ? 'rgba(99,102,241,0.4)'
+                    : prompt.trim()
+                    ? COLORS.accent
+                    : 'rgba(99,102,241,0.2)',
+                  border: 'none',
+                  borderRadius: '10px',
+                  color: '#fff',
+                  fontSize: '0.9375rem',
+                  fontWeight: 700,
+                  cursor: isBuilding || !prompt.trim() ? 'not-allowed' : 'pointer',
+                  letterSpacing: '-0.01em',
+                }}
+              >
+                {isBuilding ? (
+                  <>
+                    <motion.span
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                      style={{ display: 'inline-block' }}
+                    >
+                      ⟳
+                    </motion.span>
+                    Building…
+                  </>
+                ) : (
+                  <>⚡ Build Now</>
+                )}
+              </motion.button>
+
+              {buildError && (
+                <div
+                  style={{
+                    padding: '0.625rem 0.75rem',
+                    background: 'rgba(239,68,68,0.1)',
+                    border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: '8px',
+                    color: '#ef4444',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {buildError}
+                </div>
+              )}
+            </div>
+          </aside>
+
+          {/* ── Center panel ───────────────────────────────────────────────── */}
+          <main
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+              background: COLORS.bg,
+            }}
+          >
+            {/* Page tabs */}
+            {buildState.pages.length > 1 && (
+              <div
+                style={{
+                  display: 'flex',
+                  gap: '2px',
+                  padding: '0.5rem 1rem',
+                  borderBottom: `1px solid ${COLORS.border}`,
+                  background: COLORS.bgPanel,
+                  flexShrink: 0,
+                }}
+              >
+                {buildState.pages.map((p, i) => (
+                  <button
+                    key={p.id}
+                    onClick={() =>
+                      setBuildState((prev) => ({ ...prev, activePage: i, sections: p.sections }))
+                    }
+                    style={{
+                      padding: '0.25rem 0.75rem',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      background: buildState.activePage === i ? COLORS.accent : 'transparent',
+                      border: `1px solid ${buildState.activePage === i ? COLORS.accent : COLORS.border}`,
+                      borderRadius: '6px',
+                      color: buildState.activePage === i ? '#fff' : COLORS.textMuted,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {p.name}
+                    {p.isHome && <span style={{ marginLeft: '0.25rem', fontSize: '0.5rem' }}>🏠</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Preview area */}
+            <div
+              style={{
+                flex: 1,
+                overflow: 'auto',
+                display: 'flex',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                padding: '1.5rem',
+              }}
+            >
+              {!hasOutput ? (
+                // Empty state
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100%',
+                    gap: '1rem',
+                    textAlign: 'center',
+                    color: COLORS.textMuted,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '72px',
+                      height: '72px',
+                      background: 'rgba(99,102,241,0.1)',
+                      borderRadius: '16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '2rem',
+                    }}
+                  >
+                    ⚡
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: COLORS.textPrimary, margin: '0 0 0.375rem' }}>
+                      No Preview Yet
+                    </h2>
+                    <p style={{ fontSize: '0.8125rem', margin: 0, color: COLORS.textMuted }}>
+                      Describe your UI on the left and click &quot;Build Now&quot;
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                    {['AI-powered', 'Multi-page', 'Export ready', 'Deploy instantly'].map((f) => (
+                      <span
+                        key={f}
+                        style={{
+                          padding: '0.25rem 0.625rem',
+                          background: 'rgba(99,102,241,0.08)',
+                          border: `1px solid rgba(99,102,241,0.2)`,
+                          borderRadius: '100px',
+                          fontSize: '0.6875rem',
+                          color: COLORS.accent,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                // Preview iframe
+                <div
+                  style={{
+                    width: DEVICE_WIDTHS[device],
+                    maxWidth: '100%',
+                    height: '100%',
+                    minHeight: '500px',
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+                    transform: `scale(${zoom / 100})`,
+                    transformOrigin: 'top center',
+                    transition: 'width 0.3s ease, transform 0.2s ease',
+                  }}
+                >
+                  <iframe
+                    ref={iframeRef}
+                    title="Preview"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      border: 'none',
+                      background: '#fff',
+                    }}
+                    sandbox="allow-scripts allow-same-origin"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Continue building bar */}
+            {hasOutput && (
+              <div
+                style={{
+                  padding: '0.75rem 1rem',
+                  borderTop: `1px solid ${COLORS.border}`,
+                  background: COLORS.bgPanel,
+                  display: 'flex',
+                  gap: '0.5rem',
+                  flexShrink: 0,
+                }}
+              >
+                <input
+                  value={continuePrompt}
+                  onChange={(e) => setContinuePrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleContinue();
+                    }
+                  }}
+                  placeholder="Continue building… add a pricing section, change colors, etc."
+                  style={{
+                    flex: 1,
+                    padding: '0.5rem 0.75rem',
+                    background: COLORS.bgCard,
+                    border: `1px solid ${COLORS.border}`,
+                    borderRadius: '8px',
+                    color: COLORS.textPrimary,
+                    fontSize: '0.8125rem',
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  onClick={handleContinue}
+                  disabled={isContinuing || !continuePrompt.trim()}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    background: isContinuing || !continuePrompt.trim() ? 'rgba(99,102,241,0.3)' : COLORS.accent,
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    cursor: isContinuing || !continuePrompt.trim() ? 'not-allowed' : 'pointer',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {isContinuing ? '⟳' : '→ Continue'}
+                </button>
+              </div>
+            )}
+          </main>
+
+          {/* ── Right panel ────────────────────────────────────────────────── */}
+          <aside
+            style={{
+              width: '280px',
+              flexShrink: 0,
+              background: COLORS.bgPanel,
+              borderLeft: `1px solid ${COLORS.border}`,
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            {/* Tabs */}
+            <div
+              style={{
+                display: 'flex',
+                borderBottom: `1px solid ${COLORS.border}`,
+                padding: '0 0.5rem',
+                gap: '4px',
+                flexShrink: 0,
+              }}
+            >
+              {(['sections', 'versions'] as RightTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setRightTab(tab)}
+                  style={{
+                    flex: 1,
+                    padding: '0.625rem 0.5rem',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: `2px solid ${rightTab === tab ? COLORS.accent : 'transparent'}`,
+                    color: rightTab === tab ? COLORS.textPrimary : COLORS.textMuted,
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    textTransform: 'capitalize',
+                  }}
+                >
+                  {tab === 'sections' ? `Sections (${activeSections.length})` : 'Versions'}
+                </button>
+              ))}
+            </div>
+
+            {/* Tab content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0.75rem' }}>
+              {rightTab === 'sections' && (
+                <SectionList
+                  sections={activeSections}
+                  onReorder={handleSectionReorder}
+                  onDelete={handleSectionDelete}
+                  onRegenerate={handleSectionRegenerate}
+                  onInsert={handleInsertSection}
+                />
+              )}
+              {rightTab === 'versions' && buildState.projectId && (
+                <VersionHistoryPanel
+                  projectId={buildState.projectId}
+                  onRestore={handleRestoreVersion}
+                  onCompare={(v1, v2) => setCompareVersions({ a: v1, b: v2 })}
+                />
+              )}
+              {rightTab === 'versions' && !buildState.projectId && (
+                <div style={{ padding: '1.5rem 0', textAlign: 'center', color: COLORS.textMuted, fontSize: '0.8125rem' }}>
+                  Build a project first to see version history.
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
-      )}
-    </main>
+
+        {/* ── Bottom bar ─────────────────────────────────────────────────────── */}
+        <footer
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0 1rem',
+            height: '44px',
+            borderTop: `1px solid ${COLORS.border}`,
+            background: COLORS.bgPanel,
+            flexShrink: 0,
+          }}
+        >
+          <ExportMenu
+            projectId={buildState.projectId ?? ''}
+            sections={activeSections}
+            pages={buildState.pages}
+          />
+
+          <button
+            onClick={handleSave}
+            disabled={isSaving || !buildState.projectId}
+            style={{
+              padding: '0.375rem 0.875rem',
+              background: saveSuccess ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${saveSuccess ? 'rgba(16,185,129,0.4)' : COLORS.border}`,
+              borderRadius: '7px',
+              color: saveSuccess ? '#10b981' : COLORS.textSecondary,
+              fontSize: '0.8125rem',
+              fontWeight: 600,
+              cursor: isSaving || !buildState.projectId ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {isSaving ? '⟳ Saving…' : saveSuccess ? '✓ Saved' : '💾 Save Project'}
+          </button>
+
+          <DeployMenu
+            projectId={buildState.projectId ?? ''}
+            githubRepo={buildState.githubRepo}
+            vercelUrl={buildState.vercelUrl}
+            deployStatus={buildState.deployStatus}
+          />
+        </footer>
+      </div>
+
+      {/* Version compare overlay */}
+      <AnimatePresence>
+        {compareVersions && buildState.projectId && (
+          <VersionCompare
+            projectId={buildState.projectId}
+            versionAId={compareVersions.a}
+            versionBId={compareVersions.b}
+            onClose={() => setCompareVersions(null)}
+          />
+        )}
+      </AnimatePresence>
+    </>
   );
 }

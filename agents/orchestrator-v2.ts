@@ -73,7 +73,8 @@ function buildExistingFilesContext(existingFiles: AgentV2File[]): string {
 export async function runOrchestratorV2(
   prompt: string,
   existingFiles: AgentV2File[] = [],
-  maxIterations = 8
+  maxIterations = 10,
+  projectContext?: string
 ): Promise<AgentV2Result> {
   const steps: AgentV2Step[] = [];
   let files: AgentV2File[] = [];
@@ -87,13 +88,16 @@ export async function runOrchestratorV2(
   // Step 1: Plan + Generate
   addStep("Planning and generating code…", "running");
   const existingContext = buildExistingFilesContext(existingFiles);
+  const systemPrompt = projectContext
+    ? `${ORCHESTRATOR_SYSTEM_PROMPT}\n\nProject Context:\n${projectContext}`
+    : ORCHESTRATOR_SYSTEM_PROMPT;
 
   const response = await getClient().chat.completions.create({
     model: "gpt-4o",
     temperature: 0.2,
     max_tokens: 8192,
     messages: [
-      { role: "system", content: ORCHESTRATOR_SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       { role: "user", content: `${prompt}${existingContext}` },
     ],
   });
@@ -165,7 +169,7 @@ export async function runOrchestratorV2(
       }
 
       // Pass full project context to the fixer alongside individual file issues
-      const projectContext = files
+      const fixContext = files
         .map((f) => `// ${f.path}\n${f.content.slice(0, FIX_CONTEXT_TRUNCATE_LENGTH)}`)
         .join("\n\n");
 
@@ -175,7 +179,7 @@ export async function runOrchestratorV2(
           file: filePath,
           content: fileObj?.content ?? "",
           issues,
-          projectContext,
+          projectContext: fixContext,
         };
       });
 
@@ -207,8 +211,9 @@ export async function runOrchestratorV2(
 export async function* runOrchestratorV2Streamed(
   prompt: string,
   existingFiles: AgentV2File[] = [],
-  maxIterations = 8
-): AsyncGenerator<AgentV2Step | { type: "result"; result: AgentV2Result }, void, unknown> {
+  maxIterations = 10,
+  projectContext?: string
+): AsyncGenerator<AgentV2Step | { type: "result"; result: AgentV2Result } | { type: "progress"; percent: number }, void, unknown> {
   const steps: AgentV2Step[] = [];
   let files: AgentV2File[] = [];
   let validation: ValidationResult = { valid: false, issues: [], summary: "" };
@@ -222,13 +227,16 @@ export async function* runOrchestratorV2Streamed(
 
   yield emitStep("Planning and generating code…", "running");
   const existingContext = buildExistingFilesContext(existingFiles);
+  const systemPrompt = projectContext
+    ? `${ORCHESTRATOR_SYSTEM_PROMPT}\n\nProject Context:\n${projectContext}`
+    : ORCHESTRATOR_SYSTEM_PROMPT;
 
   const response = await getClient().chat.completions.create({
     model: "gpt-4o",
     temperature: 0.2,
     max_tokens: 8192,
     messages: [
-      { role: "system", content: ORCHESTRATOR_SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       { role: "user", content: `${prompt}${existingContext}` },
     ],
   });
@@ -282,16 +290,20 @@ export async function* runOrchestratorV2Streamed(
   for (let i = 0; i < maxIterations; i++) {
     iterations++;
     yield emitStep(`Validation pass ${i + 1}…`, "running");
+    // Emit progress: generation is at ~30%, each validation pass adds progress toward 95%
+    yield { type: "progress", percent: Math.round(30 + (i / maxIterations) * 65) };
     validation = validateFiles(files);
 
     if (validation.valid) {
       yield emitStep(`Validation pass ${i + 1}…`, "done", validation.summary);
+      yield { type: "progress", percent: 100 };
       break;
     }
 
     const errorIssues = validation.issues.filter((iss) => iss.type === "error");
     if (errorIssues.length === 0) {
       yield emitStep(`Validation pass ${i + 1}…`, "done", validation.summary);
+      yield { type: "progress", percent: 100 };
       break;
     }
 
@@ -307,13 +319,13 @@ export async function* runOrchestratorV2Streamed(
         byFile.set(issue.file, list);
       }
 
-      const projectContext = files
+      const fixContext = files
         .map((f) => `// ${f.path}\n${f.content.slice(0, FIX_CONTEXT_TRUNCATE_LENGTH)}`)
         .join("\n\n");
 
       const fixRequests = Array.from(byFile.entries()).map(([filePath, issues]) => {
         const fileObj = files.find((f) => f.path === filePath);
-        return { file: filePath, content: fileObj?.content ?? "", issues, projectContext };
+        return { file: filePath, content: fileObj?.content ?? "", issues, projectContext: fixContext };
       });
 
       const fixResults = await fixFiles(fixRequests);
