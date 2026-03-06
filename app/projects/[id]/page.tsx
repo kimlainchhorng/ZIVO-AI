@@ -508,7 +508,7 @@ export default function ProjectWorkspacePage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {messages.length === 0 && (
                 <div style={s.emptyTab}>
-                  <MessageSquare size={32} style={{ color: '#334155', marginBottom: '0.75rem' }} />
+                  <MessageSquare size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
                   <p>No messages yet. Use Continue Build to start the conversation.</p>
                 </div>
               )}
@@ -546,7 +546,7 @@ export default function ProjectWorkspacePage() {
             <div>
               {files.length === 0 ? (
                 <div style={s.emptyTab}>
-                  <FileCode2 size={32} style={{ color: '#334155', marginBottom: '0.75rem' }} />
+                  <FileCode2 size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
                   <p>No files yet. Run Continue Build to generate project files.</p>
                 </div>
               ) : (
@@ -585,7 +585,7 @@ export default function ProjectWorkspacePage() {
               )}
               {builds.length === 0 ? (
                 <div style={s.emptyTab}>
-                  <History size={32} style={{ color: '#334155', marginBottom: '0.75rem' }} />
+                  <History size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
                   <p>No build history yet.</p>
                 </div>
               ) : (
