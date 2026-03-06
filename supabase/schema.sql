@@ -62,7 +62,8 @@ create table if not exists ai_messages (
   role        text not null check (role in ('user', 'assistant', 'system')),
   content     text not null,
   tokens_used integer,
-  created_at  timestamptz not null default now()
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
 );
 
 create index if not exists ai_messages_project_id_idx on ai_messages(project_id);
@@ -103,6 +104,14 @@ create or replace trigger ai_projects_updated_at
 
 create or replace trigger ai_files_updated_at
   before update on ai_files
+  for each row execute function update_updated_at();
+
+create or replace trigger ai_messages_updated_at
+  before update on ai_messages
+  for each row execute function update_updated_at();
+
+create or replace trigger ai_versions_updated_at
+  before update on ai_versions
   for each row execute function update_updated_at();
 
 -- ─────────────────────────────────────────────
