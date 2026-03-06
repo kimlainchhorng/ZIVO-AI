@@ -1,7 +1,3 @@
--- DEPRECATED: This file has been superseded by 20260308000004_project_change_plans.sql
--- to preserve correct ordering after the renumbered domains/rollbacks/teams migration.
--- Do NOT run this file. Use 20260308000004_project_change_plans.sql instead.
-
 -- Migration: project_change_plans table
 -- Persists AI-proposed change plans that require explicit user approval
 -- before any file modifications are applied (Plan + Checklist Guardrail).

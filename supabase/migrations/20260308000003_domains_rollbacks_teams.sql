@@ -1,7 +1,3 @@
--- DEPRECATED: This file has been superseded by 20260308000003_domains_rollbacks_teams.sql
--- due to a duplicate timestamp conflict with 20260308000001_project_publish.sql.
--- Do NOT run this file. Use 20260308000003_domains_rollbacks_teams.sql instead.
-
 -- Migration: custom domains, deploy rollbacks, team collaboration
 
 -- ─── Extend project_deployments ──────────────────────────────────────────────

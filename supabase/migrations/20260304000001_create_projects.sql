@@ -1,6 +1,3 @@
--- DEPRECATED: This file has been superseded by 20260304000001_create_projects.sql.
--- Do NOT run this file. Use 20260304000001_create_projects.sql instead.
-
 -- Migration: simple projects table for ZIVO AI (feature parity with Lovable/Bolt/Base44)
 -- Note: If you already ran 20260305000001_projects_workspace.sql, this migration
 -- adds the is_public boolean column as an alias for visibility = 'public'.
@@ -47,4 +44,3 @@ do $$ begin
     execute 'create policy "projects_public_read" on public.projects for select using (visibility = ''public'')';
   end if;
 end $$;
-
