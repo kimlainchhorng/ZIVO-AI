@@ -204,7 +204,7 @@ export function buildWebsiteManifest(
     },
   ];
 
-  for (const { file, title, desc } of legalPages) {
+  for (const { file, desc } of legalPages) {
     files.push(
       mf(
         file,

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
-import { colors, spacing, borderRadius, typography } from "../../theme/tokens";
+import { colors, spacing, typography } from "../../theme/tokens";
 import { notifications } from "../../lib/mock-data";
 
 type Notification = typeof notifications[number];
