@@ -18,7 +18,16 @@ const NAV_LINKS = [
   { href: '/ai', label: 'Builder' },
   { href: '/workflow', label: 'Workflow' },
   { href: '/templates', label: 'Templates' },
+  { href: '/components', label: 'Components' },
+  { href: '/deploy', label: 'Deploy' },
+  { href: '/plugins', label: 'Plugins' },
+  { href: '/database-builder', label: 'Database' },
+  { href: '/api-generator', label: 'API Gen' },
+  { href: '/auth-builder', label: 'Auth' },
+  { href: '/visual-builder', label: 'Visual' },
   { href: '/history', label: 'History' },
+  { href: '/dashboard', label: 'Dashboard' },
+  { href: '/onboarding', label: 'Get Started' },
 ];
 
 export default function NavBar() {

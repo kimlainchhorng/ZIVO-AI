@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteVersion } from "../save-site/route";
+import { deleteVersion } from "../save-site/versions-store";
 
 export const dynamic = "force-dynamic";
 

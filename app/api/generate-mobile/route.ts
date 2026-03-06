@@ -1,148 +1,124 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { MOBILE_BUILDER_PROMPTS } from "../../../prompts/mobile-builder";
 
 export const runtime = "nodejs";
+
+export type MobilePlatform = "flutter" | "react-native" | "kotlin" | "swift";
+
+export interface GeneratedFile {
+  path: string;
+  content: string;
+  action: "create" | "update" | "delete";
+}
+
+export interface GenerateMobileResponse {
+  thinking?: string;
+  files: GeneratedFile[];
+  commands?: string[];
+  summary: string;
+  platform: MobilePlatform;
+}
 
 function getClient() {
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
-export type MobilePlatform = "flutter" | "react-native" | "kotlin" | "swift";
-
-export interface MobileFile {
-  path: string;
-  content: string;
-}
-
-export interface GenerateMobileResponse {
-  platform: MobilePlatform;
-  files: MobileFile[];
-  summary: string;
-  setup_instructions: string;
-}
-
-const PLATFORM_PROMPTS: Record<MobilePlatform, string> = {
-  flutter: `Generate a Flutter/Dart mobile app scaffold. Include:
-- lib/main.dart (entry point with MaterialApp)
-- lib/screens/home_screen.dart (main screen with Scaffold)
-- lib/widgets/ (at least one reusable widget)
-- pubspec.yaml (with flutter_lints and cupertino_icons)
-- README.md
-Use Flutter 3.x patterns, Material 3 design, and proper Dart null safety.`,
-
-  "react-native": `Generate a React Native mobile app scaffold. Include:
-- App.tsx (entry point with NavigationContainer)
-- src/screens/HomeScreen.tsx (main screen)
-- src/components/ (at least one reusable component)
-- package.json (with react-navigation, react-native-vector-icons)
-- tsconfig.json
-- README.md
-Use React Native 0.73+, TypeScript, and React Navigation v6.`,
-
-  kotlin: `Generate an Android (Kotlin) mobile app scaffold. Include:
-- app/src/main/java/.../MainActivity.kt (with Jetpack Compose)
-- app/src/main/java/.../ui/HomeScreen.kt (Composable screen)
-- app/src/main/res/values/strings.xml
-- app/build.gradle.kts (with Compose dependencies)
-- build.gradle.kts (root)
-- README.md
-Use Kotlin, Jetpack Compose, Material 3, and MVVM architecture.`,
-
-  swift: `Generate an iOS (Swift) mobile app scaffold. Include:
-- App/ContentView.swift (main SwiftUI view)
-- App/Views/HomeView.swift (home screen)
-- App/Models/ (at least one data model)
-- App.swift (entry point with @main)
-- README.md
-Use Swift 5.9+, SwiftUI, and MVVM architecture.`,
-};
-
-const SYSTEM_PROMPT = `You are ZIVO AI — an expert mobile app developer. Generate complete, working mobile app scaffolds.
-
-You are proficient in: Flutter/Dart, React Native (TypeScript), Kotlin (Jetpack Compose), Swift (SwiftUI).
-
-Return ONLY valid JSON in this exact format (no markdown, no code fences):
-{
-  "platform": "flutter|react-native|kotlin|swift",
-  "files": [
-    { "path": "relative/path/file.dart", "content": "..." }
-  ],
-  "summary": "Brief description of what was scaffolded",
-  "setup_instructions": "Step-by-step instructions to run the app"
-}`;
-
-function stripCodeFences(text: string): string {
-  return text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+function stripMarkdownFences(text: string): string {
+  return text
+    .replace(/^```(?:json)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
 }
 
 function parseJSON(text: string): GenerateMobileResponse {
-  const clean = stripCodeFences(text);
+  const cleaned = stripMarkdownFences(text);
   try {
-    return JSON.parse(clean);
-  } catch {
-    const match = clean.match(/\{[\s\S]*\}/);
+    return JSON.parse(cleaned);
+  } catch (parseErr) {
+    console.error("[generate-mobile] Initial JSON parse failed:", parseErr);
+    const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
     throw new Error("AI did not return valid JSON");
   }
 }
 
+const VALID_FILE_ACTIONS = new Set(["create", "update", "delete"]);
+
+function isValidFile(f: unknown): f is GeneratedFile {
+  if (!f || typeof f !== "object") return false;
+  const { path, content, action } = f as Record<string, unknown>;
+  return (
+    typeof path === "string" &&
+    path.length > 0 &&
+    typeof content === "string" &&
+    VALID_FILE_ACTIONS.has(action as string)
+  );
+}
+
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ error: "OPENAI_API_KEY is missing" }, { status: 500 });
+      return NextResponse.json(
+        { error: "OPENAI_API_KEY is missing in environment" },
+        { status: 500 }
+      );
     }
 
     const body = await req.json().catch(() => ({}));
-    const platform = body?.platform as MobilePlatform;
-    const description: string = body?.description || "";
-
-    const validPlatforms: MobilePlatform[] = ["flutter", "react-native", "kotlin", "swift"];
-    if (!validPlatforms.includes(platform)) {
-      return NextResponse.json(
-        { error: `Invalid platform. Must be one of: ${validPlatforms.join(", ")}` },
-        { status: 400 }
-      );
-    }
+    const description = typeof body?.description === "string" ? body.description : "";
+    const platform: MobilePlatform = ["flutter", "react-native", "kotlin", "swift"].includes(
+      body?.platform
+    )
+      ? (body.platform as MobilePlatform)
+      : "flutter";
 
     if (!description.trim()) {
       return NextResponse.json({ error: "Missing description" }, { status: 400 });
     }
 
-    const platformInstructions = PLATFORM_PROMPTS[platform];
-    const userPrompt = `Platform: ${platform}\n\n${platformInstructions}\n\nApp description: ${description.trim()}`;
+    const systemPrompt = `${MOBILE_BUILDER_PROMPTS[platform]}`;
 
-    let lastError: Error | null = null;
+    let parsed: GenerateMobileResponse | null = null;
+    let lastError = "";
+
     for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await getClient().chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: description.trim() },
+        ],
+        temperature: 0.2,
+        max_tokens: 16000,
+      });
+
+      const text: string = r.choices[0]?.message?.content ?? "";
       try {
-        const response = await getClient().chat.completions.create({
-          model: "gpt-4o",
-          temperature: 0.3,
-          max_tokens: 6000,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userPrompt },
-          ],
-        });
-
-        const text = response.choices?.[0]?.message?.content ?? "{}";
-        const parsed = parseJSON(text);
-
-        if (!Array.isArray(parsed.files) || parsed.files.length === 0) {
-          throw new Error("Invalid response: missing files array");
-        }
-
-        parsed.platform = platform;
-        return NextResponse.json(parsed);
-      } catch (err) {
-        lastError = err as Error;
-        if (attempt < 2) continue;
+        parsed = parseJSON(text);
+        if (Array.isArray(parsed.files)) break;
+        lastError = "Invalid response structure: missing files array";
+        parsed = null;
+      } catch (e) {
+        lastError = (e as Error).message || "AI did not return valid JSON";
       }
     }
 
-    return NextResponse.json(
-      { error: lastError?.message || "Failed to generate mobile scaffold" },
-      { status: 502 }
-    );
+    if (!parsed) {
+      return NextResponse.json(
+        { error: lastError || "AI did not return valid JSON" },
+        { status: 502 }
+      );
+    }
+
+    if (!Array.isArray(parsed.files)) {
+      parsed.files = [];
+    }
+    parsed.files = parsed.files.filter(isValidFile);
+
+    parsed.platform = platform;
+
+    return NextResponse.json(parsed);
   } catch (err: unknown) {
     return NextResponse.json(
       { error: (err as Error)?.message || "Server error" },

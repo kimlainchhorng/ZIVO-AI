@@ -1,28 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type KeyboardEvent } from "react";
 
-export interface SiteFile {
+interface GeneratedFile {
   path: string;
   content: string;
-  action?: "create" | "update" | "delete";
+  action: "create" | "update" | "delete";
+}
+
+interface UpdateSiteResponse {
+  files: GeneratedFile[];
+  preview_html?: string;
+  summary: string;
 }
 
 interface WebsiteUpdaterProps {
-  currentFiles: SiteFile[];
-  onFilesUpdated: (updatedFiles: SiteFile[], previewHtml?: string) => void;
+  currentFiles: GeneratedFile[];
+  onUpdate: (updatedFiles: GeneratedFile[], previewHtml?: string) => void;
 }
 
-export default function WebsiteUpdater({ currentFiles, onFilesUpdated }: WebsiteUpdaterProps) {
+export default function WebsiteUpdater({ currentFiles, onUpdate }: WebsiteUpdaterProps) {
   const [updateRequest, setUpdateRequest] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSummary, setLastSummary] = useState<string | null>(null);
 
-  async function handleUpdate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!updateRequest.trim() || loading) return;
-
+  async function handleUpdate() {
+    if (!updateRequest.trim()) return;
     setLoading(true);
     setError(null);
     setLastSummary(null);
@@ -31,138 +35,83 @@ export default function WebsiteUpdater({ currentFiles, onFilesUpdated }: Website
       const res = await fetch("/api/update-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentFiles, updateRequest: updateRequest.trim() }),
+        body: JSON.stringify({ currentFiles, updateRequest }),
       });
 
-      const data = await res.json();
+      const data: unknown = await res.json();
 
-      if (!res.ok || data.error) {
-        setError(data.error || "Update failed. Please try again.");
+      if (!res.ok || (data && typeof data === "object" && "error" in data)) {
+        setError(
+          (data as { error?: string })?.error ||
+            `Server error (${res.status})`
+        );
         return;
       }
 
-      // Merge the updated files into the current files
-      const updatedMap = new Map<string, SiteFile>(
-        (data.files as SiteFile[]).map((f) => [f.path, f])
-      );
-      const merged = currentFiles
-        .filter((f) => {
-          const updated = updatedMap.get(f.path);
-          return !updated || updated.action !== "delete";
-        })
-        .map((f) => updatedMap.get(f.path) ?? f);
+      const typed = data as UpdateSiteResponse;
 
-      // Add new files that weren't in the original set
-      for (const [path, file] of updatedMap.entries()) {
-        if (!currentFiles.find((f) => f.path === path) && file.action !== "delete") {
-          merged.push(file);
+      // Merge updated files into current files
+      const updatedMap = new Map<string, GeneratedFile>(
+        currentFiles.map((f) => [f.path, f])
+      );
+
+      for (const file of typed.files) {
+        if (file.action === "delete") {
+          updatedMap.delete(file.path);
+        } else {
+          updatedMap.set(file.path, file);
         }
       }
 
-      onFilesUpdated(merged, data.preview_html);
-      setLastSummary(data.summary || "Update applied.");
+      const mergedFiles = Array.from(updatedMap.values());
+      setLastSummary(typed.summary);
       setUpdateRequest("");
-    } catch {
-      setError("Network error. Please try again.");
+      onUpdate(mergedFiles, typed.preview_html);
+    } catch (err) {
+      setError((err as Error)?.message || "Failed to apply update. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
+  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      handleUpdate();
+    }
+  }
+
   return (
-    <div className="website-updater">
-      <form onSubmit={handleUpdate} className="website-updater__form">
-        <input
-          type="text"
+    <div className="flex flex-col gap-2 border-t pt-3">
+      <label className="text-sm font-medium text-gray-700">Edit website with AI</label>
+      <div className="flex gap-2">
+        <textarea
           value={updateRequest}
           onChange={(e) => setUpdateRequest(e.target.value)}
-          placeholder='Describe a change, e.g. "change the hero background to blue"'
-          disabled={loading}
-          className="website-updater__input"
-          aria-label="Update request"
+          onKeyDown={handleKeyDown}
+          placeholder="e.g. Change the hero headline to 'Build Faster', add a pricing section, make the navbar sticky…"
+          rows={2}
+          className="flex-1 border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
-          type="submit"
+          onClick={handleUpdate}
           disabled={loading || !updateRequest.trim()}
-          className="website-updater__button"
+          className="self-end bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
         >
-          {loading ? "Updating…" : "Apply Update"}
+          {loading ? "Updating…" : "Apply Changes"}
         </button>
-      </form>
+      </div>
+      <p className="text-xs text-gray-400">Tip: Press ⌘+Enter (Mac) or Ctrl+Enter (Windows/Linux) to apply changes</p>
 
       {error && (
-        <p className="website-updater__error" role="alert">
-          {error}
-        </p>
+        <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>
       )}
 
-      {lastSummary && !error && (
-        <p className="website-updater__success" role="status">
+      {lastSummary && (
+        <p className="text-xs text-green-700 bg-green-50 px-3 py-2 rounded">
           ✓ {lastSummary}
         </p>
       )}
-
-      <style>{`
-        .website-updater {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-          padding: 0.75rem 1rem;
-          background: #0f172a;
-          border-top: 1px solid #1e293b;
-        }
-        .website-updater__form {
-          display: flex;
-          gap: 0.5rem;
-        }
-        .website-updater__input {
-          flex: 1;
-          padding: 0.5rem 0.75rem;
-          border-radius: 6px;
-          border: 1px solid #334155;
-          background: #1e293b;
-          color: #f1f5f9;
-          font-size: 0.875rem;
-          outline: none;
-          transition: border-color 0.2s;
-        }
-        .website-updater__input:focus {
-          border-color: #6366f1;
-        }
-        .website-updater__input::placeholder {
-          color: #64748b;
-        }
-        .website-updater__button {
-          padding: 0.5rem 1rem;
-          border-radius: 6px;
-          border: none;
-          background: #6366f1;
-          color: #fff;
-          font-size: 0.875rem;
-          font-weight: 500;
-          cursor: pointer;
-          transition: background 0.2s;
-          white-space: nowrap;
-        }
-        .website-updater__button:hover:not(:disabled) {
-          background: #4f46e5;
-        }
-        .website-updater__button:disabled {
-          background: #334155;
-          color: #64748b;
-          cursor: not-allowed;
-        }
-        .website-updater__error {
-          color: #f87171;
-          font-size: 0.8rem;
-          margin: 0;
-        }
-        .website-updater__success {
-          color: #4ade80;
-          font-size: 0.8rem;
-          margin: 0;
-        }
-      `}</style>
     </div>
   );
 }
+
