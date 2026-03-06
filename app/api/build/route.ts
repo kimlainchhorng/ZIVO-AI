@@ -32,6 +32,7 @@ import type { ManifestFile } from "@/lib/ai/manifest";
 import { createManifest } from "@/lib/ai/manifest";
 import { planWebsiteChanges } from "@/lib/ai/website-change-planner";
 import { getAllPlaceholderAssets } from "@/lib/placeholder-assets";
+import { stripAxios } from "@/lib/build/strip-axios";
 
 export type BuildMode = "code" | "website_v2" | "mobile_v2";
 
@@ -89,7 +90,6 @@ const WEBSITE_BASE_DEPENDENCIES: Record<string, string> = {
 };
 
 const WEBSITE_KNOWN_DEP_VERSIONS: Record<string, string> = {
-  axios: "^1.8.4",
   clsx: "^2.1.1",
   "tailwind-merge": "^2.6.1",
   "lucide-react": "^0.475.0",
@@ -218,6 +218,15 @@ function ensureWebsitePackageJson(files: GeneratedFile[]): GeneratedFile[] {
 
 function encodeSSE(event: SSEEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+function applyStripAxios(files: GeneratedFile[]): GeneratedFile[] {
+  return files.map((f) => {
+    if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(f.path)) return f;
+    const stripped = stripAxios(f.content ?? "");
+    if (stripped === f.content) return f;
+    return { ...f, content: stripped };
+  });
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -573,6 +582,7 @@ async function runWebsiteV2Pipeline(
 
   send({ type: "stage", stage: "VALIDATING", message: "Reconciling package.json dependencies…", progress: 69 });
   files = ensureWebsitePackageJson(files);
+  files = applyStripAxios(files);
 
   send({ type: "files", files });
 

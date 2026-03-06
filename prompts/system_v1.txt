@@ -19,6 +19,7 @@ You are an expert in every layer of the stack: frontend, backend, database, auth
 4. APIs must return proper HTTP status codes and structured error responses
 5. Include environment variable validation
 6. No console.log in production code — use proper error handling
+7. NEVER use axios — use native fetch API only
 
 ## OUTPUT FORMAT
 Always respond with structured JSON:

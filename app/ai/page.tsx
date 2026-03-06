@@ -815,7 +815,27 @@ function AIPageInner() {
               }
               setAutoFixLog(fixData.summary ?? null);
               setConsoleLogs((prev) => [...prev, { text: `> 🔧 ${fixData.summary}`, type: "success" }]);
-              if (fixData.fixed === 0) break;
+              if (fixData.fixed === 0) {
+                // No files changed — try once more with the broader rewrite prompt
+                try {
+                  const broadRes = await fetch("/api/fix-errors", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ files: currentFiles, errors: errorsToFix, iteration, broadFix: true }),
+                  });
+                  const broadData = await broadRes.json();
+                  if (broadData.files?.length) {
+                    currentFiles = broadData.files;
+                    setOutput((prev) => prev ? { ...prev, files: broadData.files } : prev);
+                  }
+                  setAutoFixLog(broadData.summary ?? null);
+                  setConsoleLogs((prev) => [...prev, { text: `> 🔧 [broad] ${broadData.summary}`, type: "success" }]);
+                } catch (broadErr) {
+                  // Broad fix network/parse failure is non-fatal; log and continue to break
+                  setConsoleLogs((prev) => [...prev, { text: `> ⚠ Broad fix attempt failed: ${(broadErr as Error)?.message ?? "unknown error"}`, type: "error" }]);
+                }
+                break;
+              }
             } catch {
               break;
             }

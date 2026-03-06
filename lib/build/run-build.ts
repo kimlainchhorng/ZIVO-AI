@@ -16,6 +16,7 @@ export interface BuildLoopResult {
   finalFiles: { path: string; content: string }[];
   iterations: BuildRunResult[];
   totalFixes: number;
+  usedBroadFix: boolean;
 }
 
 function validationToBuildErrors(result: ValidationResult): ParsedBuildError[] {
@@ -41,6 +42,8 @@ export async function runBuildLoop(
   const iterations: BuildRunResult[] = [];
   const currentFiles = [...files];
   let totalFixes = 0;
+  let usedBroadFix = false;
+  let useBroadOnNextIteration = false;
 
   for (let i = 0; i < maxIterations; i++) {
     const start = Date.now();
@@ -64,7 +67,7 @@ export async function runBuildLoop(
     if (onProgress) onProgress(i + 1, errors);
 
     if (errors.length === 0) {
-      return { success: true, finalFiles: currentFiles, iterations, totalFixes };
+      return { success: true, finalFiles: currentFiles, iterations, totalFixes, usedBroadFix };
     }
 
     if (i === maxIterations - 1) break;
@@ -77,7 +80,13 @@ export async function runBuildLoop(
 
     if (filesToFix.length === 0) break;
 
-    const fixes = await autoFixFiles(filesToFix);
+    const broad: boolean = useBroadOnNextIteration;
+    const fixes = await autoFixFiles(filesToFix, undefined, { broad });
+    if (broad) usedBroadFix = true;
+
+    // Check if all fixes had no change — trigger broad retry on next iteration
+    const allNoChange = fixes.every(f => f.noChange);
+    useBroadOnNextIteration = allNoChange && !broad;
 
     // Apply fixes
     for (const fix of fixes) {
@@ -97,5 +106,6 @@ export async function runBuildLoop(
     finalFiles: currentFiles,
     iterations,
     totalFixes,
+    usedBroadFix,
   };
 }
