@@ -27,9 +27,6 @@ export default function MobileBuilder() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [result, setResult] = useState<GenerateMobileResponse | null>(null);
-  const [_selectedFile, setSelectedFile] = useState<MobileFile | null>(null);
-  const [_copied, setCopied] = useState(false);
-  const [_downloadError, setDownloadError] = useState<string | null>(null);
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
@@ -61,9 +58,6 @@ export default function MobileBuilder() {
 
       const typed = data as GenerateMobileResponse;
       setResult(typed);
-      if (typed.files?.length > 0) {
-        setSelectedFile(typed.files[0]);
-      }
     } catch (err: unknown) {
       setError((err as Error)?.message || "Failed to generate mobile app. Please try again.");
     } finally {
@@ -71,42 +65,8 @@ export default function MobileBuilder() {
     }
   }
 
-  async function _handleCopy(content: string) {
-    try {
-      await navigator.clipboard.writeText(content);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      setCopied(false);
-      setError("Copy failed. Please select and copy the code manually.");
-    }
-  }
 
-  async function _handleDownload() {
-    if (!result?.files?.length) return;
-    setDownloadError(null);
-    try {
-      const res = await fetch("/api/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ files: result.files }),
-      });
-      if (!res.ok) {
-        setDownloadError(`Download failed (${res.status})`);
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `zivo-${platform}-app.zip`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setDownloadError((err as Error)?.message || "Download failed. Please try again.");
-    }
-  }
+
 
 
   async function handleDownloadZip() {

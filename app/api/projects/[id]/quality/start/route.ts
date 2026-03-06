@@ -91,11 +91,11 @@ export async function POST(req: Request, { params }: RouteParams) {
         // Ask the LLM to patch failing files (auto-fix stays in app per spec)
         const patchedFiles = await applyAIFix(files, failedChecks);
 
-        // Persist patched files only when something changed
-        const changed = patchedFiles.filter((pf) => {
-          const orig = files.find((f) => f.path === pf.path);
-          return !orig || orig.content !== pf.content;
-        });
+        // Persist patched files only when something changed — O(n) with a Map
+        const originalByPath = new Map(files.map((f) => [f.path, f.content]));
+        const changed = patchedFiles.filter(
+          (pf) => originalByPath.get(pf.path) !== pf.content
+        );
         if (changed.length > 0) {
           await upsertProjectFiles(
             token,

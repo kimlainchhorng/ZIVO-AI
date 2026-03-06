@@ -85,7 +85,7 @@ async function runCommand(
       maxBuffer: 20 * 1024 * 1024,
       env: safeEnv(),
     });
-    return { output: (stdout + "\n" + stderr).trim(), exitCode: 0 };
+    return { output: (stdout + "\n" + stderr).trim().slice(0, MAX_OUTPUT_CHARS), exitCode: 0 };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string; code?: number };
     const raw = ((e.stdout ?? "") + "\n" + (e.stderr ?? "")).trim();
@@ -122,7 +122,7 @@ export async function executeQualityChecks(
         INSTALL_TIMEOUT_MS
       );
       const durationMs = Date.now() - t0;
-      checks.push({ check: "install", passed: exitCode === 0, output: output.slice(0, MAX_OUTPUT_CHARS), durationMs });
+      checks.push({ check: "install", passed: exitCode === 0, output: output, durationMs });
       logLines.push(`[install] ${exitCode === 0 ? "PASS" : "FAIL"} (${durationMs}ms)\n${output}`);
 
       // If install failed, skip remaining checks
@@ -141,7 +141,7 @@ export async function executeQualityChecks(
         CMD_TIMEOUT_MS
       );
       const durationMs = Date.now() - t0;
-      checks.push({ check: "lint", passed: exitCode === 0, output: output.slice(0, MAX_OUTPUT_CHARS), durationMs });
+      checks.push({ check: "lint", passed: exitCode === 0, output: output, durationMs });
       logLines.push(`[lint] ${exitCode === 0 ? "PASS" : "FAIL"} (${durationMs}ms)\n${output}`);
     }
 
@@ -155,7 +155,7 @@ export async function executeQualityChecks(
         CMD_TIMEOUT_MS
       );
       const durationMs = Date.now() - t0;
-      checks.push({ check: "typecheck", passed: exitCode === 0, output: output.slice(0, MAX_OUTPUT_CHARS), durationMs });
+      checks.push({ check: "typecheck", passed: exitCode === 0, output: output, durationMs });
       logLines.push(`[typecheck] ${exitCode === 0 ? "PASS" : "FAIL"} (${durationMs}ms)\n${output}`);
     }
 
@@ -169,7 +169,7 @@ export async function executeQualityChecks(
         CMD_TIMEOUT_MS
       );
       const durationMs = Date.now() - t0;
-      checks.push({ check: "build", passed: exitCode === 0, output: output.slice(0, MAX_OUTPUT_CHARS), durationMs });
+      checks.push({ check: "build", passed: exitCode === 0, output: output, durationMs });
       logLines.push(`[build] ${exitCode === 0 ? "PASS" : "FAIL"} (${durationMs}ms)\n${output}`);
     }
 

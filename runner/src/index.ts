@@ -21,8 +21,10 @@ import { executeQualityChecks, type QualityFile } from "./quality-executor";
 
 const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "";
-const CONCURRENCY = Math.max(1, parseInt(process.env.RUNNER_CONCURRENCY ?? "2", 10));
-const POLL_INTERVAL_MS = Math.max(1000, parseInt(process.env.RUNNER_POLL_INTERVAL_MS ?? "5000", 10));
+const _rawConcurrency = parseInt(process.env.RUNNER_CONCURRENCY ?? "2", 10);
+const CONCURRENCY = Number.isFinite(_rawConcurrency) && _rawConcurrency > 0 ? _rawConcurrency : 2;
+const _rawPollInterval = parseInt(process.env.RUNNER_POLL_INTERVAL_MS ?? "5000", 10);
+const POLL_INTERVAL_MS = Number.isFinite(_rawPollInterval) && _rawPollInterval >= 1000 ? _rawPollInterval : 5000;
 const LOG_BUCKET = "job-logs";
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
