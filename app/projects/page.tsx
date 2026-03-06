@@ -192,7 +192,7 @@ export default function ProjectsPage() {
                   </p>
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
                     <a
-                      href={`/ai-ui-builder?projectId=${project.id}`}
+                      href={`/projects/${project.id}`}
                       style={{
                         flex: 1, textAlign: 'center', padding: '0.5rem', borderRadius: '6px',
                         background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
@@ -200,7 +200,7 @@ export default function ProjectsPage() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem',
                       }}
                     >
-                      <ExternalLink size={14} /> Open
+                      <ExternalLink size={14} /> Workspace
                     </a>
                     <button
                       onClick={() => handleDuplicate(project.id)}

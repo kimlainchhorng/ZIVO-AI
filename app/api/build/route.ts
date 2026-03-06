@@ -12,7 +12,7 @@ import {
   getProject,
   getProjectFiles,
   upsertProjectFiles,
-  appendProjectBuild,
+  appendProjectBuildWithSnapshot,
 } from "@/lib/db/projects-db";
 import { runOrchestratorV4 } from "@/agents/orchestrator-v4";
 import { ProgressStage } from "@/lib/ai/progress-events";
@@ -258,8 +258,16 @@ export async function POST(req: Request): Promise<Response> {
               .map((f) => ({ path: f.path, content: f.content, generated_by: model }))
           );
 
-          // Append build record
-          await appendProjectBuild(token, resolvedProjectId, buildSummary || `Build: ${prompt.slice(0, 120)}`);
+          // Append build record with snapshot
+          const snapshotFiles = generatedFiles
+            .filter((f) => f.action !== "delete")
+            .map((f) => ({ path: f.path, content: f.content }));
+          await appendProjectBuildWithSnapshot(
+            token,
+            resolvedProjectId,
+            buildSummary || `Build: ${prompt.slice(0, 120)}`,
+            snapshotFiles
+          );
 
           // Notify client of the persisted projectId
           send({
