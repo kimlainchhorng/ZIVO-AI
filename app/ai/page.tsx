@@ -336,12 +336,17 @@ function AIPageInner() {
   const [securityActiveTab, setSecurityActiveTab] = useState<"scan" | "fixed">("scan");
   const [securityCopyLabel, setSecurityCopyLabel] = useState<"copy" | "copied">("copy");
 
-  // Read ?prompt= from URL
+  // Read ?prompt= and ?mode= from URL
   const searchParams = useSearchParams();
   const pathname = usePathname();
   useEffect(() => {
     const urlPrompt = searchParams.get("prompt");
     if (urlPrompt) setPrompt(urlPrompt);
+
+    const urlMode = searchParams.get("mode");
+    if (urlMode === "website" || urlMode === "mobile") {
+      setMode(urlMode);
+    }
   }, [searchParams]);
 
   // Read connected GitHub repo from localStorage on mount
