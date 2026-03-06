@@ -1,17 +1,17 @@
 /**
  * GET /api/projects/[id]/quality/status?runId=<uuid>
  *
- * Polls the status of a Quality Pass run.
+ * Polls the status of a Quality Pass job.
  *
  * Auth: Bearer token required. Caller must own the project.
  *
  * Query params:
- *   runId — the quality run ID returned by POST .../quality/start
- *   (omit runId to list the last 10 runs for the project)
+ *   runId — the job ID returned by POST .../quality/start
+ *   (omit runId to list the last 10 quality jobs for the project)
  *
  * Returns:
- *   With runId:  { run: DbQualityRun }
- *   Without:     { runs: DbQualityRun[] }
+ *   With runId:  { run: DbProjectJob & { logsUrl?: string } }
+ *   Without:     { runs: DbProjectJob[] }
  */
 
 import { NextResponse } from "next/server";
@@ -19,8 +19,9 @@ import {
   extractBearerToken,
   getUserFromToken,
   getProjectById,
-  getQualityRun,
-  listQualityRuns,
+  getProjectJob,
+  listProjectJobs,
+  getJobLogSignedUrl,
 } from "@/lib/db/projects-db";
 
 export const runtime = "nodejs";
@@ -56,13 +57,21 @@ export async function GET(req: Request, { params }: RouteParams) {
   const runId = url.searchParams.get("runId");
 
   if (runId) {
-    const run = await getQualityRun(token, runId);
-    if (!run || run.project_id !== projectId) {
+    const job = await getProjectJob(token, runId);
+    if (!job || job.project_id !== projectId) {
       return NextResponse.json({ error: "Run not found" }, { status: 404 });
     }
-    return NextResponse.json({ run });
+
+    // Attach signed URL for log file when available
+    let logsUrl: string | null = null;
+    if (job.logs_storage_path) {
+      logsUrl = await getJobLogSignedUrl(token, job.logs_storage_path);
+    }
+
+    return NextResponse.json({ run: { ...job, logsUrl } });
   }
 
-  const runs = await listQualityRuns(token, projectId, 10);
-  return NextResponse.json({ runs });
+  const jobs = await listProjectJobs(token, projectId, "quality", 10);
+  return NextResponse.json({ runs: jobs });
 }
+

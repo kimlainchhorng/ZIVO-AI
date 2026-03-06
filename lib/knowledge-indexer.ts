@@ -141,18 +141,25 @@ function isApiEndpoint(path: string): boolean {
 
 /** Convert a file path to a human-readable route slug. */
 function fileToRoute(path: string): string {
-  // app router: app/about/page.tsx -> /about
-  let route = path
-    .replace(/^app/, "")
-    .replace(/\/page\.[jt]sx?$/, "")
-    .replace(/\/route\.[jt]sx?$/, "")
-    || "/";
+  let route: string;
 
-  // pages router: pages/about.tsx -> /about
-  route = route
-    .replace(/^\/pages/, "")
-    .replace(/\.[jt]sx?$/, "")
-    || "/";
+  if (path.startsWith("app/")) {
+    // App router: app/about/page.tsx -> /about, app/api/users/route.ts -> /api/users
+    route = path
+      .replace(/^app/, "")
+      .replace(/\/page\.[jt]sx?$/, "")
+      .replace(/\/route\.[jt]sx?$/, "")
+      || "/";
+  } else if (path.startsWith("pages/")) {
+    // Pages router: pages/about.tsx -> /about, pages/api/users.ts -> /api/users
+    route = path
+      .replace(/^pages/, "")
+      .replace(/\/index\.[jt]sx?$/, "")
+      .replace(/\.[jt]sx?$/, "")
+      || "/";
+  } else {
+    route = "/" + path.replace(/\.[jt]sx?$/, "");
+  }
 
   // Dynamic segments: [id] -> :id
   route = route.replace(/\[([^\]]+)\]/g, ":$1");

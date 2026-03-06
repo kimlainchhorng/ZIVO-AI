@@ -20,6 +20,7 @@ interface GenerateMobileResponse {
   setup_instructions: string;
 }
 
+
 export default function MobileBuilder() {
   const [platform, setPlatform] = useState<MobilePlatform>("flutter");
   const [description, setDescription] = useState<string>("");
@@ -58,11 +59,12 @@ export default function MobileBuilder() {
       const typed = data as GenerateMobileResponse;
       setResult(typed);
     } catch (err: unknown) {
-      setError((err as Error).message || "An unexpected error occurred.");
+      setError((err as Error)?.message || "Failed to generate mobile app. Please try again.");
     } finally {
       setLoading(false);
     }
   }
+
 
   async function handleDownloadZip() {
     if (!result) return;

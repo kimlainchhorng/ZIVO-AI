@@ -41,18 +41,19 @@ create trigger trg_project_knowledge_updated_at
 -- ─────────────────────────────────────────────
 alter table project_knowledge enable row level security;
 
--- Owner can do everything
+-- Owner can do everything (read + write), with INSERT restricted to own projects
 create policy "project_knowledge_owner_all" on project_knowledge
   for all using (
     project_id in (
       select id from projects where owner_user_id = auth.uid()
     )
-  );
-
--- Knowledge records of public projects are readable by everyone
-create policy "project_knowledge_public_read" on project_knowledge
-  for select using (
+  )
+  with check (
     project_id in (
-      select id from projects where visibility = 'public'
+      select id from projects where owner_user_id = auth.uid()
     )
   );
+
+-- Note: knowledge records are owner-only.  No public-read policy is added because
+-- knowledge_json may contain server-side env-var names (non-NEXT_PUBLIC_ vars).
+-- Public consumers should use the dedicated public project API instead.
