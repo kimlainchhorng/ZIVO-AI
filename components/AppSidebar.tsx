@@ -32,6 +32,7 @@ import {
   MousePointer,
   ChevronDown,
   ChevronRight,
+  Home,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -52,6 +53,7 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'build',
     title: 'Build',
     items: [
+      { label: 'Builder', href: '/builder', icon: Home },
       { label: 'Visual Builder', href: '/visual-builder', icon: Layers },
       { label: 'Project Wizard', href: '/project-wizard', icon: Wand2 },
       { label: 'Mobile Pipeline', href: '/mobile-pipeline', icon: Smartphone },
