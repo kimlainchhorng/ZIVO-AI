@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { GenerateComponentsRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
 
@@ -71,6 +72,12 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
+
+    const schemaResult = GenerateComponentsRequestSchema.safeParse(body);
+    if (!schemaResult.success) {
+      return NextResponse.json({ error: schemaResult.error.issues }, { status: 400 });
+    }
+
     const {
       component = "dashboard",
       description = "",
