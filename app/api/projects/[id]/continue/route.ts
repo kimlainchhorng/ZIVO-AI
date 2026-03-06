@@ -1,6 +1,6 @@
 // POST /api/projects/[id]/continue — continue building an existing project
 // Loads existing files from Supabase, runs a patch build via /api/build,
-// then saves the updated files and appends a build record.
+// then saves the updated files, appends a build record, and persists conversation messages.
 //
 // Body: { instruction: string; model?: string }
 // Streams: text/event-stream (same SSE format as /api/build)
@@ -14,6 +14,8 @@ import {
   getProjectFiles,
   upsertProjectFiles,
   appendProjectBuild,
+  getProjectMessages,
+  appendProjectMessage,
 } from "@/lib/db/projects-db";
 import type { GeneratedFile } from "@/lib/ai/schema";
 
@@ -70,9 +72,10 @@ export async function POST(
     );
   }
 
-  // Load existing project + files
+  // Load existing project + files + conversation history
   let project;
   let existingFiles: GeneratedFile[] = [];
+  let conversationContext = "";
   try {
     project = await getProject(token, id);
     if (!project) {
@@ -87,12 +90,27 @@ export async function POST(
       content: f.content,
       action: "update" as const,
     }));
+
+    // Build conversation context string from prior messages
+    const priorMessages = await getProjectMessages(token, id);
+    if (priorMessages.length > 0) {
+      conversationContext = priorMessages
+        .map((m) => `[${m.role.toUpperCase()}]: ${m.content}`)
+        .join("\n");
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to load project";
     return new Response(
       `data: ${JSON.stringify({ type: "error", message })}\n\n`,
       { status: 500, headers: { "Content-Type": "text/event-stream" } }
     );
+  }
+
+  // Persist the user's change request message before streaming
+  try {
+    await appendProjectMessage(token, id, user.id, "user", instruction.trim());
+  } catch {
+    // Non-fatal: continue even if message persistence fails
   }
 
   const encoder = new TextEncoder();
@@ -125,6 +143,7 @@ export async function POST(
             existingFiles,
             projectId: id,
             mode: project.mode,
+            context: conversationContext || undefined,
           }),
         });
 
@@ -184,14 +203,35 @@ export async function POST(
           );
         }
 
-        await appendProjectBuild(token, id, buildSummary || `Continue build: ${instruction.slice(0, 120)}`);
+        const buildRecord = await appendProjectBuild(token, id, buildSummary || `Continue build: ${instruction.slice(0, 120)}`);
+
+        // Build a summary of changed files for the assistant message
+        const changedPaths = collectedFiles.map((f) => `${f.action ?? "update"}: ${f.path}`);
+        const assistantContent = [
+          buildSummary || "Continue build complete.",
+          changedPaths.length > 0 ? `Changed files:\n${changedPaths.join("\n")}` : "",
+          `buildId: ${buildRecord.id} (build #${buildRecord.build_number})`,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+
+        try {
+          await appendProjectMessage(token, id, user.id, "assistant", assistantContent);
+        } catch {
+          // Non-fatal
+        }
 
         send({
           type: "stage",
           stage: "DONE",
           message: buildSummary || "Continue build complete.",
           progress: 100,
-          data: { projectId: id },
+          data: {
+            projectId: id,
+            buildId: buildRecord.id,
+            buildNumber: buildRecord.build_number,
+            changedFiles: collectedFiles.map((f) => ({ action: f.action ?? "update", path: f.path })),
+          },
         });
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : "Continue build error";
