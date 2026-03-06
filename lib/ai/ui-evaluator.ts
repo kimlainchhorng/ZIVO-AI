@@ -32,6 +32,7 @@ function checkSpacing(content: string, filePath: string): Issue[] {
   const issues: Issue[] = [];
 
   // Warn if inline margin/padding values are large magic numbers
+  const inlineSpacingPattern = /(margin|padding)\s*:\s*["']?\d{3,}px/i;
   const inlineSpacingPattern = /(margin|padding)\s*:\s*["']?\d{3,}px/gi;
   if (inlineSpacingPattern.test(content)) {
     issues.push({
@@ -48,6 +49,7 @@ function checkTypography(content: string, filePath: string): Issue[] {
   const issues: Issue[] = [];
 
   // Warn if font sizes below 12px
+  const tinyFontPattern = /fontSize\s*:\s*["']?(0\.[0-4]\d*rem|[1-9]px|1[01]px)/i;
   const tinyFontPattern = /fontSize\s*:\s*["']?(0\.[0-4]\d*rem|[1-9]px|1[01]px)/gi;
   if (tinyFontPattern.test(content)) {
     issues.push({

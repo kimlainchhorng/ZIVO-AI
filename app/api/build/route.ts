@@ -12,6 +12,7 @@ import {
   getProject,
   getProjectFiles,
   upsertProjectFiles,
+  appendProjectBuild,
   appendProjectBuildWithSnapshot,
 } from "@/lib/db/projects-db";
 import { runOrchestratorV4 } from "@/agents/orchestrator-v4";
@@ -105,6 +106,13 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const { prompt, model = "gpt-4o" } = body;
+  // Accept both canonical names (website_v2, mobile_v2) and shorthand aliases (website, mobile)
+  const mode: BuildMode =
+    body.mode === "website_v2" || body.mode === "website"
+      ? "website_v2"
+      : body.mode === "mobile_v2" || body.mode === "mobile"
+      ? "mobile_v2"
+      : "code";
   const mode: BuildMode =
     body.mode === "website_v2" || body.mode === "mobile_v2" ? body.mode : "code";
 
@@ -258,6 +266,8 @@ export async function POST(req: Request): Promise<Response> {
               .map((f) => ({ path: f.path, content: f.content, generated_by: model }))
           );
 
+          // Append build record
+          await appendProjectBuild(token, resolvedProjectId, buildSummary || `Build: ${prompt.slice(0, 120)}`);
           // Append build record with snapshot
           const snapshotFiles = generatedFiles
             .filter((f) => f.action !== "delete")

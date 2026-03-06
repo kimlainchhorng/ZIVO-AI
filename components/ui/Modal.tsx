@@ -111,6 +111,7 @@ export function Modal({
               {title}
             </h2>
             <button
+              type="button"
               aria-label="Close modal"
               onClick={onClose}
               style={{

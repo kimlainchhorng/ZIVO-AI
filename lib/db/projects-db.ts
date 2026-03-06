@@ -47,6 +47,7 @@ export interface UpsertFileInput {
   generated_by?: string;
 }
 
+// ─── Server-side Supabase client ───────────────────────────────────────────────
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GENERATED_BY_SNAPSHOT_RESTORE = "snapshot-restore";
