@@ -39,6 +39,7 @@ function safeEnv(): NodeJS.ProcessEnv {
     PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
     // Allow npm/node to find itself
     npm_execpath: process.env.npm_execpath,
+    NODE_ENV: process.env.NODE_ENV,
   };
 }
 

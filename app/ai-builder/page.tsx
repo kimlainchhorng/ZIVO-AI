@@ -48,13 +48,16 @@ import {
 import SidebarLayout from '@/components/layout/SidebarLayout';
 import { useBuilderStore } from '@/lib/stores/builder-store';
 import { toast } from 'sonner';
-import type { Section, StylePreset } from '@/types/builder';
+import type { Section, StylePreset, Page } from '@/types/builder';
 import AppPreview from '@/components/AppPreview';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Debounce delay (ms) before auto-saving changes to the server. */
 const AUTO_SAVE_DELAY_MS = 3000;
+
+const DEFAULT_UI_OUTPUT_VERSION = 1;
+const DEFAULT_UI_OUTPUT_LOCALE = 'en';
 
 /**
  * Default SaaS scaffold prompt used when the user triggers generation
@@ -519,6 +522,8 @@ export default function AIBuilderPage() {
       title: `${type.charAt(0).toUpperCase() + type.slice(1)} Section`,
       content: `Edit this ${type} section content.`,
       order: (activePage?.sections.length ?? 0),
+      visible: true,
+      locked: false,
     });
     toast.success(`${type} section added`);
   }
@@ -560,9 +565,11 @@ export default function AIBuilderPage() {
     const newPage = {
       id: `page_${Date.now()}`,
       name,
-      slug: name.toLowerCase().replace(/\s+/g, '-'),
-      sections: [],
+      slug: `/${name.toLowerCase().replace(/\s+/g, '-')}`,
+      sections: [] as Section[],
       isHome: false,
+      requiresAuth: false,
+      order: 0,
     };
     addPage(newPage);
     setActivePage(newPage.id);
@@ -705,7 +712,7 @@ export default function AIBuilderPage() {
         if (data.snapshot && data.snapshot.pages) {
           setUIOutput(data.snapshot);
         } else if (Array.isArray(data.pages) && data.pages.length > 0) {
-          setUIOutput({ pages: data.pages, title: projectTitle });
+          setUIOutput({ pages: data.pages as Page[], title: projectTitle, version: DEFAULT_UI_OUTPUT_VERSION, locale: DEFAULT_UI_OUTPUT_LOCALE });
         }
       } else {
         toast.error(data.error ?? 'Restore failed');

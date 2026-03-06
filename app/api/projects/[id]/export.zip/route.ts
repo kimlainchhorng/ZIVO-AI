@@ -66,17 +66,23 @@ export async function GET(req: Request, { params }: RouteParams) {
   }
 
   const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  // Buffer.prototype.buffer may be a SharedArrayBuffer in some environments,
+  // but .slice() always returns a plain ArrayBuffer, making this assertion safe.
+  const zipArrayBuffer = zipBuffer.buffer.slice(
+    zipBuffer.byteOffset,
+    zipBuffer.byteOffset + zipBuffer.byteLength
+  ) as ArrayBuffer;
 
   const safeTitle = ((project as { title: string }).title ?? 'project')
     .replace(/[^a-z0-9_-]/gi, '-')
     .toLowerCase();
 
-  return new Response(zipBuffer, {
+  return new Response(zipArrayBuffer, {
     status: 200,
     headers: {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${safeTitle}.zip"`,
-      'Content-Length': String(zipBuffer.length),
+      'Content-Length': String(zipArrayBuffer.byteLength),
     },
   });
 }
