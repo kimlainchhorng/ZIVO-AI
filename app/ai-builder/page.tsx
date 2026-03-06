@@ -49,11 +49,22 @@ import SidebarLayout from '@/components/layout/SidebarLayout';
 import { useBuilderStore } from '@/lib/stores/builder-store';
 import { toast } from 'sonner';
 import type { Section, StylePreset } from '@/types/builder';
+import AppPreview from '@/components/AppPreview';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Debounce delay (ms) before auto-saving changes to the server. */
 const AUTO_SAVE_DELAY_MS = 3000;
+
+/**
+ * Default SaaS scaffold prompt used when the user triggers generation
+ * without entering a custom prompt. Produces a deterministic website_v2 blueprint.
+ */
+const DEFAULT_SAAS_PROMPT =
+  'A modern SaaS platform with an authenticated app dashboard (/app), ' +
+  'a marketing home page, pricing tiers, features showcase, about, contact, ' +
+  'FAQ, privacy policy, and terms of service pages. ' +
+  'Clean, professional design with clear CTAs.';
 
 const STYLE_PRESETS: { value: StylePreset; label: string; color: string }[] = [
   { value: 'premium', label: '✨ Premium', color: '#6366f1' },
@@ -318,6 +329,12 @@ export default function AIBuilderPage() {
   const [autoSaveStatus, setAutoSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // ── Generated app preview state ──────────────────────────────────────────
+  const [generatedFiles, setGeneratedFiles] = useState<{ path: string; content: string }[]>([]);
+  const [previewHtml, setPreviewHtml] = useState<string | undefined>(undefined);
+  const [buildStageMessage, setBuildStageMessage] = useState<string>('');
+  const [showPreview, setShowPreview] = useState(false);
+
   const activePage = pages.find((p) => p.id === activePageId) ?? pages[0] ?? null;
 
   const sensors = useSensors(
@@ -366,10 +383,16 @@ export default function AIBuilderPage() {
   // ── Generate full UI ────────────────────────────────────────────────────────
 
   async function handleGenerate() {
-    if (!prompt.trim()) { toast.error('Enter a prompt first'); return; }
+    // If no prompt provided, default to the SaaS scaffold blueprint (website_v2)
+    const effectivePrompt = prompt.trim() || DEFAULT_SAAS_PROMPT;
     if (!token) { toast.error('Please sign in to generate UI'); return; }
 
     setIsGenerating(true);
+    setGeneratedFiles([]);
+    setPreviewHtml(undefined);
+    setBuildStageMessage('Starting SaaS build…');
+    setShowPreview(false);
+
     try {
       // Create project if needed
       let pid = projectId;
@@ -387,25 +410,82 @@ export default function AIBuilderPage() {
         }
       }
 
-      const res = await fetch('/api/generate-ui', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ prompt, stylePreset, projectId: pid }),
-      });
-      const data = await res.json();
+      // Use the SSE build pipeline (/api/build) with mode=website_v2 for deterministic SaaS scaffold
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      if (!res.ok) {
-        toast.error(data.error ?? 'Generation failed');
+      const res = await fetch('/api/build', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          prompt: effectivePrompt,
+          mode: 'website_v2',
+          projectId: pid ?? undefined,
+        }),
+      });
+
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        toast.error((data as { error?: string }).error ?? 'Generation failed');
         return;
       }
 
-      setUIOutput(data);
-      toast.success('UI generated successfully!');
+      // Consume the SSE stream
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const event = JSON.parse(line.slice(6)) as {
+              type: string;
+              stage?: string;
+              message?: string;
+              files?: { path: string; content: string }[];
+              preview_html?: string;
+            };
+
+            if (event.type === 'stage' && event.message) {
+              setBuildStageMessage(event.message);
+              if (event.stage === 'DONE') {
+                toast.success('SaaS app generated!');
+                setShowPreview(true);
+              }
+            } else if (event.type === 'files' && Array.isArray(event.files)) {
+              setGeneratedFiles(event.files);
+              if (event.preview_html) setPreviewHtml(event.preview_html);
+            } else if (event.type === 'error' && event.message) {
+              toast.error(event.message);
+            }
+          } catch {
+            // Ignore malformed SSE lines
+          }
+        }
+      }
     } catch (_err) {
       toast.error('Network error during generation');
     } finally {
       setIsGenerating(false);
     }
+  }
+
+  // ── Remediate missing SaaS routes ────────────────────────────────────────────
+
+  async function handleRemediate(missingRoutes: string[]) {
+    if (!token) { toast.error('Please sign in'); return; }
+    const remediationPrompt =
+      `Add the following missing SaaS pages: ${missingRoutes.join(', ')}. ` +
+      'Each page should follow the existing design system and be fully functional.';
+    setPrompt(remediationPrompt);
+    toast.info(`Queued remediation for: ${missingRoutes.join(', ')}`);
   }
 
   // ── Add a blank section ─────────────────────────────────────────────────────
@@ -918,10 +998,15 @@ export default function AIBuilderPage() {
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe your website or app…"
+                placeholder="Describe your website or app… (leave empty for SaaS default)"
                 rows={5}
                 className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/10 text-slate-200 text-sm placeholder-slate-600 resize-none focus:outline-none focus:border-indigo-500/40"
               />
+              {!prompt.trim() && (
+                <p className="text-xs text-indigo-400/60 -mt-1">
+                  ✦ Empty prompt → SaaS default blueprint (<code className="font-mono">website_v2</code>)
+                </p>
+              )}
               <motion.button
                 onClick={handleGenerate}
                 disabled={isGenerating}
@@ -940,6 +1025,11 @@ export default function AIBuilderPage() {
                 ) : <Wand2 size={16} />}
                 {isGenerating ? 'Generating…' : 'Generate UI'}
               </motion.button>
+              {isGenerating && buildStageMessage && (
+                <p className="text-xs text-indigo-300/70 truncate" title={buildStageMessage}>
+                  {buildStageMessage}
+                </p>
+              )}
             </div>
 
             {/* Section Generator */}
@@ -983,67 +1073,112 @@ export default function AIBuilderPage() {
           </aside>
 
           {/* ── CENTER / CANVAS ────────────────────────────────────────────── */}
-          <main className="flex-1 overflow-y-auto p-6">
-            {!activePage ? (
-              <div className="h-full flex items-center justify-center">
-                <div className="flex flex-col items-center gap-4 p-12 rounded-2xl border-2 border-dashed border-indigo-500/15">
-                  <motion.div
-                    animate={{ scale: [1, 1.06, 1] }}
-                    transition={{ repeat: Infinity, duration: 2.5 }}
-                  >
-                    <Wand2 size={52} className="text-slate-700" />
-                  </motion.div>
-                  <p className="text-slate-500 text-lg text-center max-w-xs">
-                    {isGenerating
-                      ? 'Generating your UI…'
-                      : 'Enter a prompt and click Generate UI to start building'}
-                  </p>
-                  {isGenerating && (
-                    <motion.div
-                      className="w-48 h-1 rounded-full bg-indigo-500/20 overflow-hidden"
+          <main className="flex-1 flex flex-col overflow-hidden">
+            {/* Canvas / Preview toggle */}
+            {(generatedFiles.length > 0 || activePage) && (
+              <div className="flex items-center gap-1 px-4 py-2 border-b border-indigo-500/10 bg-slate-950/80 flex-shrink-0">
+                <button
+                  onClick={() => setShowPreview(false)}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    !showPreview
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                  }`}
+                >
+                  <Layers size={12} className="inline mr-1" />Canvas
+                </button>
+                <button
+                  onClick={() => setShowPreview(true)}
+                  disabled={generatedFiles.length === 0}
+                  className={`px-3 py-1 rounded text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                    showPreview
+                      ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+                  }`}
+                >
+                  <Eye size={12} className="inline mr-1" />App Preview
+                  {generatedFiles.length > 0 && (
+                    <span className="ml-1 text-[10px] bg-indigo-500/30 text-indigo-300 px-1 rounded">
+                      {generatedFiles.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-hidden">
+              {showPreview && generatedFiles.length > 0 ? (
+                <AppPreview
+                  previewHtml={previewHtml}
+                  files={generatedFiles}
+                  className="h-full"
+                  onRemediate={handleRemediate}
+                />
+              ) : (
+                <div className="h-full overflow-y-auto p-6">
+                  {!activePage ? (
+                    <div className="h-full flex items-center justify-center">
+                      <div className="flex flex-col items-center gap-4 p-12 rounded-2xl border-2 border-dashed border-indigo-500/15">
+                        <motion.div
+                          animate={{ scale: [1, 1.06, 1] }}
+                          transition={{ repeat: Infinity, duration: 2.5 }}
+                        >
+                          <Wand2 size={52} className="text-slate-700" />
+                        </motion.div>
+                        <p className="text-slate-500 text-lg text-center max-w-xs">
+                          {isGenerating
+                            ? buildStageMessage || 'Generating your SaaS app…'
+                            : 'Enter a prompt and click Generate UI to start building'}
+                        </p>
+                        {isGenerating && (
+                          <motion.div
+                            className="w-48 h-1 rounded-full bg-indigo-500/20 overflow-hidden"
+                          >
+                            <motion.div
+                              className="h-full bg-indigo-500 rounded-full"
+                              animate={{ x: ['-100%', '100%'] }}
+                              transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
+                            />
+                          </motion.div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
                     >
-                      <motion.div
-                        className="h-full bg-indigo-500 rounded-full"
-                        animate={{ x: ['-100%', '100%'] }}
-                        transition={{ repeat: Infinity, duration: 1.5, ease: 'easeInOut' }}
-                      />
-                    </motion.div>
+                      <SortableContext
+                        items={activePage.sections.map((s) => s.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="flex flex-col gap-3">
+                          <AnimatePresence>
+                            {activePage.sections.map((section) => (
+                              <SortableSection
+                                key={section.id}
+                                section={section}
+                                pageId={activePage.id}
+                                onRegenerate={handleRegenerate}
+                                onDelete={(id) => deleteSection(activePage.id, id)}
+                                onUpdate={(id, updates) => updateSection(activePage.id, id, updates)}
+                              />
+                            ))}
+                          </AnimatePresence>
+                          {activePage.sections.length === 0 && (
+                            <div className="py-16 flex flex-col items-center gap-3 text-slate-600">
+                              <Layers size={32} />
+                              <p className="text-sm">No sections yet. Add one from the left panel.</p>
+                            </div>
+                          )}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
                   )}
                 </div>
-              </div>
-            ) : (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-              >
-                <SortableContext
-                  items={activePage.sections.map((s) => s.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="flex flex-col gap-3">
-                    <AnimatePresence>
-                      {activePage.sections.map((section) => (
-                        <SortableSection
-                          key={section.id}
-                          section={section}
-                          pageId={activePage.id}
-                          onRegenerate={handleRegenerate}
-                          onDelete={(id) => deleteSection(activePage.id, id)}
-                          onUpdate={(id, updates) => updateSection(activePage.id, id, updates)}
-                        />
-                      ))}
-                    </AnimatePresence>
-                    {activePage.sections.length === 0 && (
-                      <div className="py-16 flex flex-col items-center gap-3 text-slate-600">
-                        <Layers size={32} />
-                        <p className="text-sm">No sections yet. Add one from the left panel.</p>
-                      </div>
-                    )}
-                  </div>
-                </SortableContext>
-              </DndContext>
-            )}
+              )}
+            </div>
           </main>
 
           {/* ── RIGHT PANEL ───────────────────────────────────────────────── */}

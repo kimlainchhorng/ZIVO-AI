@@ -113,6 +113,7 @@ export async function POST(req: Request): Promise<Response> {
       : body.mode === "mobile_v2" || body.mode === "mobile"
       ? "mobile_v2"
       : "code";
+
   if (!prompt?.trim()) {
     return new Response(
       `data: ${JSON.stringify({ type: "error", message: "prompt is required" })}\n\n`,
@@ -935,6 +936,7 @@ function buildRemediationManifest(
   tagline: string
 ): ManifestFile[] {
   const descriptionMap: Record<string, string> = {
+    "app/app/page.tsx": `App dashboard entry page for "${brandName}" — authenticated SaaS user dashboard with overview, quick actions, and navigation to app features`,
     "app/page.tsx": `Home page for "${brandName}" — assembles hero, features, and CTA sections`,
     "app/about/page.tsx": `About page for "${brandName}" — company story, team, values`,
     "app/contact/page.tsx": `Contact page for "${brandName}" — contact form and location info`,
