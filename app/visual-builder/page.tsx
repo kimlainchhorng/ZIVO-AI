@@ -235,6 +235,8 @@ export default function VisualBuilderPage() {
       spacing: 'md',
       fontSize: 'md',
       borderRadius: 'md',
+      visible: true,
+      locked: false,
     };
     setBuildState((prev) => ({ ...prev, sections: [...prev.sections, newSection] }));
   };

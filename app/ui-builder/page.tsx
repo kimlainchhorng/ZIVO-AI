@@ -216,7 +216,7 @@ export default function UIBuilderPage() {
   function handleAddPage() {
     const name = `Page ${pages.length + 1}`;
     const slug = `page-${pages.length + 1}`;
-    const newPage: Page = { id: crypto.randomUUID(), name, slug, sections: [], isHome: false };
+    const newPage: Page = { id: crypto.randomUUID(), name, slug, sections: [], isHome: false, order: 0, requiresAuth: false };
     addPage(newPage);
     setActivePage(newPage.id);
     toast.success('New page added');

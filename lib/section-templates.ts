@@ -3,7 +3,7 @@ import type { Section } from '@/types/builder';
 export type SectionTemplateConfig = {
   variant: string;
   label: string;
-  defaultSection: Omit<Section, 'id' | 'order'>;
+  defaultSection: Omit<Section, 'id' | 'order' | 'visible' | 'locked'>;
 };
 
 export const sectionTemplates: Record<string, SectionTemplateConfig[]> = {
@@ -309,7 +309,7 @@ export const sectionTemplates: Record<string, SectionTemplateConfig[]> = {
   ],
 };
 
-export function getDefaultSection(type: string, variant?: string): Omit<Section, 'id' | 'order'> {
+export function getDefaultSection(type: string, variant?: string): Omit<Section, 'id' | 'order' | 'visible' | 'locked'> {
   const templates = sectionTemplates[type];
   if (!templates || templates.length === 0) {
     return {

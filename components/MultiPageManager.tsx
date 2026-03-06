@@ -107,6 +107,8 @@ export default function MultiPageManager({
       slug,
       sections: [],
       isHome: false,
+      order: 0,
+      requiresAuth: false,
     };
     onAddPage(newPage);
     onSelectPage(newPage.id);

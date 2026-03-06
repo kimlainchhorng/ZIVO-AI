@@ -342,6 +342,8 @@ export default function AIUIBuilderPage() {
       title: `New ${sectionType} Section`,
       content: `Add your ${sectionType} content here.`,
       order: activePage.sections.length,
+      visible: true,
+      locked: false,
     };
     const { addSection } = useBuilderStore.getState();
     addSection(activePage.id, newSection);
