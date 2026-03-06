@@ -11,7 +11,6 @@ load_dotenv()
 
 class ZivoBrain:
     def __init__(self,
-        self,
         prompt_path: str = "prompts/system_v1.txt",
         use_swarm: bool = False,
         agent_mode: bool = False,

@@ -4,6 +4,10 @@ import { UPDATE_SITE_SYSTEM_PROMPT } from "../../../prompts/update-site";
 
 export const runtime = "nodejs";
 
+function getClient() {
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
+
 export interface GeneratedFile {
   path: string;
   content: string;
