@@ -538,15 +538,21 @@ function AIPageInner() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
 
   // Resizable left panel
-  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(() => {
-    if (typeof window === "undefined") return 280;
-    const stored = localStorage.getItem("zivo_left_panel_width");
-    return stored ? Math.min(480, Math.max(220, parseInt(stored, 10))) : 280;
-  });
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(280);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const isDraggingPanelRef = useRef(false);
   const dragStartXRef = useRef(0);
   const dragStartWidthRef = useRef(0);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("zivo_left_panel_width");
+      if (!stored) return;
+      const parsed = parseInt(stored, 10);
+      if (Number.isNaN(parsed)) return;
+      setLeftPanelWidth(Math.min(480, Math.max(220, parsed)));
+    } catch { /* ignore */ }
+  }, []);
 
   // Streaming code tab: displayed content (typed character by character when loading)
   const [streamedCodeContent, setStreamedCodeContent] = useState<string>("");
@@ -5579,6 +5585,7 @@ export default function AIPage() {
     </Suspense>
   );
 }
+
 
 
 
