@@ -135,24 +135,26 @@ async function processJob(supabase: SupabaseClient, job: ProjectJob): Promise<vo
     // Upload error log to storage
     const logsStoragePath = `${job.project_id}/${job.id}.log`;
     const errorLog = `[runner error]\n${message}`;
-    await supabase.storage
-      .from(LOG_BUCKET)
-      .upload(logsStoragePath, Buffer.from(errorLog, "utf8"), {
-        contentType: "text/plain; charset=utf-8",
-        upsert: true,
-      })
-      .catch(() => { /* best effort */ });
+    try {
+      await supabase.storage
+        .from(LOG_BUCKET)
+        .upload(logsStoragePath, Buffer.from(errorLog, "utf8"), {
+          contentType: "text/plain; charset=utf-8",
+          upsert: true,
+        });
+    } catch { /* best effort */ }
 
-    await supabase
-      .from("project_jobs")
-      .update({
-        status: "failed",
-        finished_at: new Date().toISOString(),
-        result_json: { error: message },
-        logs_storage_path: logsStoragePath,
-      })
-      .eq("id", job.id)
-      .catch(() => { /* best effort */ });
+    try {
+      await supabase
+        .from("project_jobs")
+        .update({
+          status: "failed",
+          finished_at: new Date().toISOString(),
+          result_json: { error: message },
+          logs_storage_path: logsStoragePath,
+        })
+        .eq("id", job.id);
+    } catch { /* best effort */ }
   } finally {
     activeJobs--;
   }
