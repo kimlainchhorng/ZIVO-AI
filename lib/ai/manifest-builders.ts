@@ -4,6 +4,7 @@ import type { WebsitePlan } from "./website-plan";
 import type { MobilePlan } from "./mobile-plan";
 import { createManifest } from "./manifest";
 import type { ManifestFile, ProjectManifest } from "./manifest";
+import type { NewFileSpec } from "./website-change-planner";
 
 export interface ManifestBuildOpts {
   projectId?: string;
@@ -195,6 +196,107 @@ export function buildWebsiteManifest(
   );
 
   return createManifest(projectId, prompt, files, plan, batchSize);
+}
+
+// ─── Targeted Manifest (Selective Regeneration) ───────────────────────────────
+
+/** Descriptions for well-known wiring files — used when auto-including them. */
+const WIRING_FILE_DESCRIPTIONS: Record<string, string> = {
+  "components/site/Header.tsx":
+    'Site header: MUST import Logo from "@/components/brand/Logo" and render <Logo /> beside the brand name. Also includes navigation links and CTA button.',
+  "components/site/Footer.tsx":
+    'Site footer: MUST import Logo from "@/components/brand/Logo" and render <Logo /> beside the brand name. Also includes links, legal pages, and brand info.',
+  "app/layout.tsx": "Root layout with metadata, fonts, and global providers",
+};
+
+/**
+ * Paths that are always added when any route-level file is touched,
+ * to ensure navigation wiring stays consistent.
+ */
+const WIRING_FILES = Object.keys(WIRING_FILE_DESCRIPTIONS);
+
+/**
+ * Build a targeted ProjectManifest that covers only the files that need
+ * regenerating during a "Continue Build" / selective-regen pass.
+ *
+ * @param plan         The current WebsitePlan (for context passed to generator).
+ * @param touchedPaths Existing file paths identified by the change planner.
+ * @param newFiles     New files the planner wants to create.
+ * @param opts         Optional batchSize / projectId overrides.
+ */
+export function buildTargetedManifest(
+  plan: WebsitePlan,
+  touchedPaths: string[],
+  newFiles: NewFileSpec[],
+  opts: ManifestBuildOpts = {}
+): ProjectManifest {
+  const projectId = opts.projectId ?? `selective-${Date.now()}`;
+  const batchSize = opts.batchSize ?? 5;
+
+  const allPaths = new Set<string>([...touchedPaths, ...newFiles.map((f) => f.path)]);
+
+  // Auto-add wiring files when any page/route-level file is touched and wiring
+  // files are not already in the set — keeps navigation consistent.
+  const hasRouteLevelChange = [...allPaths].some(
+    (p) => p.startsWith("app/") && p.endsWith("page.tsx")
+  );
+  if (hasRouteLevelChange) {
+    for (const wf of WIRING_FILES) {
+      allPaths.add(wf);
+    }
+  }
+
+  const files: ManifestFile[] = [];
+  let priority = 1;
+
+  // Add touched (existing) files
+  for (const path of touchedPaths) {
+    const description =
+      WIRING_FILE_DESCRIPTIONS[path] ??
+      `Update ${path} as requested`;
+    files.push(mf(path, inferType(path), description, [], priority++));
+  }
+
+  // Add wiring files that were auto-included (not already in touchedPaths)
+  if (hasRouteLevelChange) {
+    for (const wf of WIRING_FILES) {
+      if (!touchedPaths.includes(wf) && !newFiles.some((f) => f.path === wf)) {
+        files.push(
+          mf(wf, "component", WIRING_FILE_DESCRIPTIONS[wf], [], priority++)
+        );
+      }
+    }
+  }
+
+  // Add new files from the plan
+  for (const nf of newFiles) {
+    files.push(mf(nf.path, inferType(nf.path), nf.description, [], priority++));
+  }
+
+  const prompt = `Selective update for "${plan.brand.name}" — ${plan.brand.tagline}`;
+  return createManifest(projectId, prompt, files, plan, batchSize);
+}
+
+/** Infer a ManifestFile type from its path. */
+function inferType(path: string): ManifestFile["type"] {
+  if (path.endsWith("page.tsx") || path.endsWith("layout.tsx")) return "page";
+  if (path.startsWith("components/")) return "component";
+  if (path.startsWith("app/api/")) return "api";
+  if (path.startsWith("lib/")) return "util";
+  if (
+    path.endsWith(".css") ||
+    path.endsWith("tokens.ts") ||
+    path.endsWith("globals.css")
+  )
+    return "style";
+  if (
+    path.endsWith(".json") ||
+    path.endsWith(".ts") && path.includes("config") ||
+    path.endsWith(".mjs") ||
+    path.endsWith(".ico")
+  )
+    return "config";
+  return "util";
 }
 
 // ─── Mobile Manifest ──────────────────────────────────────────────────────────

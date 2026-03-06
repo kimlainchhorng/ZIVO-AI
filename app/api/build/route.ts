@@ -18,8 +18,9 @@ import { runOrchestratorV4 } from "@/agents/orchestrator-v4";
 import { ProgressStage } from "@/lib/ai/progress-events";
 import type { GeneratedFile } from "@/lib/ai/schema";
 import { generateWebsitePlan } from "@/lib/ai/website-plan";
+import type { WebsitePlan } from "@/lib/ai/website-plan";
 import { generateMobilePlan } from "@/lib/ai/mobile-plan";
-import { buildWebsiteManifest, buildMobileManifest } from "@/lib/ai/manifest-builders";
+import { buildWebsiteManifest, buildMobileManifest, buildTargetedManifest } from "@/lib/ai/manifest-builders";
 import { generateFromManifest } from "@/lib/ai/batch-generator";
 import { evaluateWebsiteUI, evaluateMobileUI } from "@/lib/ai/ui-evaluator";
 import { applyUIPolish } from "@/lib/ai/ui-polish";
@@ -28,6 +29,7 @@ import { validateAssets, summarizeAssetValidation } from "@/lib/ai/validators/as
 import { runCompletenessGate, summarizeCompletenessGate } from "@/lib/ai/validators/completeness-gate";
 import type { ManifestFile } from "@/lib/ai/manifest";
 import { createManifest } from "@/lib/ai/manifest";
+import { planWebsiteChanges } from "@/lib/ai/website-change-planner";
 
 export type BuildMode = "code" | "website_v2" | "mobile_v2";
 
@@ -175,7 +177,7 @@ export async function POST(req: Request): Promise<Response> {
 
       try {
         if (mode === "website_v2") {
-          await runWebsiteV2Pipeline(prompt, model, (evt) => {
+          await runWebsiteV2Pipeline(prompt, model, existingFiles, (evt) => {
             send(evt);
             if (evt.type === "files") generatedFiles = (evt as FilesEvent).files;
             if (evt.type === "stage" && (evt as StageEvent).stage === "DONE") buildSummary = (evt as StageEvent).message;
@@ -296,6 +298,7 @@ export async function POST(req: Request): Promise<Response> {
 async function runWebsiteV2Pipeline(
   prompt: string,
   model: string,
+  existingFiles: GeneratedFile[],
   send: (event: SSEEvent) => void
 ): Promise<void> {
   const totalPasses = MAX_POLISH_PASSES;
@@ -318,6 +321,12 @@ async function runWebsiteV2Pipeline(
     message: `Blueprint ready: "${plan.brand.name}" — ${plan.pages.length} pages`,
     progress: 15,
   });
+
+  // ── Selective Regeneration branch (Continue Build) ───────────────────────
+  if (existingFiles.length > 0) {
+    await runSelectiveRegeneration(prompt, model, plan, existingFiles, send, totalPasses);
+    return;
+  }
 
   // Stage 1b: Generate AI logo (runs concurrently with manifest build)
   send({
@@ -520,6 +529,276 @@ async function runWebsiteV2Pipeline(
 
   const summary = `Website "${plan.brand.name}" built: ${files.length} files, quality score ${evalResult.score}/100${gateResult.passed ? "" : " ⚠ completeness issues remain"}`;
   send({ type: "stage", stage: "DONE", message: summary, progress: 100 });
+}
+
+// ─── Selective Regeneration (Continue Build) ──────────────────────────────────
+
+/**
+ * Execute a targeted regeneration pass for "Continue Build" requests.
+ * Uses the AI planner to identify which files need updating, generates only
+ * those files, merges results back into the existing file set, then runs the
+ * full evaluate → polish → completeness-gate pipeline on the merged set.
+ * Falls back to a broader regeneration if the quality score drops.
+ */
+async function runSelectiveRegeneration(
+  prompt: string,
+  model: string,
+  plan: WebsitePlan,
+  existingFiles: GeneratedFile[],
+  send: (event: SSEEvent) => void,
+  totalPasses: number
+): Promise<void> {
+  let passNum = 1;
+
+  // ── Step 1: Planning ────────────────────────────────────────────────────────
+  send({
+    type: "stage",
+    stage: "BLUEPRINT",
+    message: "Planning changes…",
+    progress: 18,
+  });
+
+  const existingPaths = existingFiles.map((f) => f.path);
+  const changePlan = await planWebsiteChanges({
+    changeRequest: prompt,
+    plan,
+    existingFilePaths: existingPaths,
+    model,
+  });
+
+  send({
+    type: "stage",
+    stage: "BLUEPRINT",
+    message: `Plan: ${changePlan.touchedFiles.length} files to update, ${changePlan.createFiles.length} to create. ${changePlan.notes}`,
+    progress: 20,
+  });
+
+  const totalTargeted = changePlan.touchedFiles.length + changePlan.createFiles.length;
+
+  // If the planner found nothing to do, emit the existing set as-is
+  if (totalTargeted === 0 && changePlan.deleteFiles.length === 0) {
+    send({
+      type: "stage",
+      stage: "DONE",
+      message: `No files needed to change for "${plan.brand.name}".`,
+      progress: 100,
+    });
+    send({ type: "files", files: existingFiles });
+    return;
+  }
+
+  // ── Step 2: Build targeted manifest & generate ──────────────────────────────
+  send({
+    type: "stage",
+    stage: "MANIFEST",
+    message: `Building targeted manifest (${totalTargeted} file(s))…`,
+    progress: 22,
+  });
+
+  const targetedManifest = buildTargetedManifest(
+    plan,
+    changePlan.touchedFiles,
+    changePlan.createFiles,
+    { batchSize: 5 }
+  );
+
+  send({
+    type: "stage",
+    stage: "MANIFEST",
+    message: `Targeted manifest ready — ${targetedManifest.files.length} file(s) in ${targetedManifest.batches.length} batch(es)`,
+    progress: 25,
+  });
+
+  send({
+    type: "stage",
+    stage: "GENERATING",
+    message: `Generating ${targetedManifest.files.length} file(s)…`,
+    progress: 30,
+  });
+
+  const regeneratedFiles = await generateFromManifest(
+    targetedManifest,
+    (evt) => {
+      send({
+        type: "stage",
+        stage: "GENERATING",
+        message: evt.message,
+        progress: 30 + Math.round(evt.progress * 0.3),
+      });
+    },
+    model
+  );
+
+  // ── Step 3: Merge regenerated files into existing set ────────────────────────
+  let files = mergeFiles(existingFiles, regeneratedFiles, changePlan.deleteFiles);
+  send({ type: "files", files });
+
+  // ── Step 4: Evaluate merged set ──────────────────────────────────────────────
+  send({ type: "stage", stage: "VALIDATING", message: "Evaluating merged UI quality…", progress: 65 });
+  let evalResult = evaluateWebsiteUI(files, plan);
+  send({
+    type: "stage",
+    stage: "VALIDATING",
+    message: `Quality score: ${evalResult.score}/100 (${evalResult.issues.length} issues)`,
+    progress: 70,
+  });
+
+  // ── Step 4b: Safety net — if score dropped badly, try broader regeneration ──
+  // Score threshold lower than MIN_QUALITY_SCORE to account for small delta
+  const SELECTIVE_SCORE_FLOOR = 60;
+  if (evalResult.score < SELECTIVE_SCORE_FLOOR) {
+    send({
+      type: "stage",
+      stage: "FIXING",
+      message: `Score ${evalResult.score}/100 below threshold — expanding to full blueprint regeneration…`,
+      progress: 72,
+    });
+
+    // Build full manifest and regenerate everything
+    const fullManifest = buildWebsiteManifest(plan, { batchSize: 5 });
+    const allFiles = await generateFromManifest(
+      fullManifest,
+      (evt) => {
+        send({
+          type: "stage",
+          stage: "GENERATING",
+          message: `Full regen: ${evt.message}`,
+          progress: 72 + Math.round(evt.progress * 0.1),
+        });
+      },
+      model
+    );
+    files = allFiles;
+    send({ type: "files", files });
+    evalResult = evaluateWebsiteUI(files, plan);
+    send({
+      type: "stage",
+      stage: "VALIDATING",
+      message: `Full regen quality score: ${evalResult.score}/100`,
+      progress: 75,
+    });
+  }
+
+  // ── Step 5: Polish passes ────────────────────────────────────────────────────
+  while (evalResult.score < MIN_QUALITY_SCORE && passNum < totalPasses) {
+    passNum++;
+    send({
+      type: "stage",
+      stage: "FIXING",
+      message: `Pass ${passNum}/${totalPasses}: UI polish — fixing ${evalResult.issues.length} issue(s)…`,
+      progress: 75 + Math.round(((passNum - 1) / (totalPasses - 1)) * 15),
+    });
+
+    const polishResult = await applyUIPolish(files, evalResult.issues, { model });
+    files = polishResult.files;
+    send({ type: "files", files });
+
+    evalResult = evaluateWebsiteUI(files, plan);
+    send({
+      type: "stage",
+      stage: "VALIDATING",
+      message: `Pass ${passNum}/${totalPasses}: Quality score ${evalResult.score}/100`,
+      progress: 78 + Math.round(((passNum - 1) / (totalPasses - 1)) * 12),
+    });
+  }
+
+  // ── Step 6: Completeness Gate ────────────────────────────────────────────────
+  const MAX_GATE_ATTEMPTS = 2;
+  let gateAttempt = 0;
+  let gateResult = runCompletenessGate(files);
+
+  send({
+    type: "stage",
+    stage: "COMPLETENESS_GATE",
+    message: summarizeCompletenessGate(gateResult),
+    progress: 91,
+  });
+
+  while (!gateResult.passed && gateAttempt < MAX_GATE_ATTEMPTS) {
+    gateAttempt++;
+
+    send({
+      type: "stage",
+      stage: "COMPLETENESS_GATE_FAILED",
+      message: `CompletenessGate attempt ${gateAttempt}/${MAX_GATE_ATTEMPTS} failed — ${gateResult.missingItems.length} item(s) missing. Triggering targeted remediation…`,
+      progress: 92 + gateAttempt,
+      data: { missingItems: gateResult.missingItems },
+    });
+
+    const missingPaths = gateResult.issues
+      .filter((i) => i.severity === "error" && i.rule.startsWith("required-file:"))
+      .map((i) => i.rule.replace("required-file:", ""));
+
+    if (missingPaths.length > 0) {
+      const remediationFiles = buildRemediationManifest(missingPaths, plan.brand.name, plan.brand.tagline);
+      const remediationManifest = createManifest(
+        `remediation-${Date.now()}`,
+        `Remediation for missing files in "${plan.brand.name}"`,
+        remediationFiles,
+        plan,
+        remediationFiles.length
+      );
+
+      send({
+        type: "stage",
+        stage: "FIXING",
+        message: `Generating ${missingPaths.length} missing file(s): ${missingPaths.join(", ")}`,
+        progress: 93 + gateAttempt,
+      });
+
+      const remediationGenerated = await generateFromManifest(
+        remediationManifest,
+        () => { /* silent */ },
+        model
+      );
+
+      const existingPathSet = new Set(files.map((f) => f.path));
+      const newFiles = remediationGenerated.filter((f) => !existingPathSet.has(f.path));
+      files = [...files, ...newFiles];
+      send({ type: "files", files });
+    }
+
+    gateResult = runCompletenessGate(files);
+    send({
+      type: "stage",
+      stage: "COMPLETENESS_GATE",
+      message: `CompletenessGate re-check: ${summarizeCompletenessGate(gateResult)}`,
+      progress: 95 + gateAttempt,
+    });
+  }
+
+  const summary = `Website "${plan.brand.name}" updated: ${files.length} files total (${regeneratedFiles.length} regenerated), quality score ${evalResult.score}/100${gateResult.passed ? "" : " ⚠ completeness issues remain"}`;
+  send({ type: "stage", stage: "DONE", message: summary, progress: 100 });
+}
+
+/**
+ * Merge regenerated files into the existing file set.
+ * - Replaces content for files in `regenerated` that already exist.
+ * - Appends files in `regenerated` that are new.
+ * - Removes files listed in `deleteFiles`.
+ */
+function mergeFiles(
+  existing: GeneratedFile[],
+  regenerated: GeneratedFile[],
+  deleteFiles: string[]
+): GeneratedFile[] {
+  const deletedSet = new Set(deleteFiles);
+  const regeneratedMap = new Map(regenerated.map((f) => [f.path, f]));
+
+  // Start from existing files, replacing touched ones and skipping deleted ones
+  const merged: GeneratedFile[] = existing
+    .filter((f) => !deletedSet.has(f.path))
+    .map((f) => regeneratedMap.get(f.path) ?? f);
+
+  // Append brand-new files (paths not in existing)
+  const existingPathSet = new Set(existing.map((f) => f.path));
+  for (const f of regenerated) {
+    if (!existingPathSet.has(f.path)) {
+      merged.push({ ...f, action: "create" });
+    }
+  }
+
+  return merged;
 }
 
 // ─── Asset helpers ────────────────────────────────────────────────────────────
