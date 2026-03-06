@@ -27,6 +27,13 @@ export interface BuilderResponse {
   preview_html?: string;
 }
 
+function stripMarkdownFences(text: string): string {
+  return text
+    .replace(/^```(?:json)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
+}
+
 function parseBuilderJSON(text: string): BuilderResponse {
   const cleaned = stripMarkdownFences(text);
   try {
@@ -37,6 +44,50 @@ function parseBuilderJSON(text: string): BuilderResponse {
     if (match) return JSON.parse(match[0]);
     throw new Error("AI did not return valid JSON");
   }
+}
+
+const SYSTEM_PROMPT = `You are ZIVO AI, an expert software engineer and architect. You can build:
+- Full-stack web applications (Next.js, React, Vue, Express, FastAPI)
+- Mobile app backends (REST APIs, GraphQL, WebSocket)
+- Cloud-native microservices
+- CI/CD pipelines (GitHub Actions, Docker)
+- Database schemas (PostgreSQL, Prisma, Supabase)
+- Real-time features (WebSocket, SSE, Supabase Realtime)
+- Serverless functions (Vercel, AWS Lambda)
+- REST APIs, GraphQL APIs, WebSocket servers
+- Dockerfile + docker-compose.yml configurations
+- Complete UI with TypeScript + React + Next.js + TailwindCSS + ShadCN UI + Framer Motion
+
+When given a description, respond ONLY with a valid JSON object matching this exact schema:
+{
+  "files": [
+    {
+      "path": "relative/file/path.ts",
+      "action": "create" | "update" | "delete",
+      "content": "complete file content as a string",
+      "language": "typescript" | "javascript" | "python" | "bash" | "css" | "json" | "sql" | "markdown" | "graphql" | "yaml" | "dockerfile" | "go" | "rust"
+    }
+  ],
+  "commands": ["npm install", "npm run dev"],
+  "summary": "brief description of what was generated"
+}
+
+Rules:
+- Return ONLY the JSON object, no markdown fences, no extra text.
+- Generate complete, working code that follows Next.js App Router best practices.
+- Include proper TypeScript types.
+- Organize imports alphabetically.
+- Add concise comments only where needed.
+- File paths should be relative to the project root (e.g. "app/page.tsx").
+- For delete actions, content should be an empty string.
+- Use TailwindCSS for styling, Framer Motion for animations when relevant.
+- Include package.json with all necessary dependencies when generating a full project.`;
+
+const PLAN_SYSTEM_PROMPT = `You are an expert full-stack developer AI assistant. The user wants a project plan, not code yet.
+
+When given an app description, respond ONLY with a valid JSON object matching this exact schema:
+{
+  "plan": "markdown string with the build plan"
 }
 
 export async function POST(req: Request) {
@@ -91,6 +142,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ plan: parsed.plan });
     }
 
+    // Retry up to 3 attempts if JSON is invalid
+    let parsed: BuilderResponse | null = null;
+    let lastError = "";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const r = await getClient().chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: prompt.trim() },
+        ],
+        temperature: 0.2,
+      });
+
+      const text: string = r.choices[0]?.message?.content ?? "";
+
+      try {
+        parsed = parseBuilderJSON(text);
+        if (Array.isArray(parsed.files)) break;
+        lastError = "Invalid response structure: missing files array";
+        parsed = null;
+      } catch (e) {
+        lastError = (e as Error).message || "AI did not return valid JSON";
+      }
+    }
+
+    if (!parsed) {
+      return NextResponse.json({ error: lastError || "AI did not return valid JSON" }, { status: 502 });
     // ── Streaming mode ────────────────────────────────────────────────────────
     if (stream) {
       const encoder = new TextEncoder();

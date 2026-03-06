@@ -305,6 +305,14 @@ function stripMarkdownFences(text: string): string {
 }
 
 function parseJSON(text: string): GenerateSiteResponse {
+  const cleaned = text
+    .replace(/^```(?:json)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/i, "")
+    .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
   const clean = stripMarkdownFences(text);
   try {
     return JSON.parse(clean);
