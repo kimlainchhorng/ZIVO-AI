@@ -21,6 +21,12 @@ import {
   ChevronUp,
   AlertTriangle,
   ShieldCheck,
+  BrainCircuit,
+  Globe,
+  Cpu,
+  KeyRound,
+  Puzzle,
+  ServerCrash,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -92,6 +98,39 @@ interface QualityRun {
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
+}
+
+// ─── Project Intelligence types ───────────────────────────────────────────────
+
+interface FrameworkInfo {
+  name: string;
+  version: string | null;
+}
+
+interface ComponentEntry {
+  path: string;
+  imports: string[];
+}
+
+interface KnowledgeJson {
+  frameworks: FrameworkInfo[];
+  runtime: string;
+  routes: string[];
+  apiEndpoints: string[];
+  envVars: string[];
+  componentMap: ComponentEntry[];
+  buildSummary: string | null;
+}
+
+type KnowledgeStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+interface KnowledgeRecord {
+  id: string;
+  status: KnowledgeStatus;
+  knowledge_json: KnowledgeJson | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -238,7 +277,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = 'conversation' | 'files' | 'builds' | 'quality';
+type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'intelligence';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -268,6 +307,11 @@ export default function ProjectWorkspacePage() {
   const [activeQualityRunId, setActiveQualityRunId] = useState<string | null>(null);
   const [qualityStarting, setQualityStarting] = useState(false);
   const qualityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Project Intelligence state
+  const [knowledge, setKnowledge] = useState<KnowledgeRecord | null>(null);
+  const [reindexing, setReindexing] = useState(false);
+  const [reindexError, setReindexError] = useState<string | null>(null);
 
   // UI
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
@@ -330,10 +374,20 @@ export default function ProjectWorkspacePage() {
     setQualityRuns(data.runs ?? []);
   }, [token, projectId]);
 
+  const fetchKnowledge = useCallback(async () => {
+    if (!token || !projectId) return;
+    const res = await fetch(`/api/projects/${projectId}/knowledge/latest`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setKnowledge(data.knowledge ?? null);
+  }, [token, projectId]);
+
   useEffect(() => {
     if (!token) { setLoading(false); return; }
     setLoading(true);
-    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns()])
+    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns(), fetchKnowledge()])
       .catch((err: unknown) => setError((err as Error).message ?? 'Failed to load workspace'))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -541,6 +595,27 @@ export default function ProjectWorkspacePage() {
     setTimeout(() => setRestoreMessage(null), 4000);
   }
 
+  async function handleReindex() {
+    if (!token || !projectId || reindexing) return;
+    setReindexing(true);
+    setReindexError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/knowledge/reindex`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setReindexError(data.error ?? 'Re-index failed');
+      } else {
+        await fetchKnowledge();
+      }
+    } catch {
+      setReindexError('Network error');
+    }
+    setReindexing(false);
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   const s = styles;
@@ -722,7 +797,7 @@ export default function ProjectWorkspacePage() {
 
         {/* ── Tabs ── */}
         <div style={s.tabs}>
-          {(['conversation', 'files', 'builds', 'quality'] as Tab[]).map((tab) => (
+          {(['conversation', 'files', 'builds', 'quality', 'intelligence'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -732,7 +807,8 @@ export default function ProjectWorkspacePage() {
               {tab === 'files' && <FileCode2 size={14} />}
               {tab === 'builds' && <History size={14} />}
               {tab === 'quality' && <ShieldCheck size={14} />}
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              {tab === 'intelligence' && <BrainCircuit size={14} />}
+              {tab === 'intelligence' ? 'Intelligence' : tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'files' && files.length > 0 && (
                 <span style={s.badge}>{files.length}</span>
               )}
@@ -748,10 +824,13 @@ export default function ProjectWorkspacePage() {
                   {latestQualityRun.status}
                 </span>
               )}
+              {tab === 'intelligence' && knowledge?.status === 'succeeded' && (
+                <span style={{ ...s.badge, background: 'rgba(16,185,129,0.2)', color: '#10b981' }}>indexed</span>
+              )}
             </button>
           ))}
           <button
-            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); }}
+            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); fetchKnowledge(); }}
             title="Refresh"
             style={{ ...s.outlineBtn, marginLeft: 'auto' }}
           >
@@ -972,6 +1051,185 @@ export default function ProjectWorkspacePage() {
             </div>
           )}
         </div>
+
+        {/* Project Intelligence */}
+        {activeTab === 'intelligence' && (
+          <div style={s.tabContent}>
+            {/* Panel header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <div>
+                <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>
+                  Detected stack · routes · env vars · component map
+                </p>
+              </div>
+              <button
+                onClick={handleReindex}
+                disabled={reindexing}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                  padding: '0.5rem 1.25rem', borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                  color: '#fff', border: 'none', cursor: 'pointer',
+                  fontWeight: 600, fontSize: '0.85rem',
+                  opacity: reindexing ? 0.6 : 1,
+                }}
+              >
+                {reindexing
+                  ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Indexing…</>
+                  : <><RefreshCw size={14} /> Re-index</>}
+              </button>
+            </div>
+
+            {reindexError && (
+              <div style={{ ...s.errorBox, marginBottom: '1rem' }}>
+                <AlertCircle size={16} />
+                {reindexError}
+              </div>
+            )}
+
+            {!knowledge ? (
+              <div style={s.emptyTab}>
+                <BrainCircuit size={32} style={{ color: '#334155', marginBottom: '0.75rem' }} />
+                <p>No index yet. Click <strong style={{ color: '#818cf8' }}>Re-index</strong> to analyse this project.</p>
+              </div>
+            ) : knowledge.status === 'running' || knowledge.status === 'queued' ? (
+              <div style={s.emptyTab}>
+                <Loader2 size={32} style={{ color: '#6366f1', marginBottom: '0.75rem', animation: 'spin 1s linear infinite' }} />
+                <p>Indexing in progress…</p>
+              </div>
+            ) : knowledge.status === 'failed' ? (
+              <div style={s.emptyTab}>
+                <ServerCrash size={32} style={{ color: '#ef4444', marginBottom: '0.75rem' }} />
+                <p style={{ color: '#ef4444' }}>{knowledge.error ?? 'Indexing failed'}</p>
+              </div>
+            ) : knowledge.knowledge_json ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                {/* Meta */}
+                <div style={{ fontSize: '0.75rem', color: '#475569' }}>
+                  Last indexed: {new Date(knowledge.updated_at).toLocaleString()}
+                </div>
+
+                {/* Stack */}
+                <div style={s.infoCard}>
+                  <div style={s.infoCardHeader}>
+                    <Cpu size={15} style={{ color: '#818cf8' }} />
+                    <span style={s.infoCardTitle}>Detected Stack</span>
+                    <span style={{ ...s.badge, background: 'rgba(99,102,241,0.15)', color: '#818cf8' }}>
+                      {knowledge.knowledge_json.runtime}
+                    </span>
+                  </div>
+                  {knowledge.knowledge_json.frameworks.length === 0 ? (
+                    <p style={s.infoCardEmpty}>No framework detected</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem' }}>
+                      {knowledge.knowledge_json.frameworks.map((f) => (
+                        <span key={f.name} style={{ ...s.badge, background: 'rgba(99,102,241,0.1)', color: '#a5b4fc' }}>
+                          {f.name}{f.version ? ` ${f.version}` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Routes */}
+                <div style={s.infoCard}>
+                  <div style={s.infoCardHeader}>
+                    <Globe size={15} style={{ color: '#34d399' }} />
+                    <span style={s.infoCardTitle}>Routes</span>
+                    <span style={{ ...s.badge, background: 'rgba(52,211,153,0.15)', color: '#34d399' }}>
+                      {knowledge.knowledge_json.routes.length}
+                    </span>
+                  </div>
+                  {knowledge.knowledge_json.routes.length === 0 ? (
+                    <p style={s.infoCardEmpty}>No routes detected</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.5rem' }}>
+                      {knowledge.knowledge_json.routes.map((r) => (
+                        <code key={r} style={s.codeItem}>{r}</code>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* API Endpoints */}
+                {knowledge.knowledge_json.apiEndpoints.length > 0 && (
+                  <div style={s.infoCard}>
+                    <div style={s.infoCardHeader}>
+                      <ServerCrash size={15} style={{ color: '#f59e0b' }} />
+                      <span style={s.infoCardTitle}>API Endpoints</span>
+                      <span style={{ ...s.badge, background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>
+                        {knowledge.knowledge_json.apiEndpoints.length}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.5rem' }}>
+                      {knowledge.knowledge_json.apiEndpoints.map((e) => (
+                        <code key={e} style={s.codeItem}>{e}</code>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Env Vars */}
+                <div style={s.infoCard}>
+                  <div style={s.infoCardHeader}>
+                    <KeyRound size={15} style={{ color: '#fb7185' }} />
+                    <span style={s.infoCardTitle}>Referenced Env Vars</span>
+                    <span style={{ ...s.badge, background: 'rgba(251,113,133,0.15)', color: '#fb7185' }}>
+                      {knowledge.knowledge_json.envVars.length}
+                    </span>
+                  </div>
+                  {knowledge.knowledge_json.envVars.length === 0 ? (
+                    <p style={s.infoCardEmpty}>No env vars detected</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.5rem' }}>
+                      {knowledge.knowledge_json.envVars.map((v) => (
+                        <code key={v} style={{ ...s.codeItem, background: 'rgba(251,113,133,0.08)', color: '#fda4af' }}>{v}</code>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Component Map */}
+                {knowledge.knowledge_json.componentMap.length > 0 && (
+                  <div style={s.infoCard}>
+                    <div style={s.infoCardHeader}>
+                      <Puzzle size={15} style={{ color: '#a78bfa' }} />
+                      <span style={s.infoCardTitle}>Components</span>
+                      <span style={{ ...s.badge, background: 'rgba(167,139,250,0.15)', color: '#a78bfa' }}>
+                        {knowledge.knowledge_json.componentMap.length}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+                      {knowledge.knowledge_json.componentMap.map((c) => (
+                        <div key={c.path} style={{ fontSize: '0.8rem' }}>
+                          <code style={{ color: '#c4b5fd' }}>{c.path}</code>
+                          {c.imports.length > 0 && (
+                            <span style={{ color: '#475569', marginLeft: '0.5rem' }}>
+                              ← {c.imports.slice(0, 3).join(', ')}{c.imports.length > 3 ? ` +${c.imports.length - 3}` : ''}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Build summary */}
+                {knowledge.knowledge_json.buildSummary && (
+                  <div style={{ ...s.infoCard, borderColor: 'rgba(99,102,241,0.15)' }}>
+                    <div style={s.infoCardHeader}>
+                      <CheckCircle2 size={15} style={{ color: '#6366f1' }} />
+                      <span style={s.infoCardTitle}>Build Summary</span>
+                    </div>
+                    <p style={{ fontSize: '0.82rem', color: '#94a3b8', margin: '0.5rem 0 0' }}>
+                      {knowledge.knowledge_json.buildSummary}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
 
         {/* Hidden iframe to bust preview cache — key change forces reload */}
         <iframe key={iframeKey} src="about:blank" style={{ display: 'none' }} title="preview-cache-bust" />
@@ -1219,5 +1477,41 @@ const styles = {
     textDecoration: 'none',
     fontWeight: 600,
     fontSize: '0.9rem',
+  } as React.CSSProperties,
+
+  infoCard: {
+    background: 'rgba(15,15,26,0.7)',
+    border: '1px solid rgba(99,102,241,0.15)',
+    borderRadius: '10px',
+    padding: '0.875rem 1rem',
+  } as React.CSSProperties,
+
+  infoCardHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+  } as React.CSSProperties,
+
+  infoCardTitle: {
+    fontWeight: 600,
+    color: '#e2e8f0',
+    fontSize: '0.9rem',
+    flex: 1,
+  } as React.CSSProperties,
+
+  infoCardEmpty: {
+    fontSize: '0.82rem',
+    color: '#475569',
+    margin: '0.5rem 0 0',
+  } as React.CSSProperties,
+
+  codeItem: {
+    display: 'inline-block',
+    fontFamily: 'monospace',
+    fontSize: '0.8rem',
+    background: 'rgba(99,102,241,0.08)',
+    color: '#a5b4fc',
+    padding: '2px 8px',
+    borderRadius: '4px',
   } as React.CSSProperties,
 };

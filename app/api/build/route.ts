@@ -113,8 +113,6 @@ export async function POST(req: Request): Promise<Response> {
       : body.mode === "mobile_v2" || body.mode === "mobile"
       ? "mobile_v2"
       : "code";
-  const mode: BuildMode =
-    body.mode === "website_v2" || body.mode === "mobile_v2" ? body.mode : "code";
 
   if (!prompt?.trim()) {
     return new Response(

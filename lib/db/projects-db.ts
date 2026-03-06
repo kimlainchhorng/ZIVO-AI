@@ -47,6 +47,21 @@ export interface UpsertFileInput {
   generated_by?: string;
 }
 
+// ─── Project Knowledge ─────────────────────────────────────────────────────────
+
+export type KnowledgeStatus = "queued" | "running" | "succeeded" | "failed";
+
+export interface DbKnowledgeRecord {
+  id: string;
+  project_id: string;
+  source_run_id: string | null;
+  status: KnowledgeStatus;
+  knowledge_json: unknown | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Server-side Supabase client ───────────────────────────────────────────────
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -521,4 +536,56 @@ export async function deleteProject(token: string, projectId: string): Promise<v
   const client = createAuthedClient(token);
   const { error } = await client.from("projects").delete().eq("id", projectId);
   if (error) throw new Error(`deleteProject: ${error.message}`);
+}
+
+// ─── Project Knowledge CRUD ────────────────────────────────────────────────────
+
+/** Creates a new queued knowledge record. */
+export async function createKnowledgeRecord(
+  token: string,
+  projectId: string,
+  sourceRunId?: string | null
+): Promise<DbKnowledgeRecord> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_knowledge")
+    .insert({ project_id: projectId, source_run_id: sourceRunId ?? null })
+    .select()
+    .single();
+  if (error) throw new Error(`createKnowledgeRecord: ${error.message}`);
+  return data as DbKnowledgeRecord;
+}
+
+/** Updates fields on an existing knowledge record. */
+export async function updateKnowledgeRecord(
+  token: string,
+  knowledgeId: string,
+  updates: Partial<Pick<DbKnowledgeRecord, "status" | "knowledge_json" | "error">>
+): Promise<DbKnowledgeRecord> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_knowledge")
+    .update(updates)
+    .eq("id", knowledgeId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateKnowledgeRecord: ${error.message}`);
+  return data as DbKnowledgeRecord;
+}
+
+/** Returns the most recent knowledge record for a project. */
+export async function getLatestKnowledgeRecord(
+  token: string,
+  projectId: string
+): Promise<DbKnowledgeRecord | null> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_knowledge")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`getLatestKnowledgeRecord: ${error.message}`);
+  return data as DbKnowledgeRecord | null;
 }
