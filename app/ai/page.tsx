@@ -5338,7 +5338,7 @@ function AIPageInner() {
                       className="zivo-btn"
                       onClick={action}
                       disabled={disabled || loading}
-                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: disabled ? COLORS.textMuted : COLORS.textPrimary, cursor: disabled || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: disabled ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
+                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: disabled ? COLORS.textMuted : COLORS.textPrimary, cursor: disabled || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: disabled ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
                     >
                       <span style={{ color: COLORS.accent, flexShrink: 0 }}>{icon}</span>
                       {label}
@@ -5358,7 +5358,7 @@ function AIPageInner() {
                       className="zivo-btn"
                       onClick={action}
                       disabled={!output?.files?.length || loading}
-                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: !output?.files?.length || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: !output?.files?.length ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
+                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: !output?.files?.length || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: !output?.files?.length ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
                     >
                       <span style={{ color: COLORS.success, flexShrink: 0 }}>{icon}</span>
                       {label}
@@ -5375,7 +5375,7 @@ function AIPageInner() {
                       key={label}
                       className="zivo-btn"
                       onClick={action}
-                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", transition: "border-color 0.15s, background 0.15s" }}
+                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", transition: "border-color 0.15s, background 0.15s" }}
                     >
                       <span style={{ color: COLORS.warning, flexShrink: 0 }}>{icon}</span>
                       {label}
@@ -5390,8 +5390,8 @@ function AIPageInner() {
 
         {/* Chat Panel Overlay */}
         {chatOpen && (
-          <div style={{ position: "fixed", top: "52px", right: 0, bottom: "28px", width: "340px", background: COLORS.bgPanel, borderLeft: `1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", zIndex: 40, animation: "fadeIn 0.2s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+          <div style={{ position: "fixed", top: "52px", right: 0, bottom: "28px", width: "340px", background: COLORS.bgPanel, borderLeft: \`1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", zIndex: 40, animation: "fadeIn 0.2s ease" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: \`1px solid ${COLORS.border}`, flexShrink: 0 }}>
               <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>AI Chat</span>
               <button onClick={() => setChatOpen(false)} style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1.25rem" }}>×</button>
             </div>
@@ -5401,7 +5401,7 @@ function AIPageInner() {
               )}
               {chatMessages.map((msg, i) => (
                 <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", gap: "0.25rem" }}>
-                  <div style={{ maxWidth: "85%", padding: "0.5rem 0.75rem", borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px", background: msg.role === "user" ? COLORS.accentGradient : COLORS.bgCard, border: `1px solid ${COLORS.border}`, fontSize: "0.8125rem", color: COLORS.textPrimary, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.content || (msg.role === "assistant" && chatLoading ? "…" : "")}</div>
+                  <div style={{ maxWidth: "85%", padding: "0.5rem 0.75rem", borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px", background: msg.role === "user" ? COLORS.accentGradient : COLORS.bgCard, border: \`1px solid ${COLORS.border}`, fontSize: "0.8125rem", color: COLORS.textPrimary, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.content || (msg.role === "assistant" && chatLoading ? "…" : "")}</div>
                   {msg.role === "assistant" && msg.content && (
                     <button
                       onClick={() => setPrompt((prev) => prev ? prev + "\n\n" + msg.content : msg.content)}
@@ -5414,14 +5414,14 @@ function AIPageInner() {
               ))}
               <div ref={chatEndRef} />
             </div>
-            <div style={{ padding: "0.75rem", borderTop: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+            <div style={{ padding: "0.75rem", borderTop: \`1px solid ${COLORS.border}`, flexShrink: 0 }}>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
                   placeholder="Ask something…"
-                  style={{ flex: 1, background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.45rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                  style={{ flex: 1, background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.45rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
                 />
                 <button
                   onClick={handleChatSend}
@@ -5437,8 +5437,8 @@ function AIPageInner() {
 
         {/* Analysis Panel */}
         {analysisPanelOpen && (
-          <div style={{ borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "1rem" }}>
-            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", borderBottom: `1px solid ${COLORS.border}`, paddingBottom: "0.5rem" }}>
+          <div style={{ borderTop: \`1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "1rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", borderBottom: \`1px solid ${COLORS.border}`, paddingBottom: "0.5rem" }}>
               {(["seo", "a11y", "perf", "docs", "agents"] as const).map((tab) => (
                 <button
                   key={tab}
@@ -5469,12 +5469,12 @@ function AIPageInner() {
         )}
 
         {/* Status Bar */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "28px", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0, fontSize: "0.7rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "28px", borderTop: \`1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0, fontSize: "0.7rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: loading ? COLORS.warning : COLORS.success, animation: "statusBlink 2s infinite" }} />
             <span style={{ color: COLORS.textMuted }}>{loading ? "Building…" : "Ready to build"}</span>
           </div>
-          <span style={{ color: COLORS.textMuted }}>{buildTime ? `Last build: ${buildTime}` : "No builds yet"}</span>
+          <span style={{ color: COLORS.textMuted }}>{buildTime ? \`Last build: ${buildTime}` : "No builds yet"}</span>
           <span style={{ color: COLORS.textMuted }}>{model} · {prompt.length} chars</span>
         </div>
       </div>
@@ -5633,7 +5633,7 @@ function AIPageInner() {
               <button
                 disabled={!createPageName.trim()}
                 onClick={() => {
-                  const pagePrompt = `Generate a ${createPageName} page${createPageRoute ? ` at route ${createPageRoute}` : ""}. ${createPageDescription || "Make it look polished and consistent with the rest of the app."}`;
+                  const pagePrompt = \`Generate a ${createPageName} page${createPageRoute ? ` at route ${createPageRoute}` : ""}. ${createPageDescription || "Make it look polished and consistent with the rest of the app."}`;
                   setPrompt(pagePrompt);
                   setCreatePageModalOpen(false);
                   setCreatePageName("");
@@ -5749,7 +5749,7 @@ function AIPageInner() {
                 />
               </label>
 
-              <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, background: "rgba(255,255,255,0.03)", border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "0.5rem 0.65rem" }}>
+              <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, background: "rgba(255,255,255,0.03)", border: \`1px solid ${COLORS.border}`, borderRadius: 6, padding: "0.5rem 0.65rem" }}>
                 Pushing <strong style={{ color: COLORS.textSecondary }}>{output?.files?.length ?? 0} files</strong> to GitHub. Token is saved locally for future pushes.
               </div>
             </div>
