@@ -222,7 +222,7 @@ export default function VersionCompare({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: `1px solid ${COLORS.border}` }}>
           {/* Version A header */}
           <div style={{ padding: '0.875rem 1.25rem', borderRight: `1px solid ${COLORS.border}`, background: 'rgba(239,68,68,0.04)' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ef4444', marginBottom: '0.25rem' }}>VERSION A</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ef4444', marginBottom: '0.25rem' }}>VERSION A (older)</div>
             <div style={{ fontSize: '1rem', fontWeight: 600, color: COLORS.textPrimary }}>v{versionA.version_number}</div>
             <div style={{ fontSize: '0.6875rem', color: COLORS.textMuted }}>
               {new Date(versionA.created_at).toLocaleString()}
@@ -230,7 +230,7 @@ export default function VersionCompare({
           </div>
           {/* Version B header */}
           <div style={{ padding: '0.875rem 1.25rem', background: 'rgba(16,185,129,0.04)' }}>
-            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981', marginBottom: '0.25rem' }}>VERSION B</div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981', marginBottom: '0.25rem' }}>VERSION B (newer)</div>
             <div style={{ fontSize: '1rem', fontWeight: 600, color: COLORS.textPrimary }}>v{versionB.version_number}</div>
             <div style={{ fontSize: '0.6875rem', color: COLORS.textMuted }}>
               {new Date(versionB.created_at).toLocaleString()}

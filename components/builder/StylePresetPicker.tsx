@@ -59,7 +59,7 @@ export default function StylePresetPicker({ value, onChange }: StylePresetPicker
                       width: '14px',
                       height: '14px',
                       borderRadius: '3px',
-                      background: color.startsWith('linear') ? color : color,
+                      background: color,
                       border: '1px solid rgba(255,255,255,0.1)',
                       flexShrink: 0,
                     }}

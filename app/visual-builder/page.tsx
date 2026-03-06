@@ -13,6 +13,17 @@ import DeployMenu from '@/components/builder/DeployMenu';
 import VersionHistoryPanel from '@/components/builder/VersionHistoryPanel';
 import VersionCompare from '@/components/builder/VersionCompare';
 
+/** Cross-browser safe UUID generator with fallback for non-secure contexts. */
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 const COLORS = {
   bg: "#0a0b14",
   bgPanel: "#0f1120",
@@ -214,7 +225,7 @@ export default function VisualBuilderPage() {
 
   const handleInsertSection = () => {
     const newSection: Section = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: 'custom',
       title: 'New Section',
       content: '<div style="padding:4rem 2rem;text-align:center;color:#94a3b8;">New section — regenerate to fill with content</div>',
