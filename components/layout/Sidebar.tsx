@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Layers, ImageIcon, FolderKanban, Rocket } from 'lucide-react';
+import { LayoutDashboard, Layers, ImageIcon, FolderKanban, Rocket } from 'lucide-react';
 
 const navItems = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/projects', label: 'Projects', icon: FolderKanban },
-  { href: '/ai-ui-builder', label: 'AI UI Builder', icon: Layers },
-  { href: '/ai-image-studio', label: 'Image Studio', icon: ImageIcon },
-  { href: '/deploy', label: 'Deployments', icon: Rocket },
+  { href: '/ai-builder', label: 'AI Builder', icon: Layers },
+  { href: '/image-studio', label: 'Image Studio', icon: ImageIcon },
+  { href: '/deploy', label: 'Deploy', icon: Rocket },
 ];
 
 export function Sidebar() {
