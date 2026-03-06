@@ -10,8 +10,8 @@ export async function GET(req: Request, { params }: RouteParams) {
   const { id: projectId, domainId } = await params;
   const token = extractBearerToken(req.headers.get('Authorization'));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const _user = await getUserFromToken(token);
-  if (!_user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthedClient(token);
   const { data, error } = await client
@@ -29,8 +29,8 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   const { id: projectId, domainId } = await params;
   const token = extractBearerToken(req.headers.get('Authorization'));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const _user = await getUserFromToken(token);
-  if (!_user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
   const allowedFields = z.object({
@@ -57,8 +57,8 @@ export async function DELETE(req: Request, { params }: RouteParams) {
   const { id: projectId, domainId } = await params;
   const token = extractBearerToken(req.headers.get('Authorization'));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const _user = await getUserFromToken(token);
-  if (!_user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthedClient(token);
   const { error } = await client

@@ -10,8 +10,8 @@ export async function GET(req: Request, { params }: RouteParams) {
   const { id: projectId } = await params;
   const token = extractBearerToken(req.headers.get('Authorization'));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const _user = await getUserFromToken(token);
-  if (!_user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthedClient(token);
   const { data, error } = await client
@@ -28,8 +28,8 @@ export async function POST(req: Request, { params }: RouteParams) {
   const { id: projectId } = await params;
   const token = extractBearerToken(req.headers.get('Authorization'));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const _user = await getUserFromToken(token);
-  if (!_user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({})) as { domain?: string };
   const parsed = z.string().min(3).regex(/^[a-z0-9.-]+\.[a-z]{2,}$/).safeParse(body.domain);

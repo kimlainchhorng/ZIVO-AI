@@ -9,8 +9,8 @@ export async function POST(req: Request, { params }: RouteParams) {
   const { id: projectId, domainId } = await params;
   const token = extractBearerToken(req.headers.get('Authorization'));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const _user = await getUserFromToken(token);
-  if (!_user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthedClient(token);
   const { data: domainRow, error: fetchError } = await client
@@ -32,12 +32,14 @@ export async function POST(req: Request, { params }: RouteParams) {
     if (dnsRes.ok) {
       const dnsData = await dnsRes.json() as { Answer?: Array<{ data: string }> };
       const answers = dnsData.Answer ?? [];
-      verified = answers.some((a) => a.data.replace(/"/g, '') === domainRow.verification_token);
+      verified = answers.some((a) => a.data.includes(domainRow.verification_token as string));
     }
   } catch { /* DNS lookup failed — keep verified=false */ }
 
   const newStatus = verified ? 'pending_tls' : 'error';
-  const errorMessage = verified ? null : 'DNS TXT record not found. Add _zivo-verify TXT record with the verification token.';
+  const errorMessage = verified
+    ? null
+    : 'DNS TXT record not found. Add _zivo-verify TXT record with the verification token.';
 
   const { data: updated, error: updateError } = await client
     .from('project_domains')

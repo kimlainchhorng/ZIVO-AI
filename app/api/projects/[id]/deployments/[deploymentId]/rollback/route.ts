@@ -5,12 +5,22 @@ export const runtime = 'nodejs';
 
 interface RouteParams { params: Promise<{ id: string; deploymentId: string }> }
 
+/** Basic SSRF guard: only allow HTTPS webhooks. */
+function isSafeWebhookUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(req: Request, { params }: RouteParams) {
   const { id: projectId, deploymentId } = await params;
   const token = extractBearerToken(req.headers.get('Authorization'));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  const _user = await getUserFromToken(token);
-  if (!_user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const client = createAuthedClient(token);
 
@@ -29,7 +39,11 @@ export async function POST(req: Request, { params }: RouteParams) {
   const webhookUrl = process.env.DOCKER_DEPLOY_WEBHOOK_URL;
   let rollbackStatus: 'pending' | 'success' | 'error' = 'pending';
   let errorMessage: string | null = null;
+
   if (webhookUrl) {
+    if (!isSafeWebhookUrl(webhookUrl)) {
+      return NextResponse.json({ error: 'DOCKER_DEPLOY_WEBHOOK_URL must be an HTTPS URL' }, { status: 500 });
+    }
     try {
       const hookRes = await fetch(webhookUrl, {
         method: 'POST',
@@ -47,9 +61,6 @@ export async function POST(req: Request, { params }: RouteParams) {
       rollbackStatus = 'error';
       errorMessage = (err as Error).message;
     }
-  } else {
-    // No webhook configured; record the rollback as pending
-    rollbackStatus = 'pending';
   }
 
   // Record the rollback deployment
@@ -59,8 +70,8 @@ export async function POST(req: Request, { params }: RouteParams) {
       project_id: projectId,
       provider: target.provider,
       deploy_url: target.deploy_url,
-      github_repo: target.github_repo ?? null,
-      github_branch: target.github_branch ?? null,
+      github_repo: (target as Record<string, unknown>).github_repo ?? null,
+      github_branch: (target as Record<string, unknown>).github_branch ?? null,
       commit_sha: target.commit_sha ?? null,
       rollback_of: deploymentId,
       status: rollbackStatus,
