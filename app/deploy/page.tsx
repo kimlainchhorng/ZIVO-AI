@@ -1,259 +1,206 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { motion } from 'framer-motion';
+import { ExternalLink, RefreshCw, Github, Triangle } from 'lucide-react';
+import SidebarLayout from '@/components/layout/SidebarLayout';
 
-const COLORS = {
-  bg: "#0a0b14",
-  bgPanel: "#0f1120",
-  bgCard: "rgba(255,255,255,0.04)",
-  border: "rgba(255,255,255,0.08)",
-  borderHover: "rgba(255,255,255,0.16)",
-  accent: "#6366f1",
-  accentGradient: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-  success: "#10b981",
-  warning: "#f59e0b",
-  error: "#ef4444",
-  textPrimary: "#f1f5f9",
-  textSecondary: "#94a3b8",
-  textMuted: "#475569",
+interface Deployment {
+  id: string;
+  projectId: string;
+  provider: 'vercel' | 'github';
+  deployUrl?: string;
+  githubRepo?: string;
+  githubBranch?: string;
+  status: 'pending' | 'building' | 'success' | 'error';
+  errorMessage?: string;
+  deployedAt?: string;
+  createdAt: string;
+}
+
+const STATUS_COLORS: Record<string, { bg: string; color: string; label: string }> = {
+  pending:  { bg: 'rgba(234,179,8,0.15)',   color: '#eab308', label: 'Pending'  },
+  building: { bg: 'rgba(59,130,246,0.15)',  color: '#3b82f6', label: 'Building' },
+  success:  { bg: 'rgba(16,185,129,0.15)',  color: '#10b981', label: 'Success'  },
+  error:    { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444', label: 'Error'    },
 };
 
-interface Platform {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
-  envVar: string;
-  color: string;
+function getStoredToken() {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('zivo_supabase_token');
 }
-
-interface DeployState {
-  status: "idle" | "loading" | "success" | "error";
-  url?: string;
-  error?: string;
-}
-
-const PLATFORMS: Platform[] = [
-  {
-    id: "vercel",
-    name: "Vercel",
-    icon: "▲",
-    description: "Zero-config deployments for Next.js. Fastest edge network.",
-    envVar: "VERCEL_TOKEN",
-    color: "#000",
-  },
-  {
-    id: "netlify",
-    name: "Netlify",
-    icon: "◈",
-    description: "Deploy with continuous integration and serverless functions.",
-    envVar: "NETLIFY_TOKEN",
-    color: "#00c7b7",
-  },
-  {
-    id: "docker",
-    name: "Docker",
-    icon: "🐳",
-    description: "Containerize your app for any cloud or self-hosted environment.",
-    envVar: "DOCKER_REGISTRY",
-    color: "#0db7ed",
-  },
-  {
-    id: "cloudflare",
-    name: "Cloudflare Pages",
-    icon: "☁️",
-    description: "Ultra-fast global deployments on Cloudflare's edge network.",
-    envVar: "CLOUDFLARE_API_TOKEN",
-    color: "#f38020",
-  },
-];
 
 export default function DeployPage() {
-  const [deployStates, setDeployStates] = useState<Record<string, DeployState>>(
-    Object.fromEntries(PLATFORMS.map((p) => [p.id, { status: "idle" }]))
-  );
-  const [generatingFiles, setGeneratingFiles] = useState(false);
-  const [generatedFiles, setGeneratedFiles] = useState<Array<{ path: string; content: string }>>([]);
-  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [deployments, setDeployments] = useState<Deployment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [projectId, setProjectId] = useState('');
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  async function handleDeploy(platform: Platform) {
-    setDeployStates((prev) => ({ ...prev, [platform.id]: { status: "loading" } }));
+  const token = getStoredToken();
+
+  async function fetchDeployments(pid?: string) {
+    if (!token) { setLoading(false); return; }
+    const q = pid ? `?projectId=${pid}` : '';
+    if (!q) { setLoading(false); return; }
     try {
-      const res = await fetch("/api/deploy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform: platform.id, files: [] }),
+      const res = await fetch(`/api/deploy/status${q}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (data.error) {
-        setDeployStates((prev) => ({ ...prev, [platform.id]: { status: "error", error: data.error } }));
-      } else {
-        setDeployStates((prev) => ({ ...prev, [platform.id]: { status: "success", url: data.url } }));
-      }
-    } catch {
-      setDeployStates((prev) => ({
-        ...prev,
-        [platform.id]: { status: "error", error: "Deploy request failed" },
-      }));
+      if (res.ok) setDeployments(data.deployments ?? []);
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function handleGenerateDeployFiles() {
-    setGeneratingFiles(true);
-    setGenerateError(null);
-    setGeneratedFiles([]);
-    try {
-      const res = await fetch("/api/generate-deploy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platforms: ["vercel", "docker", "github-actions"], appName: "my-app" }),
-      });
-      const data = await res.json();
-      if (data.error) {
-        setGenerateError(data.error);
-      } else {
-        setGeneratedFiles(Array.isArray(data.files) ? data.files : []);
-      }
-    } catch {
-      setGenerateError("Failed to generate deploy files");
+  // Auto-refresh for pending/building deployments
+  useEffect(() => {
+    const hasPending = deployments.some((d) => d.status === 'pending' || d.status === 'building');
+    if (hasPending) {
+      intervalRef.current = setInterval(() => {
+        fetchDeployments(projectId);
+      }, 5000);
     }
-    setGeneratingFiles(false);
-  }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [deployments, projectId]);
 
-  function downloadFile(path: string, content: string) {
-    const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = path.split("/").pop() ?? path;
-    a.click();
-    URL.revokeObjectURL(url);
+  function handleSearch() {
+    setLoading(true);
+    fetchDeployments(projectId);
   }
 
   return (
-    <>
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        * { box-sizing: border-box; }
-        ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-        .deploy-card:hover { border-color: rgba(99,102,241,0.4) !important; transform: translateY(-2px); }
-        .deploy-btn:hover { opacity: 0.85 !important; }
-      `}</style>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: COLORS.bg, color: COLORS.textPrimary, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif" }}>
-        <div style={{ flex: 1, padding: '2rem', maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
-          <div style={{ marginBottom: '2rem', animation: 'fadeIn 0.4s ease' }}>
-            <h1 style={{ fontSize: '1.875rem', fontWeight: 700, margin: '0 0 0.5rem', letterSpacing: '-0.02em' }}>Deploy</h1>
-            <p style={{ fontSize: '0.9375rem', color: COLORS.textSecondary, margin: 0 }}>
-              Deploy your generated app to any platform in one click
-            </p>
-          </div>
+    <SidebarLayout>
+      <div style={{ padding: '2rem', minHeight: '100vh', background: '#0a0a0f', color: '#f1f5f9' }}>
+        {/* Header */}
+        <div style={{ marginBottom: '2rem' }}>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#f1f5f9' }}>Deployments</h1>
+          <p style={{ color: '#64748b', marginTop: '0.25rem' }}>Track your GitHub and Vercel deployments</p>
+        </div>
 
-          {/* Platform Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
-            {PLATFORMS.map((platform, i) => {
-              const state = deployStates[platform.id];
+        {/* Filter */}
+        <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem' }}>
+          <input
+            value={projectId}
+            onChange={(e) => setProjectId(e.target.value)}
+            placeholder="Enter Project ID (UUID)..."
+            style={{
+              flex: 1, padding: '0.625rem 0.75rem', borderRadius: '8px',
+              background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.2)',
+              color: '#f1f5f9', fontSize: '0.9rem',
+            }}
+          />
+          <button
+            onClick={handleSearch}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.625rem 1.25rem', borderRadius: '8px',
+              background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+              color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600,
+            }}
+          >
+            <RefreshCw size={16} /> Load
+          </button>
+        </div>
+
+        {/* Deployments List */}
+        {loading ? (
+          <div style={{ color: '#64748b', textAlign: 'center', padding: '2rem' }}>Loading...</div>
+        ) : deployments.length === 0 ? (
+          <div style={{
+            textAlign: 'center', padding: '4rem',
+            border: '1px dashed rgba(99,102,241,0.2)', borderRadius: '12px', color: '#475569',
+          }}>
+            No deployments found. Enter a Project ID to load deployments.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {deployments.map((dep, idx) => {
+              const statusStyle = STATUS_COLORS[dep.status] ?? STATUS_COLORS.pending;
+              const ProviderIcon = dep.provider === 'github' ? Github : Triangle;
+
               return (
-                <div
-                  key={platform.id}
-                  className="deploy-card"
+                <motion.div
+                  key={dep.id}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.05 }}
                   style={{
-                    background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '12px',
-                    padding: '1.25rem', transition: 'all 0.2s ease', animation: `fadeIn 0.3s ease ${i * 0.05}s both`,
+                    display: 'flex', alignItems: 'center', gap: '1rem',
+                    padding: '1rem 1.25rem', borderRadius: '10px',
+                    background: 'rgba(15,15,26,0.8)', border: '1px solid rgba(99,102,241,0.1)',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', background: 'rgba(255,255,255,0.06)', border: `1px solid ${COLORS.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}>
-                      {platform.icon}
-                    </div>
-                    <div>
-                      <h3 style={{ fontSize: '0.9375rem', fontWeight: 600, color: COLORS.textPrimary, margin: 0 }}>{platform.name}</h3>
-                      <p style={{ fontSize: '0.7rem', color: COLORS.textMuted, margin: 0 }}>{platform.envVar}</p>
-                    </div>
+                  {/* Provider */}
+                  <div style={{
+                    width: '36px', height: '36px', borderRadius: '8px',
+                    background: dep.provider === 'github' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <ProviderIcon size={18} color={dep.provider === 'github' ? '#f1f5f9' : '#000'} fill={dep.provider === 'vercel' ? '#f1f5f9' : 'none'} />
                   </div>
-                  <p style={{ fontSize: '0.8125rem', color: COLORS.textSecondary, marginBottom: '1rem', lineHeight: 1.5 }}>
-                    {platform.description}
-                  </p>
 
-                  {state.status === "success" && state.url && (
-                    <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '6px' }}>
-                      <a href={state.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8125rem', color: COLORS.success, wordBreak: 'break-all', textDecoration: 'none' }}>
-                        ✓ {state.url}
-                      </a>
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                      <span style={{ fontWeight: 600, color: '#f1f5f9', fontSize: '0.9rem' }}>
+                        {dep.provider === 'github' ? dep.githubRepo ?? 'GitHub' : 'Vercel'}
+                      </span>
+                      {dep.githubBranch && (
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>→ {dep.githubBranch}</span>
+                      )}
                     </div>
-                  )}
-
-                  {state.status === "error" && state.error && (
-                    <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.75rem', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px' }}>
-                      <p style={{ fontSize: '0.8125rem', color: COLORS.error, margin: 0 }}>{state.error}</p>
+                    <div style={{ fontSize: '0.8rem', color: '#475569' }}>
+                      {dep.deployedAt
+                        ? `Deployed ${new Date(dep.deployedAt).toLocaleString()}`
+                        : `Created ${new Date(dep.createdAt).toLocaleString()}`}
                     </div>
-                  )}
+                    {dep.errorMessage && (
+                      <div style={{ fontSize: '0.8rem', color: '#ef4444', marginTop: '0.25rem' }}>
+                        {dep.errorMessage}
+                      </div>
+                    )}
+                  </div>
 
-                  <button
-                    className="deploy-btn"
-                    onClick={() => handleDeploy(platform)}
-                    disabled={state.status === "loading"}
-                    style={{
-                      width: '100%', padding: '0.5rem 1rem', background: state.status === "success" ? 'rgba(16,185,129,0.15)' : COLORS.accentGradient,
-                      border: state.status === "success" ? '1px solid rgba(16,185,129,0.3)' : 'none',
-                      borderRadius: '6px', color: state.status === "success" ? COLORS.success : '#fff',
-                      cursor: state.status === "loading" ? 'not-allowed' : 'pointer',
-                      fontSize: '0.875rem', fontWeight: 600, transition: 'opacity 0.15s',
-                      opacity: state.status === "loading" ? 0.7 : 1,
-                    }}
-                  >
-                    {state.status === "loading" ? "Deploying…" : state.status === "success" ? "✓ Deployed" : "Deploy"}
-                  </button>
-                </div>
+                  {/* Status */}
+                  <span style={{
+                    padding: '4px 12px', borderRadius: '20px',
+                    fontSize: '0.8rem', fontWeight: 600,
+                    background: statusStyle.bg, color: statusStyle.color, flexShrink: 0,
+                  }}>
+                    {statusStyle.label}
+                  </span>
+
+                  {/* Link */}
+                  {dep.deployUrl && (
+                    <a
+                      href={dep.deployUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#818cf8', flexShrink: 0 }}
+                    >
+                      <ExternalLink size={16} />
+                    </a>
+                  )}
+                  {dep.githubRepo && !dep.deployUrl && (
+                    <a
+                      href={`https://github.com/${dep.githubRepo}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: '#818cf8', flexShrink: 0 }}
+                    >
+                      <ExternalLink size={16} />
+                    </a>
+                  )}
+                </motion.div>
               );
             })}
           </div>
-
-          {/* Generate Deploy Files Section */}
-          <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '12px', padding: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1rem', fontWeight: 600, color: COLORS.textPrimary, margin: '0 0 0.25rem' }}>Generate Deploy Config Files</h2>
-                <p style={{ fontSize: '0.8125rem', color: COLORS.textSecondary, margin: 0 }}>
-                  Auto-generate <code style={{ color: COLORS.accent }}>vercel.json</code>, <code style={{ color: COLORS.accent }}>Dockerfile</code>, <code style={{ color: COLORS.accent }}>.env.example</code> and more
-                </p>
-              </div>
-              <button
-                className="deploy-btn"
-                onClick={handleGenerateDeployFiles}
-                disabled={generatingFiles}
-                style={{
-                  padding: '0.5rem 1.25rem', background: COLORS.accentGradient, border: 'none', borderRadius: '6px',
-                  color: '#fff', cursor: generatingFiles ? 'not-allowed' : 'pointer', fontSize: '0.875rem',
-                  fontWeight: 600, opacity: generatingFiles ? 0.7 : 1, flexShrink: 0, transition: 'opacity 0.15s',
-                }}
-              >
-                {generatingFiles ? "Generating…" : "Generate Files"}
-              </button>
-            </div>
-
-            {generateError && (
-              <p style={{ fontSize: '0.8125rem', color: COLORS.error, margin: '0 0 0.75rem' }}>{generateError}</p>
-            )}
-
-            {generatedFiles.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {generatedFiles.map((file) => (
-                  <div key={file.path} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.5rem 0.75rem', background: 'rgba(255,255,255,0.03)', border: `1px solid ${COLORS.border}`, borderRadius: '6px' }}>
-                    <span style={{ fontSize: '0.8125rem', color: COLORS.textPrimary, fontFamily: 'monospace' }}>{file.path}</span>
-                    <button
-                      onClick={() => downloadFile(file.path, file.content)}
-                      style={{ padding: '0.25rem 0.75rem', background: 'transparent', border: `1px solid ${COLORS.border}`, borderRadius: '4px', color: COLORS.textSecondary, cursor: 'pointer', fontSize: '0.75rem', transition: 'opacity 0.15s' }}
-                    >
-                      Download
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </div>
-    </>
+    </SidebarLayout>
   );
 }
