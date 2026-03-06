@@ -16,7 +16,9 @@ import {
   appendProjectBuild,
   getProjectMessages,
   appendProjectMessage,
+  getProjectDesignTokens,
 } from "@/lib/db/projects-db";
+import { buildDesignTokenPromptFragment } from "@/lib/design-tokens-css";
 import type { GeneratedFile } from "@/lib/ai/schema";
 
 type SSEEventRaw = {
@@ -97,6 +99,17 @@ export async function POST(
       conversationContext = priorMessages
         .map((m) => `[${m.role.toUpperCase()}]: ${m.content}`)
         .join("\n");
+    }
+
+    // Append design token context so AI respects the project's design system
+    try {
+      const designTokens = await getProjectDesignTokens(token, id);
+      const tokenFragment = buildDesignTokenPromptFragment(designTokens);
+      conversationContext = conversationContext
+        ? `${tokenFragment}\n\n${conversationContext}`
+        : tokenFragment;
+    } catch {
+      // Non-fatal: proceed without design token context
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to load project";

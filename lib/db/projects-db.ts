@@ -746,3 +746,58 @@ export async function updateChangePlan(
   if (error) throw new Error(`updateChangePlan: ${error.message}`);
   return data as DbChangePlan;
 }
+
+
+// ─── Project Design Tokens ────────────────────────────────────────────────────
+
+import type { ProjectDesignTokens } from '@/lib/design-tokens-schema';
+import { SAAS_DEFAULT_TOKENS } from '@/lib/design-tokens-schema';
+
+export interface DbProjectDesignTokens {
+  id: string;
+  project_id: string;
+  created_at: string;
+  updated_at: string;
+  tokens_json: ProjectDesignTokens;
+}
+
+/**
+ * Returns the design tokens for a project.
+ * If no row exists yet, returns the SaaS default tokens (without persisting).
+ */
+export async function getProjectDesignTokens(
+  token: string,
+  projectId: string
+): Promise<ProjectDesignTokens> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from('project_design_tokens')
+    .select('tokens_json')
+    .eq('project_id', projectId)
+    .maybeSingle();
+  if (error) throw new Error(`getProjectDesignTokens: ${error.message}`);
+  if (!data) return { ...SAAS_DEFAULT_TOKENS };
+  return data.tokens_json as ProjectDesignTokens;
+}
+
+/**
+ * Upserts design tokens for a project (creates or replaces).
+ * Returns the persisted row.
+ */
+export async function upsertProjectDesignTokens(
+  token: string,
+  projectId: string,
+  tokens: ProjectDesignTokens
+): Promise<DbProjectDesignTokens> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from('project_design_tokens')
+    .upsert(
+      { project_id: projectId, tokens_json: tokens },
+      { onConflict: 'project_id' }
+    )
+    .select()
+    .single();
+  if (error) throw new Error(`upsertProjectDesignTokens: ${error.message}`);
+  return data as DbProjectDesignTokens;
+}
