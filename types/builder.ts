@@ -80,3 +80,37 @@ export type ImageGenerationRequest = z.infer<typeof ImageGenerationRequestSchema
 export type ProjectVersion = z.infer<typeof ProjectVersionSchema>;
 export type Deployment = z.infer<typeof DeploymentSchema>;
 export type StylePreset = z.infer<typeof StylePresetEnum>;
+
+export const DomainStatusEnum = z.enum(['pending_dns', 'pending_tls', 'active', 'error']);
+
+export const ProjectDomainSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  domain: z.string(),
+  status: DomainStatusEnum,
+  verificationToken: z.string(),
+  cnameTarget: z.string(),
+  errorMessage: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export const MemberRoleEnum = z.enum(['owner', 'editor', 'viewer']);
+export const MemberStatusEnum = z.enum(['pending', 'active', 'declined']);
+
+export const ProjectMemberSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().uuid(),
+  userId: z.string().uuid().optional(),
+  role: MemberRoleEnum,
+  invitedBy: z.string().uuid(),
+  invitedEmail: z.string().email(),
+  status: MemberStatusEnum,
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type ProjectDomain = z.infer<typeof ProjectDomainSchema>;
+export type ProjectMember = z.infer<typeof ProjectMemberSchema>;
+export type DomainStatus = z.infer<typeof DomainStatusEnum>;
+export type MemberRole = z.infer<typeof MemberRoleEnum>;
