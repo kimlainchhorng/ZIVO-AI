@@ -231,12 +231,38 @@ function getSystemPrompt(mode: GenerateMode): string {
   return SYSTEM_PROMPT_STANDARD;
 }
 
+// ─── Smart model routing ──────────────────────────────────────────────────────
+// Use o1-mini for logic-heavy prompts; gpt-4o for general code generation.
+const LOGIC_HEAVY_PATTERNS = [
+  /\bauth(?:entication|orization|oriz)\b/i,
+  /\bjwt\b/i,
+  /\boauth\b/i,
+  /\bsession\b/i,
+  /\balgorithm\b/i,
+  /\brecursion\b/i,
+  /\bdynamic\s+programming\b/i,
+  /\bsort(?:ing)?\s+algorithm\b/i,
+  /\bdatabase\s+schema\b/i,
+  /\bmigration\b/i,
+  /\bstate\s+machine\b/i,
+  /\bcryptograph/i,
+  /\bhashing\b/i,
+];
+
+function _selectModel(prompt: string, requestedModel?: string): string {
+  // Honour an explicitly requested model from the caller
+  if (requestedModel && requestedModel !== "auto") return requestedModel;
+  const isLogicHeavy = LOGIC_HEAVY_PATTERNS.some((re) => re.test(prompt));
+  return isLogicHeavy ? "o1-mini" : "gpt-4o";
+}
+
 async function generateFiles(
   prompt: string,
   mode: GenerateMode,
   context: ChatMessage[],
   projectMemoryContext?: string,
-  existingFiles?: GeneratedFile[]
+  existingFiles?: GeneratedFile[],
+  requestedModel?: string
 ): Promise<GenerateSiteResponse> {
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: getSystemPrompt(mode) },
@@ -261,10 +287,12 @@ async function generateFiles(
 
   messages.push({ role: "user", content: userContent });
 
+  const chosenModel = _selectModel(prompt, requestedModel);
+  const isO1 = chosenModel.startsWith("o1");
+
   const response = await getClient().chat.completions.create({
-    model: "gpt-4o",
-    temperature: 0.3,
-    max_tokens: 32000,
+    model: chosenModel,
+    ...(isO1 ? { max_completion_tokens: 32000 } : { temperature: 0.3, max_tokens: 32000 }),
     messages,
   });
 
@@ -338,6 +366,8 @@ export async function POST(req: Request) {
     const mode: GenerateMode = ["standard", "advanced", "minimal"].includes(body?.mode)
       ? (body.mode as GenerateMode)
       : "standard";
+    // Accept an explicit model override from the caller ("auto" defers to smart routing)
+    const requestedModel: string | undefined = typeof body?.model === "string" ? body.model : undefined;
     const context: ChatMessage[] = Array.isArray(body?.context)
       ? (body.context as Array<{ role: string; content: string }>)
           .filter((m) => m.role === "user" || m.role === "assistant")
@@ -536,7 +566,7 @@ export async function POST(req: Request) {
     // Minimal mode: use the legacy generator
     let parsed: GenerateSiteResponse;
     try {
-      parsed = await generateFiles(prompt, mode, context, projectMemoryContext, existingFiles.length > 0 ? existingFiles : undefined);
+      parsed = await generateFiles(prompt, mode, context, projectMemoryContext, existingFiles.length > 0 ? existingFiles : undefined, requestedModel);
     } catch {
       return NextResponse.json({ error: "Invalid JSON from AI" }, { status: 500 });
     }

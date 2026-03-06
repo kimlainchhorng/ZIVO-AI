@@ -4,11 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import Image from "next/image";
 import { Suspense } from "react";
-import { addHistoryEntry } from "../history/page";
+import { addHistoryEntry } from "@/lib/history-store";
 import PlanViewer from "@/components/PlanViewer";
 import BuildOutputPanel from "@/components/BuildOutputPanel";
 import DiffViewer from "@/components/DiffViewer";
-import FileExplorer from "@/components/FileExplorer";
 import ModelSelector from "@/components/ModelSelector";
 import CommandPalette from "@/components/CommandPalette";
 import DesignSystemPanel from "@/components/DesignSystemPanel";
@@ -28,8 +27,11 @@ import AgentOrchestrator from "@/components/AgentOrchestrator";
 import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
 import { Icon } from "@/components/icons/Icon";
-import { getWebContainer, resetWebContainer } from "@/lib/webcontainer";
+import { getWebContainer, invalidateWebContainer } from "@/lib/webcontainer";
 import type { FileSystemTree, WebContainerProcess } from "@webcontainer/api";
+import GeneratedAppAnalysis from "@/components/GeneratedAppAnalysis";
+import FileTree from "@/components/FileTree";
+import VoiceInput from "@/components/VoiceInput";
 
 interface SecurityIssue {
   id: string;
@@ -88,6 +90,11 @@ const COLORS = {
 /** Maximum characters to display per chat bubble in the build history sidebar. */
 const MAX_CHAT_HISTORY_DISPLAY_LENGTH = 120;
 
+/** Standard localStorage key for the Supabase auth token (used across all build flows). */
+const SUPABASE_TOKEN_KEY = "zivo_supabase_token";
+/** localStorage key for persisting the Website Builder v2 project ID. */
+const WEBSITE_PROJECT_ID_KEY = "zivo_website_project_id";
+
 const RocketIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>;
 const ClipboardIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>;
 const CartIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>;
@@ -106,6 +113,20 @@ const QUICK_PROMPTS = [
   { icon: <CartIcon />, label: "E-commerce", prompt: "Build an e-commerce product listing page with cart and checkout flow" },
   { icon: <LockIcon />, label: "Auth Flow", prompt: "Build a complete authentication flow with login, signup, and password reset pages" },
   { icon: <BarChartIcon />, label: "Dashboard", prompt: "Build an analytics dashboard with charts, stats cards, and data tables" },
+];
+
+const PROMPT_SUGGESTIONS = [
+  "Build a complete e-commerce application with product catalog, shopping cart, Stripe checkout, order management, admin panel, user authentication, and mobile-responsive design",
+  "Build an e-commerce app featuring product listings, cart, checkout, user accounts, and order history",
+  "Build a responsive e-commerce platform with product search, filters, reviews, and payment processing",
+];
+
+const TEMPLATE_SHORTCUTS = [
+  { icon: "🏠", label: "Landing Page", prompt: "Build a beautiful SaaS landing page with hero, features, pricing, FAQ, and CTA sections" },
+  { icon: "📋", label: "Todo App", prompt: "Build a full-stack todo app with auth, CRUD operations, categories, and due dates" },
+  { icon: "🛒", label: "E-commerce", prompt: "Build a complete e-commerce store with product catalog, cart, and Stripe checkout" },
+  { icon: "🔐", label: "Auth Flow", prompt: "Build a complete authentication system with login, signup, password reset, and profile pages" },
+  { icon: "📊", label: "Dashboard", prompt: "Build a modern analytics dashboard with charts, stats cards, data tables, and filters" },
 ];
 
 const TEMPLATE_CARDS = [
@@ -155,6 +176,8 @@ const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 // Mobile phone frame dimensions for preview
 const MOBILE_FRAME_WIDTH = 375;
 const MOBILE_FRAME_HEIGHT = 812;
+// Max characters shown in the quick prompt suggestion chip text
+const MAX_PROMPT_SUGGESTION_LENGTH = 72;
 
 // Map SSE stage names (from /api/build) to buildStages array indices:
 // buildStages: [prompt(0), parse(1), blueprint(2), generate(3), validate(4), fix(5), preview(6), deploy(7)]
@@ -195,6 +218,16 @@ function getActionStyle(action: string): React.CSSProperties {
   if (action === "create") return { background: "rgba(16,185,129,0.15)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)" };
   if (action === "delete") return { background: "rgba(239,68,68,0.15)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" };
   return { background: "rgba(99,102,241,0.15)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.3)" };
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(id); resolve(v); },
+      (e) => { clearTimeout(id); reject(e); }
+    );
+  });
 }
 
 function AIPageInner() {
@@ -255,6 +288,12 @@ function AIPageInner() {
   const [githubPushResult, setGithubPushResult] = useState<string | null>(null);
   const [githubPushError, setGithubPushError] = useState<string | null>(null);
   const [connectedGithubRepo, setConnectedGithubRepo] = useState<string | null>(null);
+  // GitHub push modal
+  const [githubModalOpen, setGithubModalOpen] = useState(false);
+  const [githubModalOwner, setGithubModalOwner] = useState("");
+  const [githubModalRepo, setGithubModalRepo] = useState("");
+  const [githubModalBranch, setGithubModalBranch] = useState("main");
+  const [githubModalToken, setGithubModalToken] = useState("");
 
   // Mode switcher
   const [mode, setMode] = useState<"code" | "security" | "website" | "mobile" | "image" | "video" | "3d">("code");
@@ -274,6 +313,23 @@ function AIPageInner() {
   const [websiteLivePreviewRunning, setWebsiteLivePreviewRunning] = useState(false);
   const [websiteLivePreviewStatus, setWebsiteLivePreviewStatus] = useState<string | null>(null);
   const [websiteLivePreviewError, setWebsiteLivePreviewError] = useState<string | null>(null);
+  // Remote preview runner state (Docker-based)
+  const [remotePreviewId, setRemotePreviewId] = useState<string | null>(null);
+  const [remotePreviewStatus, setRemotePreviewStatus] = useState<"queued" | "building" | "running" | "failed" | "stopped" | null>(null);
+  const [remotePreviewUrl, setRemotePreviewUrl] = useState<string | null>(null);
+  const [remotePreviewLogs, setRemotePreviewLogs] = useState<string[]>([]);
+  const [remotePreviewError, setRemotePreviewError] = useState<string | null>(null);
+  const [remotePreviewLoading, setRemotePreviewLoading] = useState(false);
+  const [websitePreviewTab, setWebsitePreviewTab] = useState<"webcontainer" | "remote">("webcontainer");
+  const remotePreviewPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Website v2 project persistence (Supabase)
+  const [websiteProjectId, setWebsiteProjectId] = useState<string | null>(null);
+  const [websiteContinueInstruction, setWebsiteContinueInstruction] = useState("");
+  const [websiteContinueLoading, setWebsiteContinueLoading] = useState(false);
+  const [websiteContinueError, setWebsiteContinueError] = useState<string | null>(null);
+  const [websiteContinuePassMessage, setWebsiteContinuePassMessage] = useState<string | null>(null);
+  // Changed-files summary after each website build
+  const [websiteChangedFiles, setWebsiteChangedFiles] = useState<{ created: string[]; updated: string[]; deleted: string[] } | null>(null);
   const websiteDevProcessRef = useRef<WebContainerProcess | null>(null);
   const websiteServerUnsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -322,12 +378,17 @@ function AIPageInner() {
   const [securityActiveTab, setSecurityActiveTab] = useState<"scan" | "fixed">("scan");
   const [securityCopyLabel, setSecurityCopyLabel] = useState<"copy" | "copied">("copy");
 
-  // Read ?prompt= from URL
+  // Read ?prompt= and ?mode= from URL
   const searchParams = useSearchParams();
   const pathname = usePathname();
   useEffect(() => {
     const urlPrompt = searchParams.get("prompt");
     if (urlPrompt) setPrompt(urlPrompt);
+
+    const urlMode = searchParams.get("mode");
+    if (urlMode === "website" || urlMode === "mobile") {
+      setMode(urlMode);
+    }
   }, [searchParams]);
 
   // Read connected GitHub repo from localStorage on mount
@@ -366,7 +427,7 @@ function AIPageInner() {
   // Load Supabase auth token and Vercel token from localStorage on mount
   useEffect(() => {
     try {
-      const token = localStorage.getItem("zivo_supabase_token");
+      const token = localStorage.getItem(SUPABASE_TOKEN_KEY);
       if (token) {
         setSupabaseToken(token);
         // Try to decode email from JWT without a full verify (client-side only display)
@@ -379,6 +440,9 @@ function AIPageInner() {
       }
       const vt = localStorage.getItem("zivo_vercel_token");
       if (vt) setVercelToken(vt);
+      // Load persisted website project ID
+      const wpid = localStorage.getItem(WEBSITE_PROJECT_ID_KEY);
+      if (wpid) setWebsiteProjectId(wpid);
     } catch {
       // Ignore storage errors
     }
@@ -503,7 +567,7 @@ function AIPageInner() {
   // Abort controller for streaming build
   const abortControllerRef = useRef<AbortController | null>(null);
   // File search (Upgrade 14b)
-  const [fileSearchQuery, setFileSearchQuery] = useState("");
+  const [_fileSearchQuery, setFileSearchQuery] = useState("");
   // Auto-fix state (Upgrade 9)
   const [autoFixing, setAutoFixing] = useState(false);
   const [autoFixLog, setAutoFixLog] = useState<string | null>(null);
@@ -875,7 +939,7 @@ function AIPageInner() {
     // Persist to Supabase if the user has a saved project
     if (savedProjectId) {
       try {
-        const token = typeof window !== "undefined" ? localStorage.getItem("zivo_supabase_token") : null;
+        const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
         if (token) {
           const res = await fetch(`/api/projects/${savedProjectId}/files`, {
             method: "PUT",
@@ -1103,14 +1167,9 @@ function AIPageInner() {
       const webcontainer = await getWebContainer();
       await webcontainer.mount(toWebContainerTree(files));
 
-      websiteServerUnsubscribeRef.current = webcontainer.on("server-ready", (_port, url) => {
-        setWebsiteLivePreviewUrl(url);
-        setWebsiteLivePreviewStatus("Live preview ready");
-      });
-
       setWebsiteLivePreviewStatus("Installing dependencies…");
       const installProcess = await webcontainer.spawn("npm", ["install", "--no-audit", "--no-fund"]);
-      const installCode = await installProcess.exit;
+      const installCode = await withTimeout(installProcess.exit, 120_000, 'npm install');
       if (installCode !== 0) throw new Error(`npm install failed (${installCode})`);
 
       setWebsiteLivePreviewStatus("Starting Next.js dev server…");
@@ -1124,29 +1183,146 @@ function AIPageInner() {
           setWebsiteLivePreviewStatus(null);
         }
       });
+
+      // Wait for server-ready with a 60 s timeout.
+      let serverReadyUnsub: (() => void) | null = null;
+      const serverReadyPromise = new Promise<string>((resolve) => {
+        serverReadyUnsub = webcontainer.on("server-ready", (_port, url) => {
+          serverReadyUnsub?.();
+          serverReadyUnsub = null;
+          websiteServerUnsubscribeRef.current = null;
+          resolve(url);
+        });
+        websiteServerUnsubscribeRef.current = serverReadyUnsub;
+      });
+      const previewUrl = await withTimeout(serverReadyPromise, 60_000, 'server-ready');
+      setWebsiteLivePreviewUrl(previewUrl);
+      setWebsiteLivePreviewStatus("Live preview ready");
     } catch (err: unknown) {
-      // Check if this is the UNKNOWN write error (errno -4094)
+      // Clean up any pending server-ready listener so it doesn't fire after timeout.
+      try { websiteServerUnsubscribeRef.current?.(); } catch { /* ignore */ }
+      websiteServerUnsubscribeRef.current = null;
+      // Check if this is the UNKNOWN write error (errno -4094) or a progress timeout.
       const isWriteError =
         err instanceof Error &&
         (err.message.includes("-4094") ||
           err.message.includes("UNKNOWN") ||
           err.message.includes("syscall: 'write'") ||
-          err.message.includes("write"));
+          err.message.includes("write") ||
+          err.message.startsWith("Timeout:"));
       // Allow up to 4 retries (5 total attempts) for write errors.
       // Delays: 2s, 4s, 8s, 16s (exponential backoff starting at 2s).
       if (retryCount < 4 && isWriteError) {
         const delay = 2000 * Math.pow(2, retryCount);
         setWebsiteLivePreviewStatus(`Write error — retrying (attempt ${retryCount + 2}/5)…`);
         await new Promise<void>((resolve) => setTimeout(resolve, delay));
-        // Reset the singleton so the next getWebContainer() call boots fresh.
-        resetWebContainer();
+        // Invalidate the singleton so the next getWebContainer() call boots fresh.
+        invalidateWebContainer();
         return startWebsiteLivePreview(files, retryCount + 1);
       }
       // All retries exhausted — graceful fallback to static snapshot
+      invalidateWebContainer();
       setWebsiteLivePreviewRunning(false);
       setWebsiteLivePreviewStatus(null);
       setWebsiteLivePreviewError("Live preview unavailable — showing static snapshot");
     }
+  }
+
+  // ── Remote preview runner helpers ──────────────────────────────────────────
+
+  function stopRemotePreviewPolling() {
+    if (remotePreviewPollRef.current) {
+      clearInterval(remotePreviewPollRef.current);
+      remotePreviewPollRef.current = null;
+    }
+  }
+
+  async function pollRemotePreviewStatus(pid: string, token: string) {
+    try {
+      const res = await fetch(`/api/preview/status?previewId=${encodeURIComponent(pid)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json() as {
+        status: "queued" | "building" | "running" | "failed" | "stopped";
+        url?: string;
+        logs?: string[];
+        error?: string;
+      };
+      setRemotePreviewStatus(data.status);
+      if (data.logs) setRemotePreviewLogs(data.logs);
+      if (data.error) setRemotePreviewError(data.error);
+      if (data.url) setRemotePreviewUrl(data.url);
+      if (data.status === "running" || data.status === "failed" || data.status === "stopped") {
+        stopRemotePreviewPolling();
+        setRemotePreviewLoading(false);
+      }
+    } catch {
+      // ignore transient fetch errors
+    }
+  }
+
+  async function handleStartRemotePreview() {
+    if (!websiteProjectId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) {
+      setRemotePreviewError("You must be signed in to start a remote preview.");
+      return;
+    }
+
+    stopRemotePreviewPolling();
+    setRemotePreviewLoading(true);
+    setRemotePreviewStatus("queued");
+    setRemotePreviewUrl(null);
+    setRemotePreviewLogs([]);
+    setRemotePreviewError(null);
+    setRemotePreviewId(null);
+
+    try {
+      const res = await fetch("/api/preview/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ projectId: websiteProjectId }),
+      });
+      const data = await res.json() as { previewId?: string; error?: string };
+      if (!res.ok || !data.previewId) {
+        setRemotePreviewError(data.error ?? "Failed to start preview");
+        setRemotePreviewLoading(false);
+        setRemotePreviewStatus("failed");
+        return;
+      }
+      const pid = data.previewId;
+      setRemotePreviewId(pid);
+      // Start polling every 3 seconds
+      remotePreviewPollRef.current = setInterval(() => {
+        void pollRemotePreviewStatus(pid, token);
+      }, 3000);
+      // Poll once immediately
+      void pollRemotePreviewStatus(pid, token);
+    } catch (err) {
+      setRemotePreviewError(err instanceof Error ? err.message : "Failed to start preview");
+      setRemotePreviewLoading(false);
+      setRemotePreviewStatus("failed");
+    }
+  }
+
+  async function handleStopRemotePreview() {
+    if (!remotePreviewId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) return;
+
+    stopRemotePreviewPolling();
+    try {
+      await fetch("/api/preview/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ previewId: remotePreviewId }),
+      });
+    } catch { /* ignore */ }
+
+    setRemotePreviewStatus("stopped");
+    setRemotePreviewUrl(null);
+    setRemotePreviewLoading(false);
   }
 
   async function handlePlan() {
@@ -1317,6 +1493,53 @@ function AIPageInner() {
     setGithubPushing(false);
   }
 
+  async function handleGithubModalPush() {
+    if (!output?.files?.length) return;
+    const token = githubModalToken.trim() || (typeof window !== "undefined" ? localStorage.getItem("zivo_github_token") : null);
+    const repoFull = githubModalOwner.trim() && githubModalRepo.trim()
+      ? `${githubModalOwner.trim()}/${githubModalRepo.trim()}`
+      : connectedGithubRepo ?? (typeof window !== "undefined" ? localStorage.getItem("zivo_github_repo") : null);
+    if (!token || !repoFull) {
+      setGithubPushError("Enter owner/repo and a GitHub token.");
+      return;
+    }
+    setGithubPushing(true);
+    setGithubPushResult(null);
+    setGithubPushError(null);
+    setGithubModalOpen(false);
+    try {
+      const res = await fetch("/api/github", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "upsert",
+          token,
+          repo: repoFull,
+          branch: githubModalBranch.trim() || "main",
+          files: output.files.map((f) => ({
+            path: f.path,
+            content: f.content,
+            message: `ZIVO AI: ${prompt.slice(0, 60)}`,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setGithubPushError(data.error);
+      } else {
+        setGithubPushResult(`https://github.com/${repoFull}/tree/${githubModalBranch.trim() || "main"}`);
+        // Persist token and repo for future use
+        try {
+          localStorage.setItem("zivo_github_token", token);
+          localStorage.setItem("zivo_github_repo", repoFull);
+        } catch { /* ignore */ }
+      }
+    } catch {
+      setGithubPushError("GitHub push failed. Please try again.");
+    }
+    setGithubPushing(false);
+  }
+
   async function handleShare() {
     if (!savedProjectId || !supabaseToken) return;
     setSharing(true);
@@ -1356,6 +1579,19 @@ function AIPageInner() {
     setImageLoading(false);
   }
 
+  /** Compute a changed-files summary by comparing old vs. new file lists. */
+  function computeWebsiteChangedFiles(
+    previousFiles: GeneratedFile[],
+    newFiles: GeneratedFile[]
+  ): { created: string[]; updated: string[]; deleted: string[] } {
+    const previousFileMap = new Map(previousFiles.map((f) => [f.path, f.content]));
+    const newPaths = new Set(newFiles.map((f) => f.path));
+    const created = newFiles.filter((f) => !previousFileMap.has(f.path)).map((f) => f.path);
+    const updated = newFiles.filter((f) => previousFileMap.has(f.path) && previousFileMap.get(f.path) !== f.content).map((f) => f.path);
+    const deleted = previousFiles.filter((f) => !newPaths.has(f.path)).map((f) => f.path);
+    return { created, updated, deleted };
+  }
+
   async function handleWebsiteGenerate() {
     if (!websitePrompt.trim()) return;
 
@@ -1368,15 +1604,21 @@ function AIPageInner() {
     setWebsiteLivePreviewUrl(null);
     setWebsiteLivePreviewError(null);
     setWebsiteLivePreviewStatus(null);
+    setWebsiteChangedFiles(null);
     try {
       const newIteration = websiteIteration + 1;
+      const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch("/api/build", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           prompt: `${websitePrompt}. Style: ${websiteStyle}.`,
           model,
           mode: "website_v2",
+          projectId: websiteProjectId ?? undefined,
         }),
       });
 
@@ -1399,12 +1641,20 @@ function AIPageInner() {
           if (!line.startsWith("data: ")) continue;
           const raw = line.slice(6).trim();
           if (!raw || raw === "[DONE]") continue;
-          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[] };
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; data?: Record<string, unknown> };
           try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
 
           if (evt.type === "stage") {
             if (evt.message) setWebsitePassMessage(evt.message);
-            if (evt.stage === "DONE") buildSummary = evt.message ?? buildSummary;
+            if (evt.stage === "DONE") {
+              buildSummary = evt.message ?? buildSummary;
+              // Capture the persisted projectId from the server
+              if (evt.data?.projectId && typeof evt.data.projectId === "string") {
+                const pid = evt.data.projectId;
+                setWebsiteProjectId(pid);
+                try { localStorage.setItem(WEBSITE_PROJECT_ID_KEY, pid); } catch { /* ignore */ }
+              }
+            }
           } else if (evt.type === "files" && Array.isArray(evt.files)) {
             collectedFiles = evt.files;
           } else if (evt.type === "error") {
@@ -1441,6 +1691,12 @@ function AIPageInner() {
         );
         setShowDiff(true);
 
+        // Compute changed-files summary using shared helper
+        const changedSummary = computeWebsiteChangedFiles(previousFiles, collectedFiles);
+        if (changedSummary.created.length + changedSummary.updated.length + changedSummary.deleted.length > 0) {
+          setWebsiteChangedFiles(changedSummary);
+        }
+
         void startWebsiteLivePreview(collectedFiles);
       } else if (!websiteError) {
         setWebsiteError("No files were generated. Try a more specific prompt.");
@@ -1453,6 +1709,103 @@ function AIPageInner() {
     setWebsiteLivePreviewUrl(null);
     setWebsiteLivePreviewError(null);
     setWebsiteLivePreviewStatus(null);
+  }
+
+  /** Continue Build: stream from /api/projects/[id]/continue with the given instruction. */
+  async function handleContinueWebsiteBuild() {
+    if (!websiteContinueInstruction.trim() || !websiteProjectId) return;
+
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) {
+      setWebsiteContinueError("You must be signed in to continue building. Please sign in via the auth page.");
+      return;
+    }
+
+    const previousFiles = websiteResult?.files ?? output?.files ?? [];
+
+    setWebsiteContinueLoading(true);
+    setWebsiteContinueError(null);
+    setWebsiteContinuePassMessage(null);
+    setWebsiteChangedFiles(null);
+
+    try {
+      const res = await fetch(`/api/projects/${websiteProjectId}/continue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ instruction: websiteContinueInstruction.trim(), model }),
+      });
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+      let collectedFiles: GeneratedFile[] = [];
+      let buildSummary = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[] };
+          try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
+
+          if (evt.type === "stage") {
+            if (evt.message) setWebsiteContinuePassMessage(evt.message);
+            if (evt.stage === "DONE") buildSummary = evt.message ?? buildSummary;
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files;
+          } else if (evt.type === "error") {
+            setWebsiteContinueError(String(evt.message ?? "Continue build failed."));
+          }
+        }
+      }
+
+      if (collectedFiles.length > 0) {
+        setWebsiteContinuePassMessage("Preparing preview…");
+        const previewHtml = await generatePreviewFromFiles(collectedFiles);
+        const summary = buildSummary || `Updated ${collectedFiles.length} files.`;
+
+        setWebsiteResult({ files: collectedFiles, preview_html: previewHtml, summary });
+        setWebsiteIteration((prev) => prev + 1);
+        setWebsiteHistory((prev) => [
+          ...prev,
+          { role: "user" as const, content: websiteContinueInstruction },
+          { role: "assistant" as const, content: summary },
+        ]);
+
+        setOutput({ files: collectedFiles, preview_html: previewHtml, summary });
+        setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
+        setActiveRightTab("files");
+
+        const previousFileMap = new Map(previousFiles.map((f) => [f.path, f.content]));
+        setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: previousFileMap.get(f.path) ?? "", newContent: f.content })));
+        setShowDiff(true);
+
+        // Compute changed-files summary using shared helper
+        const changedSummary = computeWebsiteChangedFiles(previousFiles, collectedFiles);
+        if (changedSummary.created.length + changedSummary.updated.length + changedSummary.deleted.length > 0) {
+          setWebsiteChangedFiles(changedSummary);
+        }
+
+        setWebsiteContinueInstruction("");
+        void startWebsiteLivePreview(collectedFiles);
+      } else if (!websiteContinueError) {
+        setWebsiteContinueError("No files were returned. Try rephrasing your request.");
+      }
+    } catch (err: unknown) {
+      setWebsiteContinueError(err instanceof Error ? err.message : "Continue build failed.");
+    }
+    setWebsiteContinueLoading(false);
+    setWebsiteContinuePassMessage(null);
   }
 
   async function handleMobileGenerate() {
@@ -1932,6 +2285,14 @@ function AIPageInner() {
     };
   }, [leftPanelWidth]);
 
+  // Cleanup remote preview polling on unmount
+  useEffect(() => {
+    return () => {
+      stopRemotePreviewPolling();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <>
       <style>{`
@@ -1940,7 +2301,6 @@ function AIPageInner() {
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes recordPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
-        @keyframes statusBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         @keyframes glow { 0%, 100% { box-shadow: 0 0 0px rgba(99,102,241,0); } 50% { box-shadow: 0 0 18px rgba(99,102,241,0.45); } }
         @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
@@ -1967,7 +2327,7 @@ function AIPageInner() {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: COLORS.bg, color: COLORS.textPrimary, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif", overflow: "hidden" }}>
 
         {/* Top Nav */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "52px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: "#0a0b14", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <div style={{ width: "28px", height: "28px", background: COLORS.accentGradient, borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 }}>Z</div>
             <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>ZIVO AI</span>
@@ -2010,7 +2370,7 @@ function AIPageInner() {
                 <button
                   className="zivo-btn"
                   onClick={() => {
-                    localStorage.removeItem("zivo_supabase_token");
+                    localStorage.removeItem(SUPABASE_TOKEN_KEY);
                     setSupabaseToken(null);
                     setSupabaseUserEmail(null);
                     setSavedProjectId(null);
@@ -2410,7 +2770,7 @@ function AIPageInner() {
                     </select>
                     <span style={{ position: "absolute", right: "0.45rem", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: "0.6rem", color: COLORS.accent }}>▾</span>
                   </div>
-                  {/* Voice input */}
+                  {/* Voice input (Web Speech API) */}
                   <button
                     className="zivo-btn"
                     onClick={handleVoiceInput}
@@ -2419,6 +2779,10 @@ function AIPageInner() {
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
                   </button>
+                  {/* Voice input (AI transcription) */}
+                  <VoiceInput
+                    onTranscription={(text) => { setPrompt((prev) => prev ? `${prev} ${text}` : text); }}
+                  />
                   <div style={{ flex: 1 }} />
                   {/* Char count */}
                   <span style={{ fontSize: "0.68rem", color: COLORS.textMuted, flexShrink: 0 }}>{prompt.length}/2000</span>
@@ -2516,8 +2880,26 @@ function AIPageInner() {
                 </div>
               )}
 
-              {/* Quick Prompts */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+              {/* Quick Prompts — Lovable-style text chips with "+" prefix */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.875rem" }}>
+                {PROMPT_SUGGESTIONS.map((ps, i) => (
+                  <button
+                    key={i}
+                    className="zivo-chip"
+                    onClick={() => setPrompt(ps)}
+                    style={{ display: "flex", alignItems: "flex-start", gap: "0.35rem", padding: "0.35rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.72rem", transition: "background 0.15s, border-color 0.15s", textAlign: "left", lineHeight: 1.4 }}
+                    title={ps}
+                  >
+                    <span style={{ color: COLORS.accent, fontWeight: 700, flexShrink: 0 }}>+</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical" as const }}>
+                      {ps.length > MAX_PROMPT_SUGGESTION_LENGTH ? ps.slice(0, MAX_PROMPT_SUGGESTION_LENGTH) + "…" : ps}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Quick Prompt icon chips */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.875rem" }}>
                 {QUICK_PROMPTS.map((qp) => (
                   <button
                     key={qp.label}
@@ -2531,7 +2913,28 @@ function AIPageInner() {
                 ))}
               </div>
 
-              {/* Template Selector — shown when prompt is empty */}
+              {/* Template Shortcuts grid */}
+              {!prompt.trim() && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.5rem" }}>Templates</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.35rem" }}>
+                    {TEMPLATE_SHORTCUTS.map((t) => (
+                      <button
+                        key={t.label}
+                        className="zivo-chip"
+                        onClick={() => setPrompt(t.prompt)}
+                        title={t.prompt}
+                        style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.4rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", transition: "background 0.15s, border-color 0.15s", textAlign: "left" }}
+                      >
+                        <span style={{ fontSize: "0.875rem", flexShrink: 0 }}>{t.icon}</span>
+                        <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Full Template Selector — shown when prompt is empty */}
               {!prompt.trim() && (
                 <div style={{ marginBottom: "1rem" }}>
                   <TemplateSelector
@@ -2982,13 +3385,81 @@ function AIPageInner() {
                       <button
                         className="zivo-btn"
                         onClick={() => void startWebsiteLivePreview(websiteResult.files)}
-                        disabled={websiteLivePreviewRunning}
-                        style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: websiteLivePreviewRunning ? "not-allowed" : "pointer", opacity: websiteLivePreviewRunning ? 0.6 : 1 }}
+                        disabled={websiteLivePreviewRunning && !websiteLivePreviewError}
+                        style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: (websiteLivePreviewRunning && !websiteLivePreviewError) ? "not-allowed" : "pointer", opacity: (websiteLivePreviewRunning && !websiteLivePreviewError) ? 0.6 : 1 }}
                       >
                         {websiteLivePreviewRunning ? "Starting live runtime…" : websiteLivePreviewUrl ? "Restart Live Preview" : "Start Live Preview"}
                       </button>
                       {websiteLivePreviewStatus && (
                         <div style={{ marginTop: "0.45rem", fontSize: "0.72rem", color: COLORS.textSecondary }}>{websiteLivePreviewStatus}</div>
+                      )}
+                      {/* Remote preview shortcut — only shown when project is saved */}
+                      {websiteProjectId && (
+                        <button
+                          className="zivo-btn"
+                          onClick={() => setWebsitePreviewTab("remote")}
+                          style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: "1px solid rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.08)", color: COLORS.accent, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.35rem" }}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                          {remotePreviewStatus === "running" ? "View Remote Preview" : "Remote Preview"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Changed Files Summary ── */}
+                  {websiteChangedFiles && (
+                    <div style={{ padding: "0.75rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px" }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 700, color: COLORS.accent, marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Changed Files</div>
+                      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
+                        {websiteChangedFiles.created.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(16,185,129,0.15)", color: COLORS.success, fontWeight: 600 }}>+{websiteChangedFiles.created.length} created</span>}
+                        {websiteChangedFiles.updated.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(245,158,11,0.15)", color: COLORS.warning, fontWeight: 600 }}>~{websiteChangedFiles.updated.length} updated</span>}
+                        {websiteChangedFiles.deleted.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(239,68,68,0.15)", color: COLORS.error, fontWeight: 600 }}>-{websiteChangedFiles.deleted.length} deleted</span>}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                        {websiteChangedFiles.created.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.success, fontFamily: "monospace" }}>+ {p}</div>)}
+                        {websiteChangedFiles.updated.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.warning, fontFamily: "monospace" }}>~ {p}</div>)}
+                        {websiteChangedFiles.deleted.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.error, fontFamily: "monospace" }}>- {p}</div>)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Continue Build (requires saved project) ── */}
+                  {websiteProjectId && (
+                    <div style={{ padding: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.625rem" }}>
+                        <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                        <span style={{ fontSize: "0.65rem", color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Build</span>
+                        <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                      </div>
+                      <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", marginBottom: "0.5rem", wordBreak: "break-all" }}>Project: {websiteProjectId}</div>
+                      <textarea
+                        className="zivo-textarea"
+                        value={websiteContinueInstruction}
+                        onChange={(e) => setWebsiteContinueInstruction(e.target.value)}
+                        onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void handleContinueWebsiteBuild(); } }}
+                        placeholder="Add a dark mode toggle, improve the hero section, add an FAQ section…"
+                        maxLength={2000}
+                        style={{ width: "100%", minHeight: "80px", resize: "vertical", background: "rgba(255,255,255,0.03)", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.8125rem", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.5rem" }}>
+                        <span style={{ fontSize: "0.68rem", color: COLORS.textMuted }}>{websiteContinueInstruction.length}/2000</span>
+                        <button
+                          className="zivo-btn"
+                          onClick={() => void handleContinueWebsiteBuild()}
+                          disabled={websiteContinueLoading || !websiteContinueInstruction.trim()}
+                          style={{ padding: "0.35rem 0.875rem", background: websiteContinueInstruction.trim() && !websiteContinueLoading ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: websiteContinueLoading || !websiteContinueInstruction.trim() ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: websiteContinueLoading || !websiteContinueInstruction.trim() ? 0.5 : 1 }}
+                        >
+                          {websiteContinueLoading ? (
+                            <><span style={{ width: "11px", height: "11px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} /> Building…</>
+                          ) : "Continue Build ▶"}
+                        </button>
+                      </div>
+                      {websiteContinueLoading && websiteContinuePassMessage && (
+                        <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.625rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.accent }}>{websiteContinuePassMessage}</div>
+                      )}
+                      {websiteContinueError && (
+                        <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.625rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.error }}>{websiteContinueError}</div>
                       )}
                     </div>
                   )}
@@ -3302,7 +3773,13 @@ function AIPageInner() {
                   {/* GitHub push */}
                   <button
                     className="action-chip zivo-btn"
-                    onClick={handleGithubPush}
+                    onClick={() => {
+                      if (connectedGithubRepo) {
+                        handleGithubPush();
+                      } else {
+                        setGithubModalOpen(true);
+                      }
+                    }}
                     disabled={githubPushing}
                     title="Push to GitHub"
                     style={{ flex: 1, padding: "0.5rem 0.5rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.22)", borderRadius: "8px", color: COLORS.accent, cursor: githubPushing ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem", fontWeight: 500 }}
@@ -3483,6 +3960,28 @@ function AIPageInner() {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/></svg>
                 <span>Design</span>
               </button>
+              {/* HTML Snapshot button */}
+              {(output?.preview_html || (output?.files?.length ?? 0) > 0) && (
+                <button
+                  className="zivo-btn"
+                  onClick={() => {
+                    const html = output?.preview_html ?? (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
+                    if (!html) return;
+                    const blob = new Blob([html], { type: "text/html" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "snapshot.html";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  title="Download HTML Snapshot"
+                  style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                  <span>HTML Snapshot</span>
+                </button>
+              )}
               {/* Design Panel button (visual token editor) */}
               <button
                 className="zivo-btn"
@@ -3582,6 +4081,11 @@ function AIPageInner() {
               </div>
             )}
 
+            {/* ── Generated App Analysis (below build output, above preview) ── */}
+            {mode === "code" && !loading && (output?.files?.length ?? 0) > 0 && (
+              <GeneratedAppAnalysis files={(output?.files ?? []) as Array<{ path: string; content: string; action?: "create" | "update" | "delete" }>} />
+            )}
+
             {/* ── Code Builder Right Panel ── */}
             {mode === "code" && (
             <div style={{ flex: 1, overflow: "hidden", position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -3668,7 +4172,7 @@ function AIPageInner() {
                       {websiteLivePreviewError}
                     </div>
                   )}
-                  <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
+                  <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
                   {(() => {
                     const previewHtml = output?.preview_html ||
                       (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
@@ -3754,14 +4258,22 @@ function AIPageInner() {
                             </div>
                           </div>
                         ) : (
-                          <iframe
-                            ref={iframeRef}
-                            srcDoc={previewHtml}
-                            title={isSnapshot ? "HTML Snapshot Preview" : "Live Preview"}
-                            style={{ width: "100%", height: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
-                            sandbox="allow-scripts"
-                            onLoad={() => { if (!isSnapshot) applyVisualEditOverlay(visualEdit); }}
-                          />
+                          <>
+                            {isSnapshot && (
+                              <div style={{ padding: "0.4rem 0.875rem", background: "rgba(245,158,11,0.08)", borderBottom: "1px solid rgba(245,158,11,0.2)", fontSize: "0.75rem", color: COLORS.warning, display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                                <span>This is a static snapshot preview. Use the <strong>Code</strong> tab to view and edit files.</span>
+                              </div>
+                            )}
+                            <iframe
+                              ref={iframeRef}
+                              srcDoc={previewHtml}
+                              title={isSnapshot ? "HTML Snapshot Preview" : "Live Preview"}
+                              style={{ flex: 1, width: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
+                              sandbox="allow-scripts"
+                              onLoad={() => { if (!isSnapshot) applyVisualEditOverlay(visualEdit); }}
+                            />
+                          </>
                         )}
                         {!isSnapshot && popover && (
                           <div style={{ position: "absolute", top: popover.y, left: popover.x, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.875rem", boxShadow: "0 8px 32px rgba(0,0,0,0.4)", zIndex: 10000, minWidth: "220px", animation: "fadeIn 0.2s ease" }}>
@@ -4187,22 +4699,51 @@ function AIPageInner() {
             {/* ── Website Right Panel ── */}
             {mode === "website" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                {/* Toolbar with URL bar */}
+                {/* Toolbar with tabs + URL bar */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
-                  {/* URL bar */}
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "360px" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                    <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1 }}>
-                      {websiteLivePreviewUrl ?? "preview"}
-                    </span>
+                  {/* Preview mode tabs */}
+                  <div style={{ display: "flex", gap: "1px", background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "3px", flexShrink: 0 }}>
+                    <button
+                      className="zivo-tab"
+                      onClick={() => setWebsitePreviewTab("webcontainer")}
+                      title="In-browser preview (WebContainer)"
+                      style={{ padding: "0.2rem 0.6rem", borderRadius: "5px", border: "none", background: websitePreviewTab === "webcontainer" ? COLORS.bgPanel : "transparent", color: websitePreviewTab === "webcontainer" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", fontWeight: websitePreviewTab === "webcontainer" ? 600 : 400, boxShadow: websitePreviewTab === "webcontainer" ? `0 0 0 1px ${COLORS.border}` : "none" }}
+                    >
+                      Browser
+                    </button>
+                    <button
+                      className="zivo-tab"
+                      onClick={() => setWebsitePreviewTab("remote")}
+                      title="Remote Docker preview runner"
+                      style={{ padding: "0.2rem 0.6rem", borderRadius: "5px", border: "none", background: websitePreviewTab === "remote" ? COLORS.bgPanel : "transparent", color: websitePreviewTab === "remote" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", fontWeight: websitePreviewTab === "remote" ? 600 : 400, boxShadow: websitePreviewTab === "remote" ? `0 0 0 1px ${COLORS.border}` : "none", display: "flex", alignItems: "center", gap: "0.25rem" }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                      Remote
+                    </button>
                   </div>
-                  {/* Reload button */}
-                  {(websiteLivePreviewUrl || websiteResult?.preview_html) && (
+                  {/* URL bar */}
+                  {websitePreviewTab === "webcontainer" && (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                      <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {websiteLivePreviewUrl ?? "preview"}
+                      </span>
+                    </div>
+                  )}
+                  {websitePreviewTab === "remote" && remotePreviewUrl && (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                      <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {remotePreviewUrl}
+                      </span>
+                    </div>
+                  )}
+                  {/* Reload button — webcontainer tab */}
+                  {websitePreviewTab === "webcontainer" && (websiteLivePreviewUrl || websiteResult?.preview_html) && (
                     <button
                       className="zivo-btn"
                       title="Reload preview"
                       onClick={() => {
-                        // Force re-render by toggling — use a key approach via state
                         if (websiteLivePreviewUrl) {
                           const url = websiteLivePreviewUrl;
                           setWebsiteLivePreviewUrl(null);
@@ -4212,93 +4753,234 @@ function AIPageInner() {
                       style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}
                     >↻</button>
                   )}
-                  {/* Live / Snapshot badge */}
-                  {websiteResult && (
+                  {/* Reload button — remote tab */}
+                  {websitePreviewTab === "remote" && remotePreviewUrl && (
+                    <button
+                      className="zivo-btn"
+                      title="Open in new tab"
+                      onClick={() => { if (remotePreviewUrl) window.open(remotePreviewUrl, "_blank", "noopener"); }}
+                      style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >↗</button>
+                  )}
+                  {/* Live / Snapshot badge — webcontainer */}
+                  {websitePreviewTab === "webcontainer" && websiteResult && (
                     <span style={{ padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 600, flexShrink: 0, background: websiteLivePreviewUrl ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${websiteLivePreviewUrl ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`, color: websiteLivePreviewUrl ? COLORS.success : COLORS.warning }}>
                       {websiteLivePreviewUrl ? "🟢 Live" : "🟡 Snapshot"}
                     </span>
                   )}
+                  {/* Remote status badge */}
+                  {websitePreviewTab === "remote" && remotePreviewStatus && (
+                    <span style={{ padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 600, flexShrink: 0, background: remotePreviewStatus === "running" ? "rgba(16,185,129,0.15)" : remotePreviewStatus === "failed" ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${remotePreviewStatus === "running" ? "rgba(16,185,129,0.3)" : remotePreviewStatus === "failed" ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)"}`, color: remotePreviewStatus === "running" ? COLORS.success : remotePreviewStatus === "failed" ? COLORS.error : COLORS.warning }}>
+                      {remotePreviewStatus === "running" ? "🟢 Running" : remotePreviewStatus === "failed" ? "🔴 Failed" : remotePreviewStatus === "stopped" ? "⚫ Stopped" : remotePreviewStatus === "building" ? "🟡 Building" : "🟡 Queued"}
+                    </span>
+                  )}
                   <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    {/* Status with spinner */}
-                    {websiteLivePreviewStatus && websiteLivePreviewRunning && (
+                    {/* Webcontainer: status with spinner */}
+                    {websitePreviewTab === "webcontainer" && websiteLivePreviewStatus && websiteLivePreviewRunning && (
                       <span style={{ fontSize: "0.72rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}>
                         <span style={{ display: "inline-block", width: "8px", height: "8px", border: "1.5px solid rgba(99,102,241,0.3)", borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
                         {websiteLivePreviewStatus}
                       </span>
                     )}
-                    {websiteResult?.files && websiteResult.files.length > 0 && (
+                    {websitePreviewTab === "webcontainer" && websiteResult?.files && websiteResult.files.length > 0 && (
                       <button
                         onClick={() => void startWebsiteLivePreview(websiteResult.files)}
-                        disabled={websiteLivePreviewRunning}
-                        style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: websiteLivePreviewRunning ? "not-allowed" : "pointer", opacity: websiteLivePreviewRunning ? 0.6 : 1 }}
+                        disabled={websiteLivePreviewRunning && !websiteLivePreviewError}
+                        style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: (websiteLivePreviewRunning && !websiteLivePreviewError) ? "not-allowed" : "pointer", opacity: (websiteLivePreviewRunning && !websiteLivePreviewError) ? 0.6 : 1 }}
                       >
                         {websiteLivePreviewRunning ? "Starting…" : websiteLivePreviewUrl ? "Restart Live" : "Start Live"}
                       </button>
                     )}
-                  </div>
-                </div>
-                {/* Error banner with snapshot fallback message */}
-                {websiteLivePreviewError && (
-                  <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", color: COLORS.warning, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
-                    <span>{websiteLivePreviewError}</span>
-                    {websiteResult && (
-                      <button
-                        className="zivo-btn"
-                        onClick={() => void startWebsiteLivePreview(websiteResult.files)}
-                        style={{ padding: "0.2rem 0.6rem", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "6px", color: COLORS.warning, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
-                      >
-                        Try Again
-                      </button>
+                    {/* Remote preview: start / stop button */}
+                    {websitePreviewTab === "remote" && websiteProjectId && (
+                      <>
+                        {(remotePreviewStatus === "queued" || remotePreviewStatus === "building" || remotePreviewLoading) && (
+                          <span style={{ fontSize: "0.72rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                            <span style={{ display: "inline-block", width: "8px", height: "8px", border: "1.5px solid rgba(99,102,241,0.3)", borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                            {remotePreviewStatus === "building" ? "Building…" : "Queued…"}
+                          </span>
+                        )}
+                        {remotePreviewStatus === "running" ? (
+                          <button
+                            onClick={() => void handleStopRemotePreview()}
+                            style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: COLORS.error, cursor: "pointer" }}
+                          >
+                            Stop
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => void handleStartRemotePreview()}
+                            disabled={remotePreviewLoading}
+                            style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: remotePreviewLoading ? "not-allowed" : "pointer", opacity: remotePreviewLoading ? 0.6 : 1 }}
+                          >
+                            {remotePreviewLoading ? "Starting…" : "Start Preview"}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
+                </div>
+
+                {/* ── WebContainer tab content ── */}
+                {websitePreviewTab === "webcontainer" && (
+                  <>
+                    {/* Error banner with snapshot fallback message */}
+                    {websiteLivePreviewError && (
+                      <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", color: COLORS.warning, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                        <span>{websiteLivePreviewError}</span>
+                        {websiteResult && (
+                          <button
+                            className="zivo-btn"
+                            onClick={() => void startWebsiteLivePreview(websiteResult.files)}
+                            style={{ padding: "0.2rem 0.6rem", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "6px", color: COLORS.warning, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
+                          >
+                            Try Again
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!websiteResult && !websiteLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Your generated website will appear here</p>
+                      </div>
+                    )}
+                    {/* Loading shimmer */}
+                    {websiteLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
+                        <div style={{ width: "100%", maxWidth: "480px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                          {[75, 55, 85].map((w, i) => (
+                            <div key={i} style={{ height: "14px", borderRadius: "8px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* WebContainer booting status */}
+                    {websiteResult && websiteLivePreviewRunning && !websiteLivePreviewUrl && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{websiteLivePreviewStatus ?? "Starting live preview…"}</p>
+                        <div style={{ width: "100%", maxWidth: "380px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                          {[70, 50, 80].map((w, i) => (
+                            <div key={i} style={{ height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {websiteResult && websiteLivePreviewUrl && (
+                      <iframe
+                        title="Website Live Runtime Preview"
+                        src={websiteLivePreviewUrl}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      />
+                    )}
+                    {websiteResult?.preview_html && !websiteLivePreviewUrl && !websiteLivePreviewRunning && (
+                      <iframe
+                        title="Website Preview"
+                        srcDoc={websiteResult.preview_html}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin"
+                      />
+                    )}
+                  </>
                 )}
-                {!websiteResult && !websiteLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
-                    <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                    </div>
-                    <p style={{ fontSize: "0.875rem" }}>Your generated website will appear here</p>
+
+                {/* ── Remote Preview tab content ── */}
+                {websitePreviewTab === "remote" && (
+                  <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                    {/* No project saved yet */}
+                    {!websiteProjectId && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Generate a website first to enable remote preview</p>
+                        <p style={{ fontSize: "0.78rem", color: COLORS.textMuted, maxWidth: "320px" }}>The remote preview runner builds your site in an isolated Docker container and serves it at a stable URL.</p>
+                      </div>
+                    )}
+
+                    {/* Error banner */}
+                    {remotePreviewError && (
+                      <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexShrink: 0 }}>
+                        <span>{remotePreviewError}</span>
+                        <button
+                          className="zivo-btn"
+                          onClick={() => void handleStartRemotePreview()}
+                          style={{ padding: "0.2rem 0.6rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "6px", color: COLORS.error, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Waiting / building state */}
+                    {websiteProjectId && (remotePreviewStatus === "queued" || remotePreviewStatus === "building") && !remotePreviewUrl && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{remotePreviewStatus === "building" ? "Building your site in a Docker container…" : "Preview queued — waiting for a runner slot…"}</p>
+                        {/* Logs */}
+                        {remotePreviewLogs.length > 0 && (
+                          <div style={{ width: "100%", maxWidth: "600px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.75rem", maxHeight: "180px", overflowY: "auto", fontFamily: "monospace", fontSize: "0.72rem", color: COLORS.textSecondary, whiteSpace: "pre-wrap" }}>
+                            {remotePreviewLogs.slice(-40).join("\n")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Idle state (no preview started yet) */}
+                    {websiteProjectId && !remotePreviewStatus && !remotePreviewLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "64px", height: "64px", borderRadius: "16px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Click <strong>Start Preview</strong> to build and run your site in an isolated Docker container</p>
+                        <button
+                          onClick={() => void handleStartRemotePreview()}
+                          style={{ marginTop: "0.5rem", padding: "0.5rem 1.25rem", background: COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600 }}
+                        >
+                          Start Preview
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Running: iframe */}
+                    {remotePreviewStatus === "running" && remotePreviewUrl && (
+                      <iframe
+                        key={remotePreviewUrl}
+                        title="Remote Preview"
+                        src={remotePreviewUrl}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      />
+                    )}
+
+                    {/* Logs panel (visible when running and logs exist) */}
+                    {remotePreviewStatus === "running" && remotePreviewLogs.length > 0 && (
+                      <div style={{ borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "0.5rem 0.75rem", maxHeight: "120px", overflowY: "auto", fontFamily: "monospace", fontSize: "0.7rem", color: COLORS.textMuted, whiteSpace: "pre-wrap", flexShrink: 0 }}>
+                        {remotePreviewLogs.slice(-20).join("\n")}
+                      </div>
+                    )}
+
+                    {/* Stopped state */}
+                    {remotePreviewStatus === "stopped" && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <p style={{ fontSize: "0.875rem" }}>Preview stopped.</p>
+                        {websiteProjectId && (
+                          <button
+                            onClick={() => void handleStartRemotePreview()}
+                            style={{ padding: "0.4rem 1rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem" }}
+                          >
+                            Restart Preview
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-                {/* Loading shimmer */}
-                {websiteLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
-                    <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
-                    <div style={{ width: "100%", maxWidth: "480px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {[75, 55, 85].map((w, i) => (
-                        <div key={i} style={{ height: "14px", borderRadius: "8px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {/* WebContainer booting status */}
-                {websiteResult && websiteLivePreviewRunning && !websiteLivePreviewUrl && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
-                    <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{websiteLivePreviewStatus ?? "Starting live preview…"}</p>
-                    <div style={{ width: "100%", maxWidth: "380px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {[70, 50, 80].map((w, i) => (
-                        <div key={i} style={{ height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {websiteResult && websiteLivePreviewUrl && (
-                  <iframe
-                    title="Website Live Runtime Preview"
-                    src={websiteLivePreviewUrl}
-                    style={{ flex: 1, width: "100%", border: "none" }}
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                  />
-                )}
-                {websiteResult?.preview_html && !websiteLivePreviewUrl && !websiteLivePreviewRunning && (
-                  <iframe
-                    title="Website Preview"
-                    srcDoc={websiteResult.preview_html}
-                    style={{ flex: 1, width: "100%", border: "none" }}
-                    sandbox="allow-scripts allow-same-origin"
-                  />
                 )}
               </div>
             )}
@@ -4506,26 +5188,11 @@ function AIPageInner() {
               {/* Files tab */}
               {activeRightTab === "files" && (
                 <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", animation: "fadeIn 0.3s ease" }}>
-                  {/* File search (Upgrade 14b) */}
-                  <div style={{ padding: "0.5rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
-                    <div style={{ position: "relative" }}>
-                      <svg style={{ position: "absolute", left: "0.5rem", top: "50%", transform: "translateY(-50%)", color: COLORS.textMuted, pointerEvents: "none" }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
-                      <input
-                        type="text"
-                        placeholder="Search files…"
-                        value={fileSearchQuery}
-                        onChange={(e) => setFileSearchQuery(e.target.value)}
-                        style={{ width: "100%", padding: "0.3rem 0.5rem 0.3rem 1.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "5px", color: COLORS.textPrimary, fontSize: "0.75rem", outline: "none" }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, overflow: "hidden" }}>
-                    <FileExplorer
-                      files={(output?.files ?? []).filter((f) => !fileSearchQuery || f.path.toLowerCase().includes(fileSearchQuery.toLowerCase())) as Array<{ path: string; content: string; action: "create" | "update" | "delete" }>}
-                      activeFilePath={activeFile?.path ?? null}
-                      onFileSelect={(f) => { setActiveFile(f); setEditedContent(f.content); setSaveStatus("idle"); setActiveRightTab("code"); }}
-                    />
-                  </div>
+                  <FileTree
+                    files={(output?.files ?? []) as Array<{ path: string; content: string; action?: "create" | "update" | "delete" }>}
+                    activeFile={activeFile?.path ?? null}
+                    onFileSelect={(f) => { setActiveFile(f as { path: string; content: string; action: "create" | "update" | "delete" }); setEditedContent(f.content); setSaveStatus("idle"); setActiveRightTab("code"); }}
+                  />
                 </div>
               )}
 
@@ -4930,6 +5597,137 @@ function AIPageInner() {
                 }}
               >
                 Generate Page ▶
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* GitHub Push Modal */}
+      {githubModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1001,
+            padding: "1rem",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setGithubModalOpen(false); }}
+        >
+          <div
+            style={{
+              background: "#0f1120",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 14,
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: 460,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+              animation: "fadeIn 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill={COLORS.textPrimary}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                <span style={{ fontSize: "1rem", fontWeight: 700, color: COLORS.textPrimary }}>Push to GitHub</span>
+              </div>
+              <button
+                onClick={() => setGithubModalOpen(false)}
+                style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1.1rem", padding: "0 0.25rem" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Owner</span>
+                  <input
+                    type="text"
+                    value={githubModalOwner}
+                    onChange={(e) => setGithubModalOwner(e.target.value)}
+                    placeholder="your-username"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Repository</span>
+                  <input
+                    type="text"
+                    value={githubModalRepo}
+                    onChange={(e) => setGithubModalRepo(e.target.value)}
+                    placeholder="my-app"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
+                  />
+                </label>
+              </div>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Branch</span>
+                <input
+                  type="text"
+                  value={githubModalBranch}
+                  onChange={(e) => setGithubModalBranch(e.target.value)}
+                  placeholder="main"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", fontFamily: "monospace", outline: "none" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  GitHub Token{" "}
+                  <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" style={{ color: COLORS.accent, textTransform: "none", fontWeight: 400 }}>(generate)</a>
+                </span>
+                <input
+                  type="password"
+                  value={githubModalToken}
+                  onChange={(e) => setGithubModalToken(e.target.value)}
+                  placeholder="ghp_... (leave blank to use saved token)"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", fontFamily: "monospace", outline: "none" }}
+                />
+              </label>
+
+              <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, background: "rgba(255,255,255,0.03)", border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "0.5rem 0.65rem" }}>
+                Pushing <strong style={{ color: COLORS.textSecondary }}>{output?.files?.length ?? 0} files</strong> to GitHub. Token is saved locally for future pushes.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.25rem" }}>
+              <button
+                onClick={() => setGithubModalOpen(false)}
+                style={{ flex: 1, padding: "0.6rem", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: COLORS.textMuted, fontSize: "0.875rem", cursor: "pointer", fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={githubPushing}
+                onClick={handleGithubModalPush}
+                style={{
+                  flex: 2,
+                  padding: "0.6rem",
+                  background: githubPushing ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                  border: "none",
+                  borderRadius: 8,
+                  color: "#fff",
+                  fontSize: "0.875rem",
+                  cursor: githubPushing ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.4rem",
+                }}
+              >
+                {githubPushing ? (
+                  <><span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Pushing…</>
+                ) : (
+                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" x2="12" y1="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Push to GitHub</>
+                )}
               </button>
             </div>
           </div>
