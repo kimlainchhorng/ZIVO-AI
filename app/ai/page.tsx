@@ -3773,6 +3773,7 @@ function AIPageInner() {
                   {/* GitHub push */}
                   <button
                     className="action-chip zivo-btn"
+                    className="zivo-btn"
                     onClick={() => {
                       if (connectedGithubRepo) {
                         handleGithubPush();
@@ -4173,6 +4174,7 @@ function AIPageInner() {
                     </div>
                   )}
                   <div style={{ flex: 1, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                  <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column" }}>
                   {(() => {
                     const previewHtml = output?.preview_html ||
                       (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
@@ -4275,6 +4277,19 @@ function AIPageInner() {
                             />
                           </>
                         )}
+                          <div style={{ padding: "0.4rem 0.875rem", background: "rgba(245,158,11,0.08)", borderBottom: "1px solid rgba(245,158,11,0.2)", fontSize: "0.75rem", color: COLORS.warning, display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                            <span>This is a static snapshot preview. Use the <strong>Code</strong> tab to view and edit files.</span>
+                          </div>
+                        )}
+                        <iframe
+                          ref={iframeRef}
+                          srcDoc={previewHtml}
+                          title={isSnapshot ? "HTML Snapshot Preview" : "Live Preview"}
+                          style={{ flex: 1, width: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
+                          sandbox="allow-scripts"
+                          onLoad={() => { if (!isSnapshot) applyVisualEditOverlay(visualEdit); }}
+                        />
                         {!isSnapshot && popover && (
                           <div style={{ position: "absolute", top: popover.y, left: popover.x, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.875rem", boxShadow: "0 8px 32px rgba(0,0,0,0.4)", zIndex: 10000, minWidth: "220px", animation: "fadeIn 0.2s ease" }}>
                             <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", color: COLORS.textSecondary }}>Edit element text:</p>
