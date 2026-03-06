@@ -1,24 +1,29 @@
 'use client';
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import TemplateSelector from "@/components/TemplateSelector";
 import QuickStartGrid from "@/components/QuickStartGrid";
-import type { GeneratedFile, BuilderResponse } from "@/app/api/builder/route";
+import BuildProgressIndicator, { type BuildStage } from "@/components/BuildProgressIndicator";
+import DiffViewer, { type DiffFile } from "@/components/DiffViewer";
+import type { GeneratedFile } from "@/lib/ai/schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type SidebarTab = "Prompt" | "Plan" | "Templates" | "Workflow";
 type PreviewTab = "Preview" | "Code" | "Console" | "Design";
 type RightTab = "Files" | "Code" | "Diff";
+type DeviceMode = "desktop" | "tablet" | "mobile";
 
-// ─── Nav items ────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
-  { label: "Code Builder", icon: "⚡", active: true },
-  { label: "Security", icon: "🔒", active: false },
-  { label: "Website", icon: "🌐", active: false },
-  { label: "Mobile App", icon: "📱", active: false },
+  { label: "Builder", href: "/", active: true },
+  { label: "Workflow", href: "/workflow", active: false },
+  { label: "Templates", href: "/templates", active: false },
+  { label: "History", href: "/history", active: false },
+  { label: "Dashboard", href: "/dashboard", active: false },
+  { label: "Connectors", href: "/connectors", active: false },
 ];
 
 const MODEL_OPTIONS = [
@@ -28,85 +33,295 @@ const MODEL_OPTIONS = [
   { id: "o1", label: "o1", quality: "high", cost: 0.015 },
 ] as const;
 
+const STYLE_OPTIONS = ["modern", "minimal", "bold", "elegant", "playful", "corporate"] as const;
+type StyleOption = (typeof STYLE_OPTIONS)[number];
+
 const QUALITY_BADGE: Record<string, string> = {
   high: "bg-green-500/20 text-green-400 border border-green-500/30",
   medium: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30",
 };
 
+const DEFAULT_BUILD_STAGES: BuildStage[] = [
+  { id: "prompt",    label: "Prompt",    icon: "edit",     status: "pending" },
+  { id: "parse",     label: "Parse",     icon: "search",   status: "pending" },
+  { id: "blueprint", label: "Blueprint", icon: "fileText", status: "pending" },
+  { id: "generate",  label: "Generate",  icon: "zap",      status: "pending" },
+  { id: "validate",  label: "Validate",  icon: "check",    status: "pending" },
+  { id: "fix",       label: "Fix",       icon: "settings", status: "pending" },
+  { id: "preview",   label: "Preview",   icon: "eye",      status: "pending" },
+  { id: "deploy",    label: "Deploy",    icon: "rocket",   status: "pending" },
+];
+
+// Map SSE stage names → buildStages array indices
+const SSE_STAGE_TO_INDEX: Readonly<Record<string, number>> = {
+  BLUEPRINT: 2,
+  MANIFEST: 3,
+  GENERATE: 3,
+  GENERATING: 3,
+  VALIDATE: 4,
+  VALIDATING: 4,
+  FIX: 5,
+  FIXING: 5,
+  DONE: 6,
+};
+
+const TOTAL_PASSES = 8;
+const MAX_PROMPT = 500;
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function BuilderPage() {
+  // ── Core prompt / model / style state
   const [prompt, setPrompt] = useState("");
+  const [selectedModel, setSelectedModel] = useState("gpt-4o");
+  const [style, setStyle] = useState<StyleOption>("modern");
+
+  // ── UI tab state
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("Prompt");
   const [previewTab, setPreviewTab] = useState<PreviewTab>("Preview");
   const [rightTab, setRightTab] = useState<RightTab>("Files");
-  const [selectedModel, setSelectedModel] = useState("gpt-4o");
+  const [deviceMode, setDeviceMode] = useState<DeviceMode>("desktop");
+
+  // ── Build lifecycle state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<BuilderResponse | null>(null);
-  const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
   const [files, setFiles] = useState<GeneratedFile[]>([]);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [buildSummary, setBuildSummary] = useState<string | null>(null);
+  const [buildTime, setBuildTime] = useState<string | null>(null);
+  const [buildOutputOpen, setBuildOutputOpen] = useState(true);
+  const [buildOutputLogs, setBuildOutputLogs] = useState<string[]>([]);
+  const [buildPassed, setBuildPassed] = useState(false);
+
+  // ── Build pipeline stages
+  const [buildStages, setBuildStages] = useState<BuildStage[]>(DEFAULT_BUILD_STAGES);
+  const [currentBuildStage, setCurrentBuildStage] = useState(0);
+
+  // ── Pass counter / auto-fix
   const [passCount, setPassCount] = useState(0);
-  const [totalPasses] = useState(8);
+  const [autoFixing, setAutoFixing] = useState(false);
 
-  const MAX_PROMPT = 200;
+  // ── Multi-turn / continue-building state
+  const [buildIteration, setBuildIteration] = useState(0);
+  const [continueInstruction, setContinueInstruction] = useState("");
+  const [conversationHistory, setConversationHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [existingFiles, setExistingFiles] = useState<GeneratedFile[]>([]);
+
+  // ── Files panel
+  const [selectedFile, setSelectedFile] = useState<GeneratedFile | null>(null);
+  const [fileSearch, setFileSearch] = useState("");
+
+  // ── Diff state
+  const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
+
+  // ── Abort controller ref
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const activeModel = MODEL_OPTIONS.find((m) => m.id === selectedModel) ?? MODEL_OPTIONS[0];
+  const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
-  const handleBuild = async () => {
-    if (!prompt.trim()) return;
-    setLoading(true);
-    setError(null);
-    setFiles([]);
-    setResult(null);
-    setSelectedFile(null);
-    setPassCount(0);
-    try {
-      const res = await fetch("/api/generate-site", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, model: selectedModel }),
-      });
-      const data: unknown = await res.json();
-      if (
-        data &&
-        typeof data === "object" &&
-        "files" in data &&
-        Array.isArray((data as { files: unknown }).files)
-      ) {
-        const typed = data as BuilderResponse;
-        setFiles(typed.files);
-        setResult(typed);
-        setPassCount(typed.files.length > 0 ? Math.min(typed.files.length, totalPasses) : 0);
-        setRightTab("Files");
-      } else if (data && typeof data === "object" && "error" in data) {
-        setError(String((data as { error: unknown }).error));
-      } else {
-        setError("Unexpected response from server");
-      }
-    } catch {
-      setError("Build failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Group files by top-level directory for the tree view
+  const filteredFiles = fileSearch.trim()
+    ? files.filter((f) => f.path.toLowerCase().includes(fileSearch.toLowerCase()))
+    : files;
 
-  const handleStartFresh = () => {
-    setPrompt("");
-    setFiles([]);
-    setResult(null);
-    setError(null);
-    setSelectedFile(null);
-    setPassCount(0);
-  };
-
-  // Group files by top-level directory
   const fileGroups: Record<string, GeneratedFile[]> = {};
-  for (const file of files) {
+  for (const file of filteredFiles) {
     const parts = file.path.split("/");
     const group = parts.length > 1 ? parts[0] : "root";
     if (!fileGroups[group]) fileGroups[group] = [];
     fileGroups[group].push(file);
   }
+
+  // ── Build handler (initial + iterations)
+  const handleBuild = async (promptOverride?: string) => {
+    const buildPrompt = promptOverride ?? (continueInstruction.trim() || prompt);
+    if (!buildPrompt.trim()) return;
+
+    // Stop any ongoing build
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    const isIteration = buildIteration > 0;
+    const buildContext = isIteration ? conversationHistory : [];
+    const existingFilesForBuild = isIteration ? existingFiles : undefined;
+
+    setLoading(true);
+    setError(null);
+    setBuildSummary(null);
+    setBuildPassed(false);
+    setPassCount(0);
+    setAutoFixing(false);
+    setBuildOutputLogs([isIteration ? `> Iteration ${buildIteration + 1}: Updating…` : "> Building website…"]);
+    setBuildOutputOpen(true);
+    setPreviewHtml(null);
+    setBuildTime(null);
+    setCurrentBuildStage(0);
+    setBuildStages(DEFAULT_BUILD_STAGES.map((s, i) => ({ ...s, status: i === 0 ? "active" : "pending" })));
+
+    const buildStart = Date.now();
+    let collectedFiles: GeneratedFile[] = [];
+    let collectedPreviewHtml: string | undefined;
+    let collectedSummary = "";
+
+    try {
+      const res = await fetch("/api/build", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: `${buildPrompt}. Style: ${style}.`,
+          model: selectedModel,
+          mode: "website_v2",
+          existingFiles: existingFilesForBuild,
+          context: buildContext,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+
+          let evt: {
+            type: string;
+            stage?: string;
+            message?: string;
+            files?: GeneratedFile[];
+            preview_html?: string;
+          };
+          try {
+            evt = JSON.parse(raw) as typeof evt;
+          } catch {
+            continue;
+          }
+
+          if (evt.type === "stage" && evt.stage) {
+            const idx = SSE_STAGE_TO_INDEX[evt.stage] ?? -1;
+            if (idx >= 0) {
+              setBuildStages((prev) =>
+                prev.map((s, i) => ({
+                  ...s,
+                  status: i < idx ? "done" : i === idx ? "active" : "pending",
+                }))
+              );
+              setCurrentBuildStage(idx);
+            }
+            if (evt.stage === "FIXING") {
+              setAutoFixing(true);
+              setPassCount((n) => n + 1);
+            }
+            if (evt.stage === "DONE") {
+              collectedSummary = evt.message ?? collectedSummary;
+              setAutoFixing(false);
+            }
+            if (evt.message) {
+              setBuildOutputLogs((prev) => [...prev, `> [${evt.stage}] ${evt.message}`]);
+            }
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files as GeneratedFile[];
+            if (evt.preview_html) collectedPreviewHtml = evt.preview_html;
+          } else if (evt.type === "error") {
+            const errMsg = String(evt.message ?? "Build error");
+            setBuildOutputLogs((prev) => [...prev, `> ❌ ${errMsg}`]);
+            setError(errMsg);
+          }
+        }
+      }
+
+      // Finalise build
+      const duration = Date.now() - buildStart;
+      const durationStr = `${(duration / 1000).toFixed(1)}s`;
+      setBuildTime(durationStr);
+      setBuildStages((prev) => prev.map((s) => ({ ...s, status: "done" as const })));
+      setCurrentBuildStage(7);
+      setBuildPassed(true);
+      setBuildSummary(collectedSummary || `Generated ${collectedFiles.length} files.`);
+      setBuildOutputLogs((prev) => [...prev, `> ✓ Build complete in ${durationStr} — ${collectedFiles.length} files`]);
+
+      if (collectedFiles.length > 0) {
+        // Compute diffs vs. previous iteration
+        const prevFileMap = new Map(existingFiles.map((f) => [f.path, f.content]));
+        setDiffFiles(
+          collectedFiles.map((f) => ({
+            path: f.path,
+            oldContent: prevFileMap.get(f.path) ?? "",
+            newContent: f.content,
+          }))
+        );
+
+        setFiles(collectedFiles);
+        setExistingFiles(collectedFiles);
+        setSelectedFile(collectedFiles[0] ?? null);
+        setRightTab("Files");
+      }
+
+      if (collectedPreviewHtml) {
+        setPreviewHtml(collectedPreviewHtml);
+        setPreviewTab("Preview");
+      }
+
+      // Update conversation history for next iteration
+      const newHistory: Array<{ role: "user" | "assistant"; content: string }> = [
+        ...buildContext,
+        { role: "user", content: buildPrompt },
+        { role: "assistant", content: collectedSummary || `Generated ${collectedFiles.length} files.` },
+      ];
+      setConversationHistory(newHistory);
+      setBuildIteration((n) => n + 1);
+      setContinueInstruction("");
+    } catch (err: unknown) {
+      if ((err as Error)?.name === "AbortError") {
+        setBuildOutputLogs((prev) => [...prev, "> Build stopped."]);
+      } else {
+        const msg = (err as Error)?.message ?? "Build failed. Please try again.";
+        setError(msg);
+        setBuildOutputLogs((prev) => [...prev, `> ❌ ${msg}`]);
+      }
+    } finally {
+      setLoading(false);
+      setAutoFixing(false);
+    }
+  };
+
+  const handleStartFresh = () => {
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    setPrompt("");
+    setContinueInstruction("");
+    setFiles([]);
+    setExistingFiles([]);
+    setDiffFiles([]);
+    setPreviewHtml(null);
+    setBuildSummary(null);
+    setBuildTime(null);
+    setError(null);
+    setSelectedFile(null);
+    setPassCount(0);
+    setAutoFixing(false);
+    setBuildPassed(false);
+    setBuildIteration(0);
+    setConversationHistory([]);
+    setBuildOutputLogs([]);
+    setBuildStages(DEFAULT_BUILD_STAGES);
+    setCurrentBuildStage(0);
+  };
 
   return (
     <div className="zivo-root">
@@ -118,24 +333,21 @@ export default function BuilderPage() {
           <span className="zivo-logo-text">ZIVO AI</span>
         </div>
 
-        {/* Nav tabs */}
+        {/* Nav */}
         <nav className="zivo-nav">
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.label}
-              href={item.label === "Code Builder" ? "/" : `/${item.label.toLowerCase().replace(" ", "-")}`}
+              href={item.href}
               className={`zivo-nav-item${item.active ? " active" : ""}`}
             >
-              <span>{item.icon}</span>
               <span>{item.label}</span>
             </Link>
           ))}
         </nav>
 
-        {/* Divider */}
         <div className="zivo-divider" />
 
-        {/* Section header */}
         <div className="zivo-section-header">
           <p className="zivo-section-title">What will you build today?</p>
           <p className="zivo-section-sub">Describe your idea and let AI do the heavy lifting</p>
@@ -163,7 +375,34 @@ export default function BuilderPage() {
           </div>
         </div>
 
-        {/* Tabs: Prompt | Plan | Templates | Workflow */}
+        {/* Style selector */}
+        <div className="zivo-model-selector">
+          <label className="zivo-label">Style</label>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
+            {STYLE_OPTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setStyle(s)}
+                style={{
+                  padding: "3px 10px",
+                  borderRadius: 99,
+                  fontSize: "0.68rem",
+                  fontWeight: 600,
+                  border: `1px solid ${style === s ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.1)"}`,
+                  background: style === s ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
+                  color: style === s ? "#a5b4fc" : "#64748b",
+                  cursor: "pointer",
+                  transition: "all 0.12s",
+                  textTransform: "capitalize",
+                }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tabs */}
         <div className="zivo-tabs">
           {(["Prompt", "Plan", "Templates", "Workflow"] as SidebarTab[]).map((tab) => (
             <button
@@ -183,12 +422,12 @@ export default function BuilderPage() {
               <div className="zivo-textarea-wrapper">
                 <textarea
                   className="zivo-textarea"
-                  placeholder="Build a complete e-commerce app with product catalog, cart, checkout, and admin panel…"
+                  placeholder="Build a complete e-commerce site with product catalog, cart, checkout, and admin panel…"
                   value={prompt}
                   maxLength={MAX_PROMPT}
                   onChange={(e) => setPrompt(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleBuild();
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void handleBuild();
                   }}
                   rows={6}
                 />
@@ -198,7 +437,6 @@ export default function BuilderPage() {
                 </div>
               </div>
 
-              {/* Source buttons */}
               <div className="zivo-source-row">
                 <span className="zivo-source-label">or start from</span>
                 <div className="zivo-source-btns">
@@ -208,7 +446,6 @@ export default function BuilderPage() {
                 </div>
               </div>
 
-              {/* QuickStart grid */}
               <QuickStartGrid onSelect={(p) => setPrompt(p)} />
             </div>
           )}
@@ -216,14 +453,14 @@ export default function BuilderPage() {
           {sidebarTab === "Templates" && (
             <TemplateSelector
               onSelect={(p) => { setPrompt(p); setSidebarTab("Prompt"); }}
-              onSubmit={(p) => { setPrompt(p); handleBuild(); }}
+              onSubmit={(p) => { setPrompt(p); void handleBuild(p); }}
             />
           )}
 
           {sidebarTab === "Plan" && (
             <div className="zivo-plan-placeholder">
               <span className="zivo-plan-icon">📋</span>
-              <p>Run a build to generate a plan</p>
+              <p>{buildSummary ?? "Run a build to generate a plan"}</p>
             </div>
           )}
 
@@ -243,17 +480,19 @@ export default function BuilderPage() {
             Start Fresh
           </button>
           <button
-            onClick={handleBuild}
+            onClick={() => void handleBuild()}
             disabled={loading || !prompt.trim()}
             className="zivo-btn-build"
           >
-            {loading ? "Building…" : "⚡ Build"}
+            {loading
+              ? "Building…"
+              : buildIteration > 0
+              ? `Update ▶ (iter. ${buildIteration + 1})`
+              : "⚡ Build"}
           </button>
         </div>
 
-        {error && (
-          <div className="zivo-error">{error}</div>
-        )}
+        {error && <div className="zivo-error">{error}</div>}
       </aside>
 
       {/* ─── Main Preview Area ─────────────────────────────────────────────── */}
@@ -270,6 +509,21 @@ export default function BuilderPage() {
                 {tab}
               </button>
             ))}
+            {/* Device mode toggles — only visible in Preview tab */}
+            {previewTab === "Preview" && previewHtml && (
+              <div style={{ display: "flex", gap: 2, marginLeft: "0.5rem", borderLeft: "1px solid rgba(255,255,255,0.08)", paddingLeft: "0.5rem" }}>
+                {(["desktop", "tablet", "mobile"] as DeviceMode[]).map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setDeviceMode(d)}
+                    className={`zivo-toolbar-tab${deviceMode === d ? " active" : ""}`}
+                    style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
+                  >
+                    {d === "desktop" ? "🖥" : d === "tablet" ? "📱" : "📲"}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="zivo-toolbar-right">
             {(["Files", "Code", "Diff"] as RightTab[]).map((tab) => (
@@ -279,25 +533,65 @@ export default function BuilderPage() {
                 className={`zivo-toolbar-tab${rightTab === tab ? " active" : ""}`}
               >
                 {tab}
+                {tab === "Diff" && diffFiles.length > 0 && (
+                  <span style={{ marginLeft: 4, fontSize: "0.6rem", background: "rgba(99,102,241,0.2)", color: "#a5b4fc", borderRadius: 99, padding: "1px 5px" }}>
+                    {diffFiles.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
         </div>
 
+        {/* Build stages progress bar */}
+        {(loading || buildPassed) && (
+          <div style={{ padding: "4px 12px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "#0a0b14", flexShrink: 0 }}>
+            <BuildProgressIndicator stages={buildStages} currentStage={currentBuildStage} />
+          </div>
+        )}
+
         {/* Preview content */}
-        <div className="zivo-preview-area">
-          {previewTab === "Preview" && (
+        <div
+          className="zivo-preview-area"
+          style={{
+            padding: previewTab === "Preview" && previewHtml ? "0" : undefined,
+            alignItems: previewTab === "Preview" && previewHtml ? "stretch" : undefined,
+            justifyContent: previewTab === "Preview" && previewHtml ? "center" : undefined,
+            overflow: previewTab === "Preview" && previewHtml ? "hidden" : undefined,
+          }}
+        >
+          {previewTab === "Preview" && previewHtml && (
+            <iframe
+              srcDoc={previewHtml}
+              style={{ width: iframeWidth, height: "100%", border: "none", display: "block", margin: "0 auto" }}
+              sandbox="allow-scripts"
+              title="Website Preview"
+            />
+          )}
+
+          {previewTab === "Preview" && !previewHtml && (
             <div className="zivo-preview-empty">
-              <div className="zivo-preview-logo">Z</div>
-              <h2 className="zivo-preview-title">Your app preview lives here</h2>
-              <p className="zivo-preview-sub">
-                Enter a prompt and click Build to generate your app
-              </p>
-              <div className="zivo-preview-badges">
-                <span className="zivo-badge">⚡ Instant Preview</span>
-                <span className="zivo-badge">🤖 AI-Powered</span>
-                <span className="zivo-badge">✏️ Fully Editable</span>
-              </div>
+              {loading ? (
+                <>
+                  <span className="zivo-spinner" style={{ width: 32, height: 32, borderWidth: 3 }} />
+                  <p className="zivo-preview-sub" style={{ marginTop: "0.75rem" }}>
+                    {autoFixing ? "Auto-fixing errors…" : "Building website…"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="zivo-preview-logo">Z</div>
+                  <h2 className="zivo-preview-title">Your website preview lives here</h2>
+                  <p className="zivo-preview-sub">
+                    Enter a prompt and click Build to generate your website
+                  </p>
+                  <div className="zivo-preview-badges">
+                    <span className="zivo-badge">⚡ Instant Preview</span>
+                    <span className="zivo-badge">🤖 AI-Powered</span>
+                    <span className="zivo-badge">✏️ Fully Editable</span>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -314,9 +608,16 @@ export default function BuilderPage() {
           )}
 
           {previewTab === "Console" && (
-            <div className="zivo-preview-empty">
-              <span className="zivo-plan-icon">🖥️</span>
-              <p className="zivo-preview-sub">Console output will appear here during builds</p>
+            <div style={{ width: "100%", height: "100%", overflow: "auto", padding: "1rem", fontFamily: "monospace", fontSize: "0.8rem" }}>
+              {buildOutputLogs.length === 0 ? (
+                <p style={{ color: "#475569" }}>Console output will appear here during builds</p>
+              ) : (
+                buildOutputLogs.map((log, i) => (
+                  <div key={i} style={{ color: log.startsWith("> ❌") ? "#ef4444" : log.startsWith("> ✓") ? "#10b981" : "#94a3b8", lineHeight: 1.6 }}>
+                    {log}
+                  </div>
+                ))
+              )}
             </div>
           )}
 
@@ -330,30 +631,120 @@ export default function BuilderPage() {
           )}
         </div>
 
-        {/* Build Output Panel */}
-        <div className="zivo-build-panel">
-          <div className="zivo-build-panel-header">
-            <div className="zivo-build-status-row">
-              <span className={`zivo-status-dot${passCount > 0 ? " passed" : ""}`} />
-              <span className="zivo-build-label">Build Output</span>
-              <span className="zivo-pass-count">Pass {passCount}/{totalPasses}</span>
-            </div>
-            <span className="zivo-build-status-text">{passCount > 0 ? "Passed" : loading ? "Running…" : "No output yet"}</span>
-          </div>
-          <div className="zivo-build-panel-body">
-            {loading && (
-              <div className="zivo-build-running">
-                <span className="zivo-spinner" />
-                <span>Generating files…</span>
+        {/* Continue Building textarea — shown after first build */}
+        {buildIteration > 0 && (
+          <div style={{ flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.07)", background: "#0a0b14", padding: "0.625rem 0.875rem", display: "flex", gap: "0.5rem", alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "0.65rem", color: "#475569", fontWeight: 600, marginBottom: "0.3rem", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Continue Building — Iteration {buildIteration + 1}
               </div>
-            )}
-            {!loading && passCount === 0 && (
-              <p className="zivo-build-empty">No builds yet — enter a prompt and click Build.</p>
-            )}
-            {!loading && result?.summary && (
-              <p className="zivo-build-summary">{result.summary}</p>
-            )}
+              <textarea
+                value={continueInstruction}
+                onChange={(e) => setContinueInstruction(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void handleBuild();
+                }}
+                placeholder="Describe what to add or change… (e.g. add dark mode, change hero to gradient blue)"
+                rows={2}
+                style={{
+                  width: "100%",
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 8,
+                  color: "#f1f5f9",
+                  fontSize: "0.8rem",
+                  padding: "0.5rem 0.625rem",
+                  resize: "none",
+                  outline: "none",
+                  fontFamily: "inherit",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+            <button
+              onClick={() => void handleBuild()}
+              disabled={loading || !continueInstruction.trim()}
+              style={{
+                padding: "0.5rem 1rem",
+                borderRadius: 8,
+                background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                border: "none",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: "0.8rem",
+                cursor: "pointer",
+                opacity: loading || !continueInstruction.trim() ? 0.4 : 1,
+                transition: "opacity 0.12s",
+                flexShrink: 0,
+              }}
+            >
+              {loading ? "…" : "Update ▶"}
+            </button>
           </div>
+        )}
+
+        {/* Build Output Panel */}
+        <div className="zivo-build-panel" style={{ maxHeight: buildOutputOpen ? 160 : 36 }}>
+          <div
+            className="zivo-build-panel-header"
+            onClick={() => setBuildOutputOpen((o) => !o)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setBuildOutputOpen((o) => !o); } }}
+            role="button"
+            tabIndex={0}
+            aria-expanded={buildOutputOpen}
+            style={{ cursor: "pointer", userSelect: "none" }}
+          >
+            <div className="zivo-build-status-row">
+              <span className={`zivo-status-dot${buildPassed ? " passed" : ""}`} />
+              <span className="zivo-build-label">Build Output</span>
+              {passCount > 0 && (
+                <span className="zivo-pass-count" style={{ color: "#10b981", fontWeight: 600 }}>
+                  Pass {passCount}/{TOTAL_PASSES} ✓
+                </span>
+              )}
+              {autoFixing && (
+                <span style={{ fontSize: "0.7rem", color: "#f59e0b", marginLeft: "0.5rem" }}>
+                  Auto-fixing…
+                </span>
+              )}
+              {buildTime && (
+                <span style={{ fontSize: "0.7rem", color: "#475569", marginLeft: "0.5rem" }}>
+                  {buildTime}
+                </span>
+              )}
+            </div>
+            <span className="zivo-build-status-text">
+              {buildOutputOpen ? "▼" : "▶"}{" "}
+              {buildPassed ? `✓ ${files.length} files` : loading ? "Running…" : "No output yet"}
+            </span>
+          </div>
+          {buildOutputOpen && (
+            <div className="zivo-build-panel-body" style={{ overflowY: "auto", flex: 1 }}>
+              {loading && buildOutputLogs.length === 0 && (
+                <div className="zivo-build-running">
+                  <span className="zivo-spinner" />
+                  <span>Generating files…</span>
+                </div>
+              )}
+              {buildOutputLogs.map((log, i) => (
+                <div
+                  key={i}
+                  style={{
+                    fontSize: "0.75rem",
+                    fontFamily: "monospace",
+                    color: log.startsWith("> ❌") ? "#ef4444" : log.startsWith("> ✓") ? "#10b981" : "#64748b",
+                    lineHeight: 1.5,
+                    padding: "1px 0",
+                  }}
+                >
+                  {log}
+                </div>
+              ))}
+              {!loading && buildOutputLogs.length === 0 && (
+                <p className="zivo-build-empty">No builds yet — enter a prompt and click Build.</p>
+              )}
+            </div>
+          )}
         </div>
       </main>
 
@@ -364,16 +755,17 @@ export default function BuilderPage() {
             className="zivo-file-search"
             type="text"
             placeholder="Search files…"
-            readOnly
+            value={fileSearch}
+            onChange={(e) => setFileSearch(e.target.value)}
           />
         </div>
 
         {rightTab === "Files" && (
           <div className="zivo-file-tree">
-            {files.length === 0 ? (
+            {filteredFiles.length === 0 ? (
               <div className="zivo-file-empty">
                 <span className="zivo-file-empty-icon">📁</span>
-                <p>Build a project to see files here.</p>
+                <p>{files.length > 0 ? "No files match your search." : "Build a project to see files here."}</p>
               </div>
             ) : (
               Object.entries(fileGroups).map(([group, groupFiles]) => (
@@ -415,10 +807,16 @@ export default function BuilderPage() {
         )}
 
         {rightTab === "Diff" && (
-          <div className="zivo-file-empty">
-            <span className="zivo-file-empty-icon">±</span>
-            <p>Diff view will show changes after a build.</p>
-          </div>
+          diffFiles.length > 0 ? (
+            <div style={{ height: "100%", overflow: "hidden" }}>
+              <DiffViewer files={diffFiles} />
+            </div>
+          ) : (
+            <div className="zivo-file-empty">
+              <span className="zivo-file-empty-icon">±</span>
+              <p>Diff view will show changes after a build.</p>
+            </div>
+          )
         )}
       </aside>
 
