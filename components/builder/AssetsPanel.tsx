@@ -4,7 +4,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Upload, RefreshCw, Image, LayoutGrid, FileImage, AlertCircle, CheckCircle2, ImageIcon } from 'lucide-react';
+import { Upload, RefreshCw, LayoutGrid, FileImage, AlertCircle, CheckCircle2, ImageIcon } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -271,7 +271,7 @@ export default function AssetsPanel({ token, projectId }: AssetsPanelProps) {
       </Section>
 
       {/* ── Illustrations section ── */}
-      <Section title="Illustrations" icon={<Image size={14} />} hint="Hero and section illustrations · 800×500 SVG recommended">
+      <Section title="Illustrations" icon={<ImageIcon size={14} />} hint="Hero and section illustrations · 800×500 SVG recommended">
         <div style={gridStyle}>
           {DEFAULT_ILLUSTRATIONS.map((asset) => (
             <AssetCard
@@ -392,3 +392,4 @@ const gridStyle: React.CSSProperties = {
   gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))',
   gap: '0.625rem',
 };
+
