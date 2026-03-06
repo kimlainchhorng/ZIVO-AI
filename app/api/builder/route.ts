@@ -27,13 +27,6 @@ export interface BuilderResponse {
   preview_html?: string;
 }
 
-function stripMarkdownFences(text: string): string {
-  return text
-    .replace(/^```(?:json)?\s*\n?/i, "")
-    .replace(/\n?```\s*$/i, "")
-    .trim();
-}
-
 function parseBuilderJSON(text: string): BuilderResponse {
   const cleaned = stripMarkdownFences(text);
   try {
@@ -46,19 +39,8 @@ function parseBuilderJSON(text: string): BuilderResponse {
   }
 }
 
-function parseBuilderJSON(text: string): BuilderResponse {
-  const cleaned = stripMarkdownFences(text);
-  try {
-    return JSON.parse(cleaned);
-  } catch (parseErr) {
-    console.error("[builder] Initial JSON parse failed:", parseErr);
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
-    throw new Error("AI did not return valid JSON");
-  }
-}
 
-const SYSTEM_PROMPT = `You are ZIVO AI, an expert software engineer and architect. You can build:
+const _SYSTEM_PROMPT = `You are ZIVO AI, an expert software engineer and architect. You can build:
 - Full-stack web applications (Next.js, React, Vue, Express, FastAPI)
 - Mobile app backends (REST APIs, GraphQL, WebSocket)
 - Cloud-native microservices
@@ -95,12 +77,12 @@ Rules:
 - Use TailwindCSS for styling, Framer Motion for animations when relevant.
 - Include package.json with all necessary dependencies when generating a full project.`;
 
-const PLAN_SYSTEM_PROMPT = `You are an expert full-stack developer AI assistant. The user wants a project plan, not code yet.
+const _PLAN_SYSTEM_PROMPT = `You are an expert full-stack developer AI assistant. The user wants a project plan, not code yet.
 
 When given an app description, respond ONLY with a valid JSON object matching this exact schema:
 {
   "plan": "markdown string with the build plan"
-}
+}`;
 
 export async function POST(req: Request) {
   try {
@@ -136,7 +118,6 @@ export async function POST(req: Request) {
         model: selectedModel,
         messages: [
           { role: "system", content: CODE_BUILDER_PLAN_PROMPT },
-          { role: "user", content: prompt.trim() },
           { role: "user", content: userMessage },
         ],
         temperature: 0.3,
@@ -155,34 +136,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ plan: parsed.plan });
     }
 
-    // Retry up to 3 attempts if JSON is invalid
-    let parsed: BuilderResponse | null = null;
-    let lastError = "";
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const r = await getClient().chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: CODE_BUILDER_SYSTEM_PROMPT },
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: prompt.trim() },
-        ],
-        temperature: 0.2,
-      });
-
-      const text: string = r.choices[0]?.message?.content ?? "";
-
-      try {
-        parsed = parseBuilderJSON(text);
-        if (Array.isArray(parsed.files)) break;
-        lastError = "Invalid response structure: missing files array";
-        parsed = null;
-      } catch (e) {
-        lastError = (e as Error).message || "AI did not return valid JSON";
-      }
-    }
-
-    if (!parsed) {
-      return NextResponse.json({ error: lastError || "AI did not return valid JSON" }, { status: 502 });
     // ── Streaming mode ────────────────────────────────────────────────────────
     if (stream) {
       const encoder = new TextEncoder();

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import Image from "next/image";
 import { Suspense } from "react";
-import { addHistoryEntry } from "../history/page";
 import WebsiteUpdater from "../../components/WebsiteUpdater";
 import MobileBuilder from "../../components/MobileBuilder";
 import { addHistoryEntry } from "@/lib/history-store";
@@ -157,8 +156,8 @@ const SUGGEST_DEBOUNCE_MS = 800;
 // Max characters of existing code sent to the enhance endpoint
 const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 // Mobile phone frame dimensions for preview
-const MOBILE_FRAME_WIDTH = 375;
-const MOBILE_FRAME_HEIGHT = 812;
+const _MOBILE_FRAME_WIDTH = 375;
+const _MOBILE_FRAME_HEIGHT = 812;
 // Max characters shown in the quick prompt suggestion chip text
 const MAX_PROMPT_SUGGESTION_LENGTH = 72;
 

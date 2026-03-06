@@ -21,6 +21,10 @@ import {
   ChevronUp,
   AlertTriangle,
   ShieldCheck,
+  Rocket,
+  Download,
+  Github,
+  Server,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -69,6 +73,19 @@ interface SSEDoneData {
   buildId?: string;
   buildNumber?: number;
   changedFiles?: ChangedFile[];
+}
+
+// ─── Deploy settings types ─────────────────────────────────────────────────────
+
+interface DeploySettings {
+  deploy_repo_url: string | null;
+  deploy_branch: string;
+  docker_deploy_endpoint: string | null;
+  last_pushed_commit_sha: string | null;
+  last_pushed_at: string | null;
+  last_deployed_commit_sha: string | null;
+  last_deployed_at: string | null;
+  last_deploy_status: string | null;
 }
 
 // ─── Quality Pass types ────────────────────────────────────────────────────────
@@ -238,7 +255,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = 'conversation' | 'files' | 'builds' | 'quality';
+type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'publish';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -268,6 +285,24 @@ export default function ProjectWorkspacePage() {
   const [activeQualityRunId, setActiveQualityRunId] = useState<string | null>(null);
   const [qualityStarting, setQualityStarting] = useState(false);
   const qualityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Publish / Deploy state
+  const [deploySettings, setDeploySettings] = useState<DeploySettings | null>(null);
+  // GitHub push form
+  const [ghPat, setGhPat] = useState('');
+  const [ghRepo, setGhRepo] = useState('');
+  const [ghBranch, setGhBranch] = useState('main');
+  const [ghCreateRepo, setGhCreateRepo] = useState(false);
+  const [ghPrivate, setGhPrivate] = useState(false);
+  const [ghPushing, setGhPushing] = useState(false);
+  const [ghError, setGhError] = useState<string | null>(null);
+  const [ghSuccess, setGhSuccess] = useState<{ repoUrl: string; branch: string; commitSha: string } | null>(null);
+  // Docker deploy form
+  const [dockerEndpoint, setDockerEndpoint] = useState('');
+  const [dockerToken, setDockerToken] = useState('');
+  const [dockerDeploying, setDockerDeploying] = useState(false);
+  const [dockerError, setDockerError] = useState<string | null>(null);
+  const [dockerSuccess, setDockerSuccess] = useState<{ status: string; log: string; deployedAt: string } | null>(null);
 
   // UI
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
@@ -330,10 +365,26 @@ export default function ProjectWorkspacePage() {
     setQualityRuns(data.runs ?? []);
   }, [token, projectId]);
 
+  const fetchDeploySettings = useCallback(async () => {
+    if (!token || !projectId) return;
+    const res = await fetch(`/api/projects/${projectId}/deploy-settings`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    const s = data.settings as DeploySettings | null;
+    if (s) {
+      setDeploySettings(s);
+      setGhBranch(s.deploy_branch ?? 'main');
+      if (s.deploy_repo_url) setGhRepo(s.deploy_repo_url.replace('https://github.com/', ''));
+      if (s.docker_deploy_endpoint) setDockerEndpoint(s.docker_deploy_endpoint);
+    }
+  }, [token, projectId]);
+
   useEffect(() => {
     if (!token) { setLoading(false); return; }
     setLoading(true);
-    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns()])
+    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns(), fetchDeploySettings()])
       .catch((err: unknown) => setError((err as Error).message ?? 'Failed to load workspace'))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -541,6 +592,108 @@ export default function ProjectWorkspacePage() {
     setTimeout(() => setRestoreMessage(null), 4000);
   }
 
+  function handleExportZip() {
+    if (!token || !projectId) return;
+    const url = `/api/projects/${projectId}/export.zip`;
+    const a = document.createElement('a');
+    a.href = url;
+    // Pass token via a temporary fetch to get the blob
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => {
+        if (!res.ok) throw new Error('Export failed');
+        return res.blob();
+      })
+      .then((blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+        a.href = blobUrl;
+        a.download = `${(project?.title ?? 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zip`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+      })
+      .catch((err: unknown) => alert((err as Error).message ?? 'Export failed'));
+  }
+
+  async function handleGithubPush() {
+    if (!token || !projectId || ghPushing) return;
+    if (!ghPat.trim()) { setGhError('Personal Access Token is required.'); return; }
+    if (!ghCreateRepo && !ghRepo.trim()) { setGhError('Repository name (owner/repo) is required.'); return; }
+    setGhPushing(true);
+    setGhError(null);
+    setGhSuccess(null);
+    try {
+      const body: Record<string, unknown> = {
+        pat: ghPat.trim(),
+        branch: ghBranch.trim() || 'main',
+        createRepo: ghCreateRepo,
+        private: ghPrivate,
+      };
+      if (!ghCreateRepo) body.repoFullName = ghRepo.trim();
+      const res = await fetch(`/api/projects/${projectId}/publish/github`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { setGhError(data.error ?? 'GitHub push failed'); return; }
+      const result = data as { repoUrl: string; branch: string; commitSha: string };
+      setGhSuccess(result);
+      setDeploySettings((prev) => ({
+        ...(prev ?? { deploy_branch: 'main', docker_deploy_endpoint: null, last_deployed_commit_sha: null, last_deployed_at: null, last_deploy_status: null }),
+        deploy_repo_url: result.repoUrl,
+        deploy_branch: result.branch,
+        last_pushed_commit_sha: result.commitSha,
+        last_pushed_at: new Date().toISOString(),
+      } as DeploySettings));
+      if (!ghCreateRepo) {
+        // Save endpoint/repo settings
+        await fetch(`/api/projects/${projectId}/deploy-settings`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ deploy_repo_url: result.repoUrl, deploy_branch: result.branch }),
+        });
+      }
+    } finally {
+      setGhPushing(false);
+    }
+  }
+
+  async function handleDockerDeploy() {
+    if (!token || !projectId || dockerDeploying) return;
+    if (!dockerToken.trim()) { setDockerError('Docker deploy token is required.'); return; }
+    setDockerDeploying(true);
+    setDockerError(null);
+    setDockerSuccess(null);
+    try {
+      const body: Record<string, unknown> = { dockerDeployToken: dockerToken.trim() };
+      if (dockerEndpoint.trim()) body.endpoint = dockerEndpoint.trim();
+      const res = await fetch(`/api/projects/${projectId}/publish/docker`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) { setDockerError(data.error ?? 'Docker deploy failed'); return; }
+      const result = data as { status: string; log: string; deployedAt: string };
+      setDockerSuccess(result);
+      setDeploySettings((prev) => prev ? {
+        ...prev,
+        docker_deploy_endpoint: dockerEndpoint.trim() || prev.docker_deploy_endpoint,
+        last_deployed_commit_sha: prev.last_pushed_commit_sha,
+        last_deployed_at: result.deployedAt,
+        last_deploy_status: result.status,
+      } : null);
+      if (dockerEndpoint.trim()) {
+        await fetch(`/api/projects/${projectId}/deploy-settings`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ docker_deploy_endpoint: dockerEndpoint.trim() }),
+        });
+      }
+    } finally {
+      setDockerDeploying(false);
+    }
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   const s = styles;
@@ -722,7 +875,7 @@ export default function ProjectWorkspacePage() {
 
         {/* ── Tabs ── */}
         <div style={s.tabs}>
-          {(['conversation', 'files', 'builds', 'quality'] as Tab[]).map((tab) => (
+          {(['conversation', 'files', 'builds', 'quality', 'publish'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -732,6 +885,7 @@ export default function ProjectWorkspacePage() {
               {tab === 'files' && <FileCode2 size={14} />}
               {tab === 'builds' && <History size={14} />}
               {tab === 'quality' && <ShieldCheck size={14} />}
+              {tab === 'publish' && <Rocket size={14} />}
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'files' && files.length > 0 && (
                 <span style={s.badge}>{files.length}</span>
@@ -748,10 +902,19 @@ export default function ProjectWorkspacePage() {
                   {latestQualityRun.status}
                 </span>
               )}
+              {tab === 'publish' && deploySettings?.last_deploy_status && (
+                <span style={{
+                  ...s.badge,
+                  background: deploySettings.last_deploy_status === 'success' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
+                  color: deploySettings.last_deploy_status === 'success' ? '#10b981' : '#ef4444',
+                }}>
+                  {deploySettings.last_deploy_status}
+                </span>
+              )}
             </button>
           ))}
           <button
-            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); }}
+            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); fetchDeploySettings(); }}
             title="Refresh"
             style={{ ...s.outlineBtn, marginLeft: 'auto' }}
           >
@@ -971,9 +1134,244 @@ export default function ProjectWorkspacePage() {
               )}
             </div>
           )}
-        </div>
+          {/* Publish */}
+          {activeTab === 'publish' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-        {/* Hidden iframe to bust preview cache — key change forces reload */}
+              {/* ── Export ZIP ── */}
+              <section style={{ background: 'rgba(15,15,26,0.6)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '12px', padding: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <Download size={16} color="#818cf8" />
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#e2e8f0' }}>Export ZIP</h3>
+                </div>
+                <p style={{ margin: '0 0 0.875rem', fontSize: '0.82rem', color: '#64748b' }}>
+                  Download all current project files as a ZIP archive.
+                </p>
+                <button
+                  onClick={handleExportZip}
+                  disabled={files.length === 0}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                    padding: '0.5rem 1.1rem', borderRadius: '8px',
+                    background: files.length === 0 ? 'rgba(51,65,85,0.4)' : 'rgba(99,102,241,0.15)',
+                    color: files.length === 0 ? '#475569' : '#818cf8',
+                    border: '1px solid rgba(99,102,241,0.25)',
+                    cursor: files.length === 0 ? 'not-allowed' : 'pointer',
+                    fontSize: '0.85rem', fontWeight: 600,
+                  }}
+                >
+                  <Download size={14} /> Download ZIP
+                </button>
+                {files.length === 0 && (
+                  <p style={{ margin: '0.5rem 0 0', fontSize: '0.78rem', color: '#ef4444' }}>No files to export. Run Continue Build first.</p>
+                )}
+              </section>
+
+              {/* ── Push to GitHub ── */}
+              <section style={{ background: 'rgba(15,15,26,0.6)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '12px', padding: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <Github size={16} color="#818cf8" />
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#e2e8f0' }}>Push to GitHub</h3>
+                </div>
+                <p style={{ margin: '0 0 0.875rem', fontSize: '0.82rem', color: '#64748b' }}>
+                  Commit all project files to a GitHub repository using a Personal Access Token (PAT).
+                </p>
+
+                {/* Last push status */}
+                {deploySettings?.last_pushed_commit_sha && (
+                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.875rem', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem', fontSize: '0.78rem', color: '#10b981' }}>
+                    <CheckCircle2 size={13} />
+                    <span>Last push: <code style={{ fontFamily: 'monospace' }}>{deploySettings.last_pushed_commit_sha.slice(0, 8)}</code>
+                      {deploySettings.deploy_repo_url && <> → <a href={deploySettings.deploy_repo_url} target="_blank" rel="noreferrer" style={{ color: '#818cf8' }}>{deploySettings.deploy_repo_url.replace('https://github.com/', '')}</a></>}
+                      {deploySettings.last_pushed_at && <> · {new Date(deploySettings.last_pushed_at).toLocaleString()}</>}
+                    </span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  <label style={s.formLabel}>
+                    GitHub PAT <span style={{ color: '#ef4444' }}>*</span>
+                    <input
+                      type="password"
+                      value={ghPat}
+                      onChange={(e) => setGhPat(e.target.value)}
+                      placeholder="ghp_…"
+                      style={s.formInput}
+                      autoComplete="off"
+                    />
+                  </label>
+
+                  <div style={{ display: 'flex', gap: '0.625rem' }}>
+                    <label style={{ ...s.formLabel, flex: 1 }}>
+                      Repository <span style={{ color: '#475569', fontSize: '0.72rem' }}>{ghCreateRepo ? '(auto-created)' : 'owner/repo'}</span>
+                      <input
+                        type="text"
+                        value={ghRepo}
+                        onChange={(e) => setGhRepo(e.target.value)}
+                        placeholder="owner/my-repo"
+                        disabled={ghCreateRepo}
+                        style={{ ...s.formInput, opacity: ghCreateRepo ? 0.5 : 1 }}
+                      />
+                    </label>
+                    <label style={{ ...s.formLabel, width: '120px' }}>
+                      Branch
+                      <input
+                        type="text"
+                        value={ghBranch}
+                        onChange={(e) => setGhBranch(e.target.value)}
+                        placeholder="main"
+                        style={s.formInput}
+                      />
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', fontSize: '0.82rem', color: '#94a3b8' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={ghCreateRepo} onChange={(e) => setGhCreateRepo(e.target.checked)} />
+                      Auto-create repo
+                    </label>
+                    {ghCreateRepo && (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={ghPrivate} onChange={(e) => setGhPrivate(e.target.checked)} />
+                        Private repo
+                      </label>
+                    )}
+                  </div>
+
+                  {ghError && (
+                    <div style={{ ...s.errorBox, marginTop: 0 }}>
+                      <AlertCircle size={14} /> {ghError}
+                    </div>
+                  )}
+
+                  {ghSuccess && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '0.625rem 0.875rem', fontSize: '0.8rem', color: '#10b981' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <CheckCircle2 size={14} /> Pushed successfully!
+                      </div>
+                      <div>Commit: <code style={{ fontFamily: 'monospace' }}>{ghSuccess.commitSha.slice(0, 12)}</code></div>
+                      <div>Repo: <a href={ghSuccess.repoUrl} target="_blank" rel="noreferrer" style={{ color: '#818cf8' }}>{ghSuccess.repoUrl}</a></div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleGithubPush}
+                    disabled={ghPushing || files.length === 0}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.4rem',
+                      padding: '0.55rem 1.25rem', borderRadius: '8px',
+                      background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                      color: '#fff', border: 'none', cursor: 'pointer',
+                      fontWeight: 600, fontSize: '0.85rem',
+                      opacity: (ghPushing || files.length === 0) ? 0.6 : 1,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    {ghPushing ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Pushing…</> : <><Github size={14} /> Push to GitHub</>}
+                  </button>
+                  {files.length === 0 && <p style={{ margin: 0, fontSize: '0.78rem', color: '#ef4444' }}>No files to push. Run Continue Build first.</p>}
+                </div>
+              </section>
+
+              {/* ── Deploy to Docker ── */}
+              <section style={{ background: 'rgba(15,15,26,0.6)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '12px', padding: '1.25rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                  <Server size={16} color="#818cf8" />
+                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#e2e8f0' }}>Deploy to Docker</h3>
+                </div>
+                <p style={{ margin: '0 0 0.875rem', fontSize: '0.82rem', color: '#64748b' }}>
+                  Trigger your Docker server to pull the latest commit from GitHub and run{' '}
+                  <code style={{ fontFamily: 'monospace', color: '#94a3b8' }}>docker compose up -d</code>.
+                  Push to GitHub first to get a commit SHA.
+                </p>
+
+                {/* Last deploy status */}
+                {deploySettings?.last_deploy_status && (
+                  <div style={{
+                    display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.875rem',
+                    background: deploySettings.last_deploy_status === 'success' ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)',
+                    border: `1px solid ${deploySettings.last_deploy_status === 'success' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                    borderRadius: '8px', padding: '0.5rem 0.75rem', fontSize: '0.78rem',
+                    color: deploySettings.last_deploy_status === 'success' ? '#10b981' : '#ef4444',
+                  }}>
+                    {deploySettings.last_deploy_status === 'success' ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
+                    <span>Last deploy: <strong>{deploySettings.last_deploy_status}</strong>
+                      {deploySettings.last_deployed_commit_sha && <> · commit <code style={{ fontFamily: 'monospace' }}>{deploySettings.last_deployed_commit_sha.slice(0, 8)}</code></>}
+                      {deploySettings.last_deployed_at && <> · {new Date(deploySettings.last_deployed_at).toLocaleString()}</>}
+                    </span>
+                  </div>
+                )}
+
+                {!deploySettings?.last_pushed_commit_sha && (
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem', marginBottom: '0.875rem', fontSize: '0.78rem', color: '#f59e0b' }}>
+                    <AlertTriangle size={13} style={{ marginTop: '1px', flexShrink: 0 }} />
+                    No commit SHA found. Push to GitHub first.
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  <label style={s.formLabel}>
+                    Webhook Endpoint <span style={{ color: '#ef4444' }}>*</span>
+                    <input
+                      type="url"
+                      value={dockerEndpoint}
+                      onChange={(e) => setDockerEndpoint(e.target.value)}
+                      placeholder="https://my-server.example.com/deploy"
+                      style={s.formInput}
+                    />
+                  </label>
+                  <label style={s.formLabel}>
+                    Deploy Token <span style={{ color: '#ef4444' }}>*</span>
+                    <span style={{ fontWeight: 400, color: '#475569', fontSize: '0.72rem', marginLeft: '0.25rem' }}>(not stored — paste each time)</span>
+                    <input
+                      type="password"
+                      value={dockerToken}
+                      onChange={(e) => setDockerToken(e.target.value)}
+                      placeholder="your-deploy-secret"
+                      style={s.formInput}
+                      autoComplete="off"
+                    />
+                  </label>
+
+                  {dockerError && (
+                    <div style={{ ...s.errorBox, marginTop: 0 }}>
+                      <AlertCircle size={14} /> {dockerError}
+                    </div>
+                  )}
+
+                  {dockerSuccess && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '0.625rem 0.875rem', fontSize: '0.8rem', color: '#10b981' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <CheckCircle2 size={14} /> Deploy triggered — status: <strong>{dockerSuccess.status}</strong>
+                      </div>
+                      {dockerSuccess.log && (
+                        <pre style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', whiteSpace: 'pre-wrap', color: '#94a3b8', background: '#07070f', borderRadius: '6px', padding: '0.5rem', maxHeight: '200px', overflow: 'auto' }}>
+                          {dockerSuccess.log}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleDockerDeploy}
+                    disabled={dockerDeploying || !deploySettings?.last_pushed_commit_sha}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.4rem',
+                      padding: '0.55rem 1.25rem', borderRadius: '8px',
+                      background: 'linear-gradient(135deg,#0ea5e9,#0284c7)',
+                      color: '#fff', border: 'none', cursor: 'pointer',
+                      fontWeight: 600, fontSize: '0.85rem',
+                      opacity: (dockerDeploying || !deploySettings?.last_pushed_commit_sha) ? 0.6 : 1,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    {dockerDeploying ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Deploying…</> : <><Rocket size={14} /> Deploy</>}
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
+        </div>
         <iframe key={iframeKey} src="about:blank" style={{ display: 'none' }} title="preview-cache-bust" />
       </div>
 
@@ -1219,5 +1617,26 @@ const styles = {
     textDecoration: 'none',
     fontWeight: 600,
     fontSize: '0.9rem',
+  } as React.CSSProperties,
+
+  formLabel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem',
+    fontSize: '0.82rem',
+    fontWeight: 600,
+    color: '#94a3b8',
+  } as React.CSSProperties,
+
+  formInput: {
+    padding: '0.5rem 0.75rem',
+    borderRadius: '7px',
+    background: 'rgba(15,23,42,0.8)',
+    border: '1px solid rgba(99,102,241,0.2)',
+    color: '#e2e8f0',
+    fontSize: '0.875rem',
+    width: '100%',
+    boxSizing: 'border-box' as const,
+    outline: 'none',
   } as React.CSSProperties,
 };

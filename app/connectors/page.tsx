@@ -53,15 +53,6 @@ function loadConnectorState(): ConnectorState {
   return DEFAULT_STATE;
 }
 
-function saveConnectorState(state: ConnectorState): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem('connectorState', JSON.stringify(state));
-  } catch {
-    // ignore storage errors
-  }
-  return DEFAULT_STATE;
-}
 
 function saveConnectorState(state: ConnectorState): void {
   if (typeof window === 'undefined') return;
@@ -83,70 +74,6 @@ function saveConnectorState(state: ConnectorState): void {
   }
 }
 
-const ConnectorComponent = () => {
-  const [connState, setConnState] = useState<ConnectorState>(DEFAULT_STATE);
-
-  useEffect(() => {
-    setConnState(loadConnectorState());
-  }, []);
-
-  function updateState(partial: Partial<ConnectorState>) {
-    setConnState((prev) => {
-      const next = { ...prev, ...partial };
-      saveConnectorState(next);
-      return next;
-    });
-  }
-
-  return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Connectors</h1>
-
-      {/* GitHub Connector */}
-      <div className="border rounded-lg p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">GitHub</h2>
-          <span className={`px-2 py-1 rounded text-sm ${connState.githubConnected ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-            {connState.githubConnected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-        {!connState.githubConnected ? (
-          <div className="space-y-2">
-            <input
-              type="password"
-              placeholder="GitHub Personal Access Token"
-              value={connState.modalToken}
-              onChange={(e) => updateState({ modalToken: e.target.value })}
-              className="w-full border rounded px-3 py-2 text-sm"
-            />
-            <input
-              type="text"
-              placeholder="Repository (owner/repo)"
-              value={connState.modalRepo}
-              onChange={(e) => updateState({ modalRepo: e.target.value })}
-              className="w-full border rounded px-3 py-2 text-sm"
-            />
-            <button
-              onClick={() => {
-                if (connState.modalToken) updateState({ githubConnected: true });
-              }}
-              className="bg-gray-900 text-white px-4 py-2 rounded text-sm hover:bg-gray-700"
-            >
-              Connect GitHub
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-1 text-sm text-gray-600">
-            <p>Repo: <span className="font-medium text-gray-900">{connState.modalRepo || '(none)'}</span></p>
-            <button
-              onClick={() => updateState({ githubConnected: false, modalToken: '', modalRepo: '' })}
-              className="text-red-600 hover:underline text-xs"
-            >
-              Disconnect
-            </button>
-          </div>
-        )}
-      </div>
 
 interface TestApiResult {
   success: boolean;
@@ -257,7 +184,7 @@ const ConnectorComponent = () => {
   const [resendError, setResendError] = useState<string>('');
   const [resendLoading, setResendLoading] = useState(false);
   const [storageError, setStorageError] = useState<string>('');
-  const [mapsError, setMapsError] = useState<string>('');
+  const [_mapsError, setMapsError] = useState<string>('');
 
   function updateState(patch: Partial<ConnectorState>): void {
     setConnState((prev) => {
@@ -418,7 +345,7 @@ const ConnectorComponent = () => {
     setStorageError('');
   }
 
-  function handleMapsConnect(e: React.FormEvent) {
+  function _handleMapsConnect(e: React.FormEvent) {
     e.preventDefault();
     setMapsError('');
     if (!connState.mapsApiKey.trim()) {
@@ -428,7 +355,7 @@ const ConnectorComponent = () => {
     updateState({ mapsConnected: true });
   }
 
-  function handleMapsDisconnect() {
+  function _handleMapsDisconnect() {
     updateState({ mapsConnected: false, mapsApiKey: '' });
     setMapsError('');
   }
@@ -671,146 +598,6 @@ const ConnectorComponent = () => {
             </div>
             {storageError && <p style={{ color: '#f87171', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>{storageError}</p>}
             <button type="submit" style={connectBtnStyle}>Connect Storage</button>
-          </form>
-        )}
-      </section>
-
-  function updateState(partial: Partial<ConnectorState>) {
-    setConnState((prev) => {
-      const next = { ...prev, ...partial };
-      saveConnectorState(next);
-      return next;
-    });
-  }
-
-  return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Connectors</h1>
-
-      {/* GitHub Connector */}
-      <div className="border rounded-lg p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">GitHub</h2>
-          <span className={`px-2 py-1 rounded text-sm ${connState.githubConnected ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-            {connState.githubConnected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-        {!connState.githubConnected ? (
-          <div className="space-y-2">
-            <input
-              type="password"
-              placeholder="GitHub Personal Access Token"
-              value={connState.modalToken}
-              onChange={(e) => updateState({ modalToken: e.target.value })}
-              className="w-full border rounded px-3 py-2 text-sm"
-            />
-            <input
-              type="text"
-              placeholder="Repository (owner/repo)"
-              value={connState.modalRepo}
-              onChange={(e) => updateState({ modalRepo: e.target.value })}
-              className="w-full border rounded px-3 py-2 text-sm"
-            />
-            <button
-              onClick={() => {
-                if (connState.modalToken) updateState({ githubConnected: true });
-              }}
-              className="bg-gray-900 text-white px-4 py-2 rounded text-sm hover:bg-gray-700"
-            >
-              Connect GitHub
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-1 text-sm text-gray-600">
-            <p>Repo: <span className="font-medium text-gray-900">{connState.modalRepo || '(none)'}</span></p>
-            <button
-              onClick={() => updateState({ githubConnected: false, modalToken: '', modalRepo: '' })}
-              className="text-red-600 hover:underline text-xs"
-            >
-              Disconnect
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Supabase Connector */}
-      <div className="border rounded-lg p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Supabase</h2>
-          <span className={`px-2 py-1 rounded text-sm ${connState.supabaseConnected ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
-            {connState.supabaseConnected ? 'Connected' : 'Disconnected'}
-          </span>
-        </div>
-        {!connState.supabaseConnected ? (
-          <div className="space-y-2">
-            <input
-              type="text"
-              placeholder="Supabase Project URL"
-              value={connState.supabaseUrl}
-              onChange={(e) => updateState({ supabaseUrl: e.target.value })}
-              className="w-full border rounded px-3 py-2 text-sm"
-            />
-            <input
-              type="password"
-              placeholder="Supabase Anon Key"
-              value={connState.supabaseAnonKey}
-              onChange={(e) => updateState({ supabaseAnonKey: e.target.value })}
-              className="w-full border rounded px-3 py-2 text-sm"
-            />
-            <button
-              onClick={() => {
-                if (connState.supabaseUrl && connState.supabaseAnonKey) {
-                  updateState({ supabaseConnected: true });
-                }
-              }}
-              className="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-500"
-            >
-              Connect Supabase
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-1 text-sm text-gray-600">
-            <p>URL: <span className="font-medium text-gray-900">{connState.supabaseUrl}</span></p>
-            <button
-              onClick={() => updateState({ supabaseConnected: false, supabaseUrl: '', supabaseAnonKey: '' })}
-              className="text-red-600 hover:underline text-xs"
-            >
-              Disconnect
-            </button>
-          </div>
-        )}
-      </div>
-      {/* Maps Section */}
-      <section style={sectionStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ width: 28, height: 28, borderRadius: 6, background: '#22c55e', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.85rem', color: '#1f2937' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z"/></svg>
-            </span>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0 }}>Maps</h2>
-          </div>
-          {connState.mapsConnected && <span style={connectedBadge}>Connected</span>}
-        </div>
-        <p style={{ fontSize: '0.82rem', color: '#9ca3af', margin: '0 0 1rem' }}>
-          Google Maps API key config, geocoding test
-        </p>
-        {connState.mapsConnected ? (
-          <div>
-            <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', color: '#d1d5db' }}>
-              Google Maps API key configured.
-            </p>
-            <button onClick={handleMapsDisconnect} style={disconnectBtnStyle}>Disconnect</button>
-          </div>
-        ) : (
-          <form onSubmit={handleMapsConnect}>
-            <div style={{ marginBottom: '0.75rem' }}>
-              <label style={labelStyle}>Google Maps API Key</label>
-              <input type="password" value={connState.mapsApiKey}
-                onChange={(e) => updateState({ mapsApiKey: e.target.value })}
-                placeholder="AIzaSy..." style={inputStyle} />
-            </div>
-            {mapsError && <p style={{ color: '#f87171', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>{mapsError}</p>}
-            <button type="submit" style={connectBtnStyle}>Connect Maps</button>
           </form>
         )}
       </section>

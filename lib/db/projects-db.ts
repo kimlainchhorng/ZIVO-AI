@@ -522,3 +522,65 @@ export async function deleteProject(token: string, projectId: string): Promise<v
   const { error } = await client.from("projects").delete().eq("id", projectId);
   if (error) throw new Error(`deleteProject: ${error.message}`);
 }
+
+// ─── Project Deploy Settings ───────────────────────────────────────────────────
+
+export interface DbDeploySettings {
+  id: string;
+  project_id: string;
+  deploy_repo_url: string | null;
+  deploy_branch: string;
+  docker_deploy_endpoint: string | null;
+  last_pushed_commit_sha: string | null;
+  last_pushed_at: string | null;
+  last_deployed_commit_sha: string | null;
+  last_deployed_at: string | null;
+  last_deploy_status: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type UpsertDeploySettingsInput = Partial<
+  Pick<
+    DbDeploySettings,
+    | "deploy_repo_url"
+    | "deploy_branch"
+    | "docker_deploy_endpoint"
+    | "last_pushed_commit_sha"
+    | "last_pushed_at"
+    | "last_deployed_commit_sha"
+    | "last_deployed_at"
+    | "last_deploy_status"
+  >
+>;
+
+/** Returns the deploy settings for a project, or null if not yet set. */
+export async function getDeploySettings(
+  token: string,
+  projectId: string
+): Promise<DbDeploySettings | null> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_deploy_settings")
+    .select("*")
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (error) throw new Error(`getDeploySettings: ${error.message}`);
+  return data as DbDeploySettings | null;
+}
+
+/** Upserts (inserts or updates) deploy settings for a project. */
+export async function upsertDeploySettings(
+  token: string,
+  projectId: string,
+  updates: UpsertDeploySettingsInput
+): Promise<DbDeploySettings> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_deploy_settings")
+    .upsert({ project_id: projectId, ...updates }, { onConflict: "project_id" })
+    .select()
+    .single();
+  if (error) throw new Error(`upsertDeploySettings: ${error.message}`);
+  return data as DbDeploySettings;
+}

@@ -82,9 +82,6 @@ Rules:
   "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
   "summary": "Brief description of what was built",
   "notes": "Any additional notes"
-}
-${BASE_RULES}`;
-  "description": "..."
 }`;
 
 const SYSTEM_PROMPT_STANDARD = `You are ZIVO AI — the world's most advanced AI builder, generating code that rivals Lovable, v0.dev, and Bolt.new.
@@ -310,18 +307,6 @@ function stripMarkdownFences(text: string): string {
 }
 
 function parseJSON(text: string): GenerateSiteResponse {
-  const cleaned = text
-    .replace(/^```(?:json)?\s*\n?/i, "")
-    .replace(/\n?```\s*$/i, "")
-    .trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const match = cleaned.match(/\{[\s\S]*\}/);
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const match = cleaned.match(/\{[\s\S]*\}/);
   const clean = stripMarkdownFences(text);
   try {
     return JSON.parse(clean);
