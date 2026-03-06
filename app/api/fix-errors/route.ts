@@ -20,6 +20,7 @@ export interface FixErrorsRequest {
   files: FixFile[];
   errors: BuildError[];
   iteration?: number;
+  broadFix?: boolean;
 }
 
 export interface FixErrorsResponse {
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
     const files: FixFile[] = Array.isArray(body?.files) ? body.files : [];
     const errors: BuildError[] = Array.isArray(body?.errors) ? body.errors : [];
     const iteration: number = typeof body?.iteration === "number" ? body.iteration : 0;
+    const broadFix: boolean = body?.broadFix === true;
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: "OPENAI_API_KEY is missing" }, { status: 500 });
@@ -85,6 +87,7 @@ export async function POST(req: Request) {
             rule: e.type,
           })),
           projectContext,
+          broadFix,
         });
 
         fixedFiles[fileIndex] = {
