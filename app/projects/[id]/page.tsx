@@ -21,6 +21,11 @@ import {
   ChevronUp,
   AlertTriangle,
   ShieldCheck,
+  Rocket,
+  Download,
+  Github,
+  Container,
+  ExternalLink,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -238,7 +243,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = 'conversation' | 'files' | 'builds' | 'quality';
+type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'publish';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -268,6 +273,17 @@ export default function ProjectWorkspacePage() {
   const [activeQualityRunId, setActiveQualityRunId] = useState<string | null>(null);
   const [qualityStarting, setQualityStarting] = useState(false);
   const qualityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Publish state
+  const [ghRepoName, setGhRepoName] = useState('');
+  const [ghPat, setGhPat] = useState('');
+  const [ghPublishing, setGhPublishing] = useState(false);
+  const [ghResult, setGhResult] = useState<{ repoUrl?: string; commitSha?: string; error?: string } | null>(null);
+  const [dockerEndpoint, setDockerEndpoint] = useState('');
+  const [dockerToken, setDockerToken] = useState('');
+  const [dockerDeploying, setDockerDeploying] = useState(false);
+  const [dockerResult, setDockerResult] = useState<{ success?: boolean; status?: string; message?: string; error?: string } | null>(null);
+  const [zipDownloading, setZipDownloading] = useState(false);
 
   // UI
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
@@ -541,6 +557,74 @@ export default function ProjectWorkspacePage() {
     setTimeout(() => setRestoreMessage(null), 4000);
   }
 
+  // ─── Publish handlers ──────────────────────────────────────────────────────
+
+  async function handleExportZip() {
+    if (!token || !projectId) return;
+    setZipDownloading(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/export.zip`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ error: 'Download failed' }))).error);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project?.title ?? 'project'}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setZipDownloading(false);
+    }
+  }
+
+  async function handleGithubPublish() {
+    if (!token || !projectId) return;
+    if (!ghRepoName.trim()) { alert('Enter a repository name'); return; }
+    if (!ghPat.trim()) { alert('Enter your GitHub PAT'); return; }
+    setGhPublishing(true);
+    setGhResult(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/publish/github`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ repoName: ghRepoName.trim(), githubToken: ghPat.trim() }),
+      });
+      const data = await res.json() as { repoUrl?: string; commitSha?: string; error?: string };
+      setGhResult(data);
+    } catch (err) {
+      setGhResult({ error: err instanceof Error ? err.message : 'Unknown error' });
+    } finally {
+      setGhPublishing(false);
+    }
+  }
+
+  async function handleDockerDeploy() {
+    if (!token || !projectId) return;
+    if (!dockerEndpoint.trim()) { alert('Enter a Docker deploy endpoint URL'); return; }
+    if (!dockerToken.trim()) { alert('Enter the Docker deploy token'); return; }
+    setDockerDeploying(true);
+    setDockerResult(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/publish/docker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ endpoint: dockerEndpoint.trim(), token: dockerToken.trim() }),
+      });
+      const data = await res.json() as { success?: boolean; status?: string; message?: string; error?: string };
+      setDockerResult(data);
+    } catch (err) {
+      setDockerResult({ error: err instanceof Error ? err.message : 'Unknown error' });
+    } finally {
+      setDockerDeploying(false);
+    }
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   const s = styles;
@@ -722,7 +806,7 @@ export default function ProjectWorkspacePage() {
 
         {/* ── Tabs ── */}
         <div style={s.tabs}>
-          {(['conversation', 'files', 'builds', 'quality'] as Tab[]).map((tab) => (
+          {(['conversation', 'files', 'builds', 'quality', 'publish'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -732,6 +816,7 @@ export default function ProjectWorkspacePage() {
               {tab === 'files' && <FileCode2 size={14} />}
               {tab === 'builds' && <History size={14} />}
               {tab === 'quality' && <ShieldCheck size={14} />}
+              {tab === 'publish' && <Rocket size={14} />}
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'files' && files.length > 0 && (
                 <span style={s.badge}>{files.length}</span>
@@ -969,6 +1054,165 @@ export default function ProjectWorkspacePage() {
                   <QualityRunCard key={run.id} run={run} isActive={run.id === activeQualityRunId} />
                 ))
               )}
+            </div>
+          )}
+
+          {/* ── Publish ── */}
+          {activeTab === 'publish' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+              {/* Export ZIP */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Download size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Export ZIP</p>
+                </div>
+                <p style={s.panelDesc}>Download all project files as a ZIP archive.</p>
+                <button
+                  onClick={handleExportZip}
+                  disabled={zipDownloading}
+                  style={{
+                    ...s.primaryBtn,
+                    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                    color: '#fff',
+                    cursor: zipDownloading ? 'not-allowed' : 'pointer',
+                    opacity: zipDownloading ? 0.6 : 1,
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  {zipDownloading
+                    ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Preparing…</>
+                    : <><Download size={14} /> Download ZIP</>}
+                </button>
+              </div>
+
+              {/* Push to GitHub */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Github size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Push to GitHub</p>
+                </div>
+                <p style={s.panelDesc}>
+                  Push project files to a GitHub repository using a Personal Access Token.
+                  The repo will be created if it does not exist.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Repository name (e.g. my-awesome-app)"
+                    value={ghRepoName}
+                    onChange={(e) => setGhRepoName(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <input
+                    type="password"
+                    placeholder="GitHub PAT (repo scope required)"
+                    value={ghPat}
+                    onChange={(e) => setGhPat(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <button
+                    onClick={handleGithubPublish}
+                    disabled={ghPublishing}
+                    style={{
+                      ...s.primaryBtn,
+                      background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                      color: '#fff',
+                      cursor: ghPublishing ? 'not-allowed' : 'pointer',
+                      opacity: ghPublishing ? 0.6 : 1,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    {ghPublishing
+                      ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Pushing…</>
+                      : <><Github size={14} /> Push to GitHub</>}
+                  </button>
+                  {ghResult && (
+                    ghResult.error
+                      ? <div style={s.errorBox}><XCircle size={14} /> {ghResult.error}</div>
+                      : <div style={{
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          padding: '0.625rem 0.75rem', borderRadius: '8px',
+                          background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)',
+                          color: '#10b981', fontSize: '0.85rem',
+                        }}>
+                          <CheckCircle2 size={14} />
+                          <span>Published! </span>
+                          {ghResult.repoUrl && (
+                            <a href={ghResult.repoUrl} target="_blank" rel="noopener noreferrer"
+                              style={{ color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {ghResult.repoUrl} <ExternalLink size={12} />
+                            </a>
+                          )}
+                        </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Deploy to Docker */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Container size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Deploy to Docker Server</p>
+                </div>
+                <p style={s.panelDesc}>
+                  Trigger a deploy on your self-hosted Docker server.
+                  See <a href="https://github.com/kimlainchhorng/ZIVO-AI/blob/main/docs/docker-deploy-agent.md"
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ color: '#818cf8' }}>Docker Deploy Agent docs</a> to set up your server.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  <input
+                    type="url"
+                    placeholder="Docker deploy endpoint URL (e.g. https://my-server:4242/deploy)"
+                    value={dockerEndpoint}
+                    onChange={(e) => setDockerEndpoint(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Deploy token (shared secret with your Docker server)"
+                    value={dockerToken}
+                    onChange={(e) => setDockerToken(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <button
+                    onClick={handleDockerDeploy}
+                    disabled={dockerDeploying}
+                    style={{
+                      ...s.primaryBtn,
+                      background: 'linear-gradient(135deg,#0ea5e9,#0284c7)',
+                      color: '#fff',
+                      cursor: dockerDeploying ? 'not-allowed' : 'pointer',
+                      opacity: dockerDeploying ? 0.6 : 1,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    {dockerDeploying
+                      ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Deploying…</>
+                      : <><Rocket size={14} /> Deploy</>}
+                  </button>
+                  {dockerResult && (
+                    dockerResult.error
+                      ? <div style={s.errorBox}><XCircle size={14} /> {dockerResult.error}</div>
+                      : <div style={{
+                          padding: '0.625rem 0.75rem', borderRadius: '8px',
+                          background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)',
+                          color: '#10b981', fontSize: '0.85rem',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <CheckCircle2 size={14} />
+                            <strong>Deploy triggered</strong>
+                            {dockerResult.status && <span style={{ color: '#64748b' }}>· {dockerResult.status}</span>}
+                          </div>
+                          {dockerResult.message && (
+                            <p style={{ margin: '0.25rem 0 0', color: '#94a3b8', fontSize: '0.8rem' }}>{dockerResult.message}</p>
+                          )}
+                        </div>
+                  )}
+                </div>
+              </div>
+
             </div>
           )}
         </div>
