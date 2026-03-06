@@ -1,20 +1,21 @@
 /**
  * POST /api/projects/[id]/quality/start
  *
- * Starts a Quality Pass (build + lint + typecheck + optional auto-fix loop)
- * against the current project_files workspace.
+ * Schedules a Quality Pass (build + lint + typecheck) job to be executed by
+ * the remote runner.  Checks no longer run inside the app container.
  *
  * Auth: Bearer token required. Caller must own the project.
  *
  * Body (optional JSON):
- *   { maxRetries?: number }   — auto-fix retries (0–3, default 3)
+ *   {
+ *     previousRunId?: string  — if provided, triggers app-side auto-fix:
+ *                               fetches failed checks from the previous job,
+ *                               applies AI patches to project_files, then
+ *                               queues a new job.
+ *   }
  *
  * Returns: { runId: string }
- * The run is processed asynchronously; poll GET .../quality/status?runId=<id>
- * for results.
- *
- * ⚠️  SECURITY: This endpoint executes arbitrary project files as child
- * processes inside the app container. See lib/quality-runner.ts for details.
+ * Poll GET .../quality/status?runId=<id> for results.
  */
 
 import { NextResponse } from "next/server";
@@ -23,11 +24,11 @@ import {
   getUserFromToken,
   getProjectById,
   getProjectFiles,
-  createQualityRun,
-  updateQualityRun,
+  getProjectJob,
+  createProjectJob,
   upsertProjectFiles,
 } from "@/lib/db/projects-db";
-import { runQualityPass, type QualityFile } from "@/lib/quality-runner";
+import { applyAIFix, type QualityFile, type CheckResult } from "@/lib/quality-runner";
 
 export const runtime = "nodejs";
 
@@ -58,70 +59,61 @@ export async function POST(req: Request, { params }: RouteParams) {
   }
 
   // ── Parse body ──────────────────────────────────────────────────────────────
-  let maxRetries = 3;
+  let previousRunId: string | null = null;
   try {
-    const body = await req.json().catch(() => ({})) as { maxRetries?: unknown };
-    if (typeof body.maxRetries === "number") {
-      maxRetries = Math.min(Math.max(0, body.maxRetries), 3);
+    const body = await req.json().catch(() => ({})) as { previousRunId?: unknown };
+    if (typeof body.previousRunId === "string" && body.previousRunId) {
+      previousRunId = body.previousRunId;
     }
   } catch {
     // ignore parse errors — use defaults
   }
 
-  // ── Create queued run ───────────────────────────────────────────────────────
-  const run = await createQualityRun(token, projectId, maxRetries);
+  // ── Optional: app-side auto-fix before scheduling ───────────────────────────
+  // When previousRunId is supplied the app reads the failed job's check results,
+  // asks the LLM to generate patches, and applies them to project_files before
+  // queuing the next attempt.
+  let attempt = 1;
+  if (previousRunId) {
+    const prevJob = await getProjectJob(token, previousRunId);
+    if (prevJob && prevJob.project_id === projectId && prevJob.status === "failed") {
+      attempt = prevJob.attempt + 1;
 
-  // ── Fire-and-forget async execution ────────────────────────────────────────
-  // We kick off the quality pass in the background so the HTTP response is
-  // immediate.  Progress is persisted to project_quality_runs.
-  setImmediate(async () => {
-    try {
-      // Mark as running
-      await updateQualityRun(token, run.id, {
-        status: "running",
-        started_at: new Date().toISOString(),
-      });
+      // Extract failed checks from result_json
+      const resultJson = prevJob.result_json as { checks?: CheckResult[] } | null;
+      const failedChecks: CheckResult[] = (resultJson?.checks ?? []).filter((c) => !c.passed);
 
-      // Load project files
-      const dbFiles = await getProjectFiles(token, projectId);
-      const files: QualityFile[] = dbFiles.map((f) => ({ path: f.path, content: f.content }));
+      if (failedChecks.length > 0) {
+        // Load current project files
+        const dbFiles = await getProjectFiles(token, projectId);
+        const files: QualityFile[] = dbFiles.map((f) => ({ path: f.path, content: f.content }));
 
-      // Execute quality pass
-      const result = await runQualityPass(files, maxRetries);
+        // Ask the LLM to patch failing files (auto-fix stays in app per spec)
+        const patchedFiles = await applyAIFix(files, failedChecks);
 
-      // Persist fixed files back to project_files when AI auto-fix ran
-      if (result.fixAttempts > 0 && result.passed) {
-        await upsertProjectFiles(
-          token,
-          projectId,
-          result.finalFiles.map((f) => ({ path: f.path, content: f.content, generated_by: "quality-autofix" }))
-        );
-      }
-
-      // Persist result
-      await updateQualityRun(token, run.id, {
-        status: result.passed ? "passed" : "failed",
-        logs: result.logs,
-        checks: result.checks,
-        fix_attempts: result.fixAttempts,
-        patches: result.fixAttempts > 0
-          ? result.finalFiles.map((f) => ({ path: f.path }))
-          : null,
-        finished_at: new Date().toISOString(),
-      });
-    } catch (err: unknown) {
-      // Mark as failed with error log
-      try {
-        await updateQualityRun(token, run.id, {
-          status: "failed",
-          logs: `Quality pass executor error: ${(err as Error)?.message ?? String(err)}`,
-          finished_at: new Date().toISOString(),
+        // Persist patched files only when something changed
+        const changed = patchedFiles.filter((pf) => {
+          const orig = files.find((f) => f.path === pf.path);
+          return !orig || orig.content !== pf.content;
         });
-      } catch {
-        // swallow — best effort
+        if (changed.length > 0) {
+          await upsertProjectFiles(
+            token,
+            projectId,
+            changed.map((f) => ({ path: f.path, content: f.content, generated_by: "quality-autofix" }))
+          );
+        }
       }
     }
-  });
+  }
 
-  return NextResponse.json({ runId: run.id }, { status: 202 });
+  // ── Determine max_attempts (cap at 4 = initial + 3 retries) ─────────────────
+  const maxAttempts = 4;
+
+  // ── Create queued job row ───────────────────────────────────────────────────
+  const job = await createProjectJob(token, projectId, user.id, "quality", attempt, maxAttempts);
+
+  return NextResponse.json({ runId: job.id }, { status: 202 });
 }
+
+

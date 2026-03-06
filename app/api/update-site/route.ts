@@ -20,10 +20,6 @@ export interface UpdateSiteResponse {
   summary: string;
 }
 
-function getClient() {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
-
 function stripMarkdownFences(text: string): string {
   return text
     .replace(/^```(?:json)?\s*\n?/i, "")
