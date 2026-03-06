@@ -33,6 +33,8 @@ import {
   ChevronDown,
   ChevronRight,
   Home,
+  Database,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -53,12 +55,25 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'build',
     title: 'Build',
     items: [
+      { label: 'AI Builder', href: '/ai', icon: Wand2 },
+      { label: 'UI Builder', href: '/ui-builder', icon: Layers },
+      { label: 'Schema Designer', href: '/schema-designer', icon: Code2 },
       { label: 'Builder', href: '/builder', icon: Home },
       { label: 'Visual Builder', href: '/visual-builder', icon: Layers },
       { label: 'Project Wizard', href: '/project-wizard', icon: Wand2 },
       { label: 'Mobile Pipeline', href: '/mobile-pipeline', icon: Smartphone },
       { label: 'AI Code Review', href: '/ai-code-review', icon: Code2 },
       { label: 'Template Marketplace', href: '/template-marketplace', icon: Package },
+    ],
+  },
+  {
+    id: 'data',
+    title: 'Data & APIs',
+    items: [
+      { label: 'Schema Designer', href: '/schema-designer', icon: Database },
+      { label: 'API Generator', href: '/api-generator', icon: Zap },
+      { label: 'Webhook Inspector', href: '/webhook-inspector', icon: Activity },
+      { label: 'API Client Generator', href: '/api-client', icon: Globe },
     ],
   },
   {
@@ -130,13 +145,22 @@ const NAV_GROUPS: NavGroup[] = [
 
 const STORAGE_KEY = 'zivo-sidebar-collapsed';
 
+/** Default collapsed state: all groups collapsed except 'build'. */
+function getDefaultCollapsedState(): Record<string, boolean> {
+  const state: Record<string, boolean> = {};
+  for (const group of NAV_GROUPS) {
+    state[group.id] = group.id !== 'build';
+  }
+  return state;
+}
+
 function readCollapsedState(): Record<string, boolean> {
-  if (typeof window === 'undefined') return {};
+  if (typeof window === 'undefined') return getDefaultCollapsedState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : getDefaultCollapsedState();
   } catch {
-    return {};
+    return getDefaultCollapsedState();
   }
 }
 
@@ -151,6 +175,7 @@ function writeCollapsedState(state: Record<string, boolean>): void {
 export default function AppSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => readCollapsedState());
+  const [search, setSearch] = useState('');
 
   function toggleGroup(id: string) {
     setCollapsed((prev) => {
@@ -159,6 +184,18 @@ export default function AppSidebar() {
       return next;
     });
   }
+
+  const query = search.trim().toLowerCase();
+
+  /** When searching, flatten all groups into a single filtered list. */
+  const filteredGroups = query
+    ? NAV_GROUPS.map((g) => ({
+        ...g,
+        items: g.items.filter((item) => item.label.toLowerCase().includes(query)),
+      })).filter((g) => g.items.length > 0)
+    : NAV_GROUPS;
+
+  const hasResults = filteredGroups.length > 0;
 
   return (
     <aside
@@ -218,6 +255,38 @@ export default function AppSidebar() {
             ZIVO<span style={{ color: '#6366f1' }}>-AI</span>
           </span>
         </Link>
+
+        {/* Search */}
+        <div style={{ position: 'relative', marginTop: 12 }}>
+          <input
+            className="zivo-sidebar-search"
+            placeholder="Search…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search navigation"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              aria-label="Clear search"
+              style={{
+                position: 'absolute',
+                right: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#475569',
+                display: 'flex',
+                alignItems: 'center',
+                padding: 0,
+              }}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Navigation */}
@@ -228,8 +297,14 @@ export default function AppSidebar() {
           overflowY: 'auto',
         }}
       >
-        {NAV_GROUPS.map((group) => {
-          const isCollapsed = !!collapsed[group.id];
+        {!hasResults && (
+          <div style={{ padding: '8px', color: '#475569', fontSize: 13, textAlign: 'center' }}>
+            No results
+          </div>
+        )}
+
+        {filteredGroups.map((group) => {
+          const isCollapsed = query ? false : !!collapsed[group.id];
 
           return (
             <div key={group.id} style={{ marginBottom: 4 }}>
@@ -284,6 +359,7 @@ export default function AppSidebar() {
                     <Link
                       key={`${group.id}-${item.href}-${item.label}`}
                       href={item.href}
+                      title={item.label}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -291,8 +367,8 @@ export default function AppSidebar() {
                         padding: '7px 8px',
                         borderRadius: 6,
                         textDecoration: 'none',
-                        color: isActive ? '#ffffff' : '#9ca3af',
-                        backgroundColor: isActive ? '#6366f1' : 'transparent',
+                        color: isActive ? '#818cf8' : '#9ca3af',
+                        backgroundColor: isActive ? 'rgba(99,102,241,0.15)' : 'transparent',
                         fontSize: 13,
                         fontWeight: isActive ? 500 : 400,
                         transition: 'background-color 0.15s ease, color 0.15s ease',
