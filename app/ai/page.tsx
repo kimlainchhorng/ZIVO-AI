@@ -90,6 +90,11 @@ const COLORS = {
 /** Maximum characters to display per chat bubble in the build history sidebar. */
 const MAX_CHAT_HISTORY_DISPLAY_LENGTH = 120;
 
+/** Standard localStorage key for the Supabase auth token (used across all build flows). */
+const SUPABASE_TOKEN_KEY = "zivo_supabase_token";
+/** localStorage key for persisting the Website Builder v2 project ID. */
+const WEBSITE_PROJECT_ID_KEY = "zivo_website_project_id";
+
 const RocketIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>;
 const ClipboardIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>;
 const CartIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>;
@@ -288,6 +293,14 @@ function AIPageInner() {
   const [websiteLivePreviewRunning, setWebsiteLivePreviewRunning] = useState(false);
   const [websiteLivePreviewStatus, setWebsiteLivePreviewStatus] = useState<string | null>(null);
   const [websiteLivePreviewError, setWebsiteLivePreviewError] = useState<string | null>(null);
+  // Website v2 project persistence (Supabase)
+  const [websiteProjectId, setWebsiteProjectId] = useState<string | null>(null);
+  const [websiteContinueInstruction, setWebsiteContinueInstruction] = useState("");
+  const [websiteContinueLoading, setWebsiteContinueLoading] = useState(false);
+  const [websiteContinueError, setWebsiteContinueError] = useState<string | null>(null);
+  const [websiteContinuePassMessage, setWebsiteContinuePassMessage] = useState<string | null>(null);
+  // Changed-files summary after each website build
+  const [websiteChangedFiles, setWebsiteChangedFiles] = useState<{ created: string[]; updated: string[]; deleted: string[] } | null>(null);
   const websiteDevProcessRef = useRef<WebContainerProcess | null>(null);
   const websiteServerUnsubscribeRef = useRef<(() => void) | null>(null);
 
@@ -385,7 +398,7 @@ function AIPageInner() {
   // Load Supabase auth token and Vercel token from localStorage on mount
   useEffect(() => {
     try {
-      const token = localStorage.getItem("zivo_supabase_token");
+      const token = localStorage.getItem(SUPABASE_TOKEN_KEY);
       if (token) {
         setSupabaseToken(token);
         // Try to decode email from JWT without a full verify (client-side only display)
@@ -398,6 +411,9 @@ function AIPageInner() {
       }
       const vt = localStorage.getItem("zivo_vercel_token");
       if (vt) setVercelToken(vt);
+      // Load persisted website project ID
+      const wpid = localStorage.getItem(WEBSITE_PROJECT_ID_KEY);
+      if (wpid) setWebsiteProjectId(wpid);
     } catch {
       // Ignore storage errors
     }
@@ -862,7 +878,7 @@ function AIPageInner() {
     // Persist to Supabase if the user has a saved project
     if (savedProjectId) {
       try {
-        const token = typeof window !== "undefined" ? localStorage.getItem("zivo_supabase_token") : null;
+        const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
         if (token) {
           const res = await fetch(`/api/projects/${savedProjectId}/files`, {
             method: "PUT",
@@ -1405,6 +1421,19 @@ function AIPageInner() {
     setImageLoading(false);
   }
 
+  /** Compute a changed-files summary by comparing old vs. new file lists. */
+  function computeWebsiteChangedFiles(
+    previousFiles: GeneratedFile[],
+    newFiles: GeneratedFile[]
+  ): { created: string[]; updated: string[]; deleted: string[] } {
+    const previousFileMap = new Map(previousFiles.map((f) => [f.path, f.content]));
+    const newPaths = new Set(newFiles.map((f) => f.path));
+    const created = newFiles.filter((f) => !previousFileMap.has(f.path)).map((f) => f.path);
+    const updated = newFiles.filter((f) => previousFileMap.has(f.path) && previousFileMap.get(f.path) !== f.content).map((f) => f.path);
+    const deleted = previousFiles.filter((f) => !newPaths.has(f.path)).map((f) => f.path);
+    return { created, updated, deleted };
+  }
+
   async function handleWebsiteGenerate() {
     if (!websitePrompt.trim()) return;
 
@@ -1417,15 +1446,21 @@ function AIPageInner() {
     setWebsiteLivePreviewUrl(null);
     setWebsiteLivePreviewError(null);
     setWebsiteLivePreviewStatus(null);
+    setWebsiteChangedFiles(null);
     try {
       const newIteration = websiteIteration + 1;
+      const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch("/api/build", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           prompt: `${websitePrompt}. Style: ${websiteStyle}.`,
           model,
           mode: "website_v2",
+          projectId: websiteProjectId ?? undefined,
         }),
       });
 
@@ -1448,12 +1483,20 @@ function AIPageInner() {
           if (!line.startsWith("data: ")) continue;
           const raw = line.slice(6).trim();
           if (!raw || raw === "[DONE]") continue;
-          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[] };
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; data?: Record<string, unknown> };
           try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
 
           if (evt.type === "stage") {
             if (evt.message) setWebsitePassMessage(evt.message);
-            if (evt.stage === "DONE") buildSummary = evt.message ?? buildSummary;
+            if (evt.stage === "DONE") {
+              buildSummary = evt.message ?? buildSummary;
+              // Capture the persisted projectId from the server
+              if (evt.data?.projectId && typeof evt.data.projectId === "string") {
+                const pid = evt.data.projectId;
+                setWebsiteProjectId(pid);
+                try { localStorage.setItem(WEBSITE_PROJECT_ID_KEY, pid); } catch { /* ignore */ }
+              }
+            }
           } else if (evt.type === "files" && Array.isArray(evt.files)) {
             collectedFiles = evt.files;
           } else if (evt.type === "error") {
@@ -1490,6 +1533,12 @@ function AIPageInner() {
         );
         setShowDiff(true);
 
+        // Compute changed-files summary using shared helper
+        const changedSummary = computeWebsiteChangedFiles(previousFiles, collectedFiles);
+        if (changedSummary.created.length + changedSummary.updated.length + changedSummary.deleted.length > 0) {
+          setWebsiteChangedFiles(changedSummary);
+        }
+
         void startWebsiteLivePreview(collectedFiles);
       } else if (!websiteError) {
         setWebsiteError("No files were generated. Try a more specific prompt.");
@@ -1502,6 +1551,103 @@ function AIPageInner() {
     setWebsiteLivePreviewUrl(null);
     setWebsiteLivePreviewError(null);
     setWebsiteLivePreviewStatus(null);
+  }
+
+  /** Continue Build: stream from /api/projects/[id]/continue with the given instruction. */
+  async function handleContinueWebsiteBuild() {
+    if (!websiteContinueInstruction.trim() || !websiteProjectId) return;
+
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) {
+      setWebsiteContinueError("You must be signed in to continue building. Please sign in via the auth page.");
+      return;
+    }
+
+    const previousFiles = websiteResult?.files ?? output?.files ?? [];
+
+    setWebsiteContinueLoading(true);
+    setWebsiteContinueError(null);
+    setWebsiteContinuePassMessage(null);
+    setWebsiteChangedFiles(null);
+
+    try {
+      const res = await fetch(`/api/projects/${websiteProjectId}/continue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ instruction: websiteContinueInstruction.trim(), model }),
+      });
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+      let collectedFiles: GeneratedFile[] = [];
+      let buildSummary = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[] };
+          try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
+
+          if (evt.type === "stage") {
+            if (evt.message) setWebsiteContinuePassMessage(evt.message);
+            if (evt.stage === "DONE") buildSummary = evt.message ?? buildSummary;
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files;
+          } else if (evt.type === "error") {
+            setWebsiteContinueError(String(evt.message ?? "Continue build failed."));
+          }
+        }
+      }
+
+      if (collectedFiles.length > 0) {
+        setWebsiteContinuePassMessage("Preparing preview…");
+        const previewHtml = await generatePreviewFromFiles(collectedFiles);
+        const summary = buildSummary || `Updated ${collectedFiles.length} files.`;
+
+        setWebsiteResult({ files: collectedFiles, preview_html: previewHtml, summary });
+        setWebsiteIteration((prev) => prev + 1);
+        setWebsiteHistory((prev) => [
+          ...prev,
+          { role: "user" as const, content: websiteContinueInstruction },
+          { role: "assistant" as const, content: summary },
+        ]);
+
+        setOutput({ files: collectedFiles, preview_html: previewHtml, summary });
+        setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
+        setActiveRightTab("files");
+
+        const previousFileMap = new Map(previousFiles.map((f) => [f.path, f.content]));
+        setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: previousFileMap.get(f.path) ?? "", newContent: f.content })));
+        setShowDiff(true);
+
+        // Compute changed-files summary using shared helper
+        const changedSummary = computeWebsiteChangedFiles(previousFiles, collectedFiles);
+        if (changedSummary.created.length + changedSummary.updated.length + changedSummary.deleted.length > 0) {
+          setWebsiteChangedFiles(changedSummary);
+        }
+
+        setWebsiteContinueInstruction("");
+        void startWebsiteLivePreview(collectedFiles);
+      } else if (!websiteContinueError) {
+        setWebsiteContinueError("No files were returned. Try rephrasing your request.");
+      }
+    } catch (err: unknown) {
+      setWebsiteContinueError(err instanceof Error ? err.message : "Continue build failed.");
+    }
+    setWebsiteContinueLoading(false);
+    setWebsiteContinuePassMessage(null);
   }
 
   async function handleMobileGenerate() {
@@ -2049,7 +2195,7 @@ function AIPageInner() {
                 <button
                   className="zivo-btn"
                   onClick={() => {
-                    localStorage.removeItem("zivo_supabase_token");
+                    localStorage.removeItem(SUPABASE_TOKEN_KEY);
                     setSupabaseToken(null);
                     setSupabaseUserEmail(null);
                     setSavedProjectId(null);
@@ -3068,6 +3214,63 @@ function AIPageInner() {
                       </button>
                       {websiteLivePreviewStatus && (
                         <div style={{ marginTop: "0.45rem", fontSize: "0.72rem", color: COLORS.textSecondary }}>{websiteLivePreviewStatus}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Changed Files Summary ── */}
+                  {websiteChangedFiles && (
+                    <div style={{ padding: "0.75rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px" }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 700, color: COLORS.accent, marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Changed Files</div>
+                      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
+                        {websiteChangedFiles.created.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(16,185,129,0.15)", color: COLORS.success, fontWeight: 600 }}>+{websiteChangedFiles.created.length} created</span>}
+                        {websiteChangedFiles.updated.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(245,158,11,0.15)", color: COLORS.warning, fontWeight: 600 }}>~{websiteChangedFiles.updated.length} updated</span>}
+                        {websiteChangedFiles.deleted.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(239,68,68,0.15)", color: COLORS.error, fontWeight: 600 }}>-{websiteChangedFiles.deleted.length} deleted</span>}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                        {websiteChangedFiles.created.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.success, fontFamily: "monospace" }}>+ {p}</div>)}
+                        {websiteChangedFiles.updated.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.warning, fontFamily: "monospace" }}>~ {p}</div>)}
+                        {websiteChangedFiles.deleted.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.error, fontFamily: "monospace" }}>- {p}</div>)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Continue Build (requires saved project) ── */}
+                  {websiteProjectId && (
+                    <div style={{ padding: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.625rem" }}>
+                        <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                        <span style={{ fontSize: "0.65rem", color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Build</span>
+                        <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                      </div>
+                      <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", marginBottom: "0.5rem", wordBreak: "break-all" }}>Project: {websiteProjectId}</div>
+                      <textarea
+                        className="zivo-textarea"
+                        value={websiteContinueInstruction}
+                        onChange={(e) => setWebsiteContinueInstruction(e.target.value)}
+                        onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void handleContinueWebsiteBuild(); } }}
+                        placeholder="Add a dark mode toggle, improve the hero section, add an FAQ section…"
+                        maxLength={2000}
+                        style={{ width: "100%", minHeight: "80px", resize: "vertical", background: "rgba(255,255,255,0.03)", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.8125rem", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.5rem" }}>
+                        <span style={{ fontSize: "0.68rem", color: COLORS.textMuted }}>{websiteContinueInstruction.length}/2000</span>
+                        <button
+                          className="zivo-btn"
+                          onClick={() => void handleContinueWebsiteBuild()}
+                          disabled={websiteContinueLoading || !websiteContinueInstruction.trim()}
+                          style={{ padding: "0.35rem 0.875rem", background: websiteContinueInstruction.trim() && !websiteContinueLoading ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: websiteContinueLoading || !websiteContinueInstruction.trim() ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: websiteContinueLoading || !websiteContinueInstruction.trim() ? 0.5 : 1 }}
+                        >
+                          {websiteContinueLoading ? (
+                            <><span style={{ width: "11px", height: "11px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} /> Building…</>
+                          ) : "Continue Build ▶"}
+                        </button>
+                      </div>
+                      {websiteContinueLoading && websiteContinuePassMessage && (
+                        <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.625rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.accent }}>{websiteContinuePassMessage}</div>
+                      )}
+                      {websiteContinueError && (
+                        <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.625rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.error }}>{websiteContinueError}</div>
                       )}
                     </div>
                   )}
