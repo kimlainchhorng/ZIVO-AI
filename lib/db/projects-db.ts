@@ -37,6 +37,7 @@ export interface DbProjectBuild {
   build_number: number;
   summary: string | null;
   issues: unknown | null;
+  snapshot_path: string | null;
   created_at: string;
 }
 
@@ -46,7 +47,10 @@ export interface UpsertFileInput {
   generated_by?: string;
 }
 
-// ─── Server-side Supabase client ───────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const GENERATED_BY_SNAPSHOT_RESTORE = "snapshot-restore";
+const STORAGE_BUCKET_SNAPSHOTS = "project-build-snapshots";
 
 /**
  * Creates a Supabase client authenticated as the given user via their JWT.
@@ -239,6 +243,152 @@ export async function appendProjectBuild(
     .single();
   if (error) throw new Error(`appendProjectBuild insert: ${error.message}`);
   return data as DbProjectBuild;
+}
+
+/** Lists builds for a project ordered by build_number descending. */
+export async function listProjectBuilds(token: string, projectId: string): Promise<DbProjectBuild[]> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_builds")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("build_number", { ascending: false });
+  if (error) throw new Error(`listProjectBuilds: ${error.message}`);
+  return (data ?? []) as DbProjectBuild[];
+}
+
+/**
+ * Writes a build snapshot to Supabase Storage and appends a build record
+ * with the snapshot_path. Falls back to storing without a snapshot if
+ * Storage is not configured or the upload fails.
+ */
+export async function appendProjectBuildWithSnapshot(
+  token: string,
+  projectId: string,
+  summary: string,
+  files: Array<{ path: string; content: string }>,
+  issues?: unknown
+): Promise<DbProjectBuild> {
+  const client = createAuthedClient(token);
+
+  // Determine the next build number
+  const { data: existing, error: countError } = await client
+    .from("project_builds")
+    .select("build_number")
+    .eq("project_id", projectId)
+    .order("build_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (countError) throw new Error(`appendProjectBuildWithSnapshot count: ${countError.message}`);
+
+  const buildNumber = ((existing as { build_number: number } | null)?.build_number ?? 0) + 1;
+
+  // Insert the build record first so we have an ID for the snapshot path
+  const { data: buildRecord, error: insertError } = await client
+    .from("project_builds")
+    .insert({ project_id: projectId, build_number: buildNumber, summary, issues: issues ?? null })
+    .select()
+    .single();
+  if (insertError) throw new Error(`appendProjectBuildWithSnapshot insert: ${insertError.message}`);
+
+  const build = buildRecord as DbProjectBuild;
+
+  // Attempt to write snapshot to Supabase Storage
+  const snapshotPath = `${STORAGE_BUCKET_SNAPSHOTS}/${projectId}/${build.id}.json`;
+  try {
+    const payload = JSON.stringify({ files });
+    const { error: uploadError } = await client.storage
+      .from(STORAGE_BUCKET_SNAPSHOTS)
+      .upload(`${projectId}/${build.id}.json`, new Blob([payload], { type: "application/json" }), {
+        upsert: true,
+      });
+    if (!uploadError) {
+      // Update the record with the snapshot path
+      const { data: updated, error: updateError } = await client
+        .from("project_builds")
+        .update({ snapshot_path: snapshotPath })
+        .eq("id", build.id)
+        .select()
+        .single();
+      if (updateError) {
+        // Best-effort cleanup: remove the uploaded snapshot to avoid orphaned objects
+        try {
+          await client.storage
+            .from(STORAGE_BUCKET_SNAPSHOTS)
+            .remove([`${projectId}/${build.id}.json`]);
+        } catch {
+          // Swallow cleanup errors; build insert already succeeded
+        }
+        // Non-fatal — return the original build record without a snapshot_path
+        return build;
+      }
+      return (updated ?? build) as DbProjectBuild;
+    }
+  } catch {
+    // Non-fatal — the build record is still saved without a snapshot
+  }
+
+  return build;
+}
+
+/**
+ * Restores a project's files from a build snapshot stored in Supabase Storage.
+ * Replaces the current project_files set with the snapshot contents.
+ */
+export async function restoreProjectFromSnapshot(
+  token: string,
+  projectId: string,
+  buildId: string
+): Promise<void> {
+  const client = createAuthedClient(token);
+
+  // Fetch the build record to get the snapshot_path
+  const { data: build, error: buildError } = await client
+    .from("project_builds")
+    .select("snapshot_path")
+    .eq("id", buildId)
+    .eq("project_id", projectId)
+    .single();
+  if (buildError || !build) throw new Error("Build not found");
+
+  const snapshotPath = (build as { snapshot_path: string | null }).snapshot_path;
+  if (!snapshotPath) throw new Error("No snapshot available for this build");
+
+  // Download from storage: path after bucket name
+  const storagePath = snapshotPath.replace(new RegExp(`^${STORAGE_BUCKET_SNAPSHOTS}/`), "");
+  const { data: blob, error: dlError } = await client.storage
+    .from(STORAGE_BUCKET_SNAPSHOTS)
+    .download(storagePath);
+  if (dlError || !blob) throw new Error(`Failed to download snapshot: ${dlError?.message ?? "empty"}`);
+
+  const json = await blob.text();
+  const snapshot = JSON.parse(json) as { files: Array<{ path: string; content: string }> };
+  if (!Array.isArray(snapshot.files)) throw new Error("Invalid snapshot format");
+
+  const snapshotPaths = snapshot.files.map((f) => f.path);
+
+  // Upsert snapshot files first so we never leave the project empty if the upsert fails.
+  await upsertProjectFiles(
+    token,
+    projectId,
+    snapshot.files.map((f) => ({ path: f.path, content: f.content, generated_by: GENERATED_BY_SNAPSHOT_RESTORE }))
+  );
+
+  // Then delete any existing project files not present in the snapshot.
+  if (snapshotPaths.length === 0) {
+    const { error: deleteError } = await client
+      .from("project_files")
+      .delete()
+      .eq("project_id", projectId);
+    if (deleteError) throw new Error(`Failed to clear project files: ${deleteError.message}`);
+  } else {
+    const { error: deleteError } = await client
+      .from("project_files")
+      .delete()
+      .eq("project_id", projectId)
+      .not("path", "in", `(${snapshotPaths.map((p) => `"${p}"`).join(",")})`);
+    if (deleteError) throw new Error(`Failed to delete stale project files: ${deleteError.message}`);
+  }
 }
 
 

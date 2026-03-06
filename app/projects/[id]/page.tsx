@@ -38,6 +38,7 @@ interface ProjectBuild {
   project_id: string;
   build_number: number;
   summary: string | null;
+  snapshot_path: string | null;
   created_at: string;
 }
 
@@ -272,6 +273,10 @@ export default function ProjectWorkspacePage() {
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
   const streamEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Restore state
+  const [restoringBuildId, setRestoringBuildId] = useState<string | null>(null);
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
 
   // ─── Data loading ──────────────────────────────────────────────────────────
 
@@ -512,6 +517,30 @@ export default function ProjectWorkspacePage() {
     abortRef.current?.abort();
   }
 
+  async function handleRestoreBuild(buildId: string) {
+    if (!token || !projectId) return;
+    setRestoringBuildId(buildId);
+    setRestoreMessage(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/restore`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buildId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRestoreMessage('Build restored successfully ✓');
+        await fetchFiles();
+      } else {
+        setRestoreMessage(data.error ?? 'Restore failed');
+      }
+    } catch {
+      setRestoreMessage('Network error');
+    }
+    setRestoringBuildId(null);
+    setTimeout(() => setRestoreMessage(null), 4000);
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────────
 
   const s = styles;
@@ -738,7 +767,7 @@ export default function ProjectWorkspacePage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               {messages.length === 0 && (
                 <div style={s.emptyTab}>
-                  <MessageSquare size={32} style={{ color: '#334155', marginBottom: '0.75rem' }} />
+                  <MessageSquare size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
                   <p>No messages yet. Use Continue Build to start the conversation.</p>
                 </div>
               )}
@@ -776,7 +805,7 @@ export default function ProjectWorkspacePage() {
             <div>
               {files.length === 0 ? (
                 <div style={s.emptyTab}>
-                  <FileCode2 size={32} style={{ color: '#334155', marginBottom: '0.75rem' }} />
+                  <FileCode2 size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
                   <p>No files yet. Run Continue Build to generate project files.</p>
                 </div>
               ) : (
@@ -800,28 +829,65 @@ export default function ProjectWorkspacePage() {
 
           {/* Builds */}
           {activeTab === 'builds' && (
-            <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {restoreMessage && (
+                <div style={{
+                  padding: '0.625rem 0.875rem',
+                  borderRadius: '8px',
+                  background: restoreMessage.includes('✓') ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                  border: `1px solid ${restoreMessage.includes('✓') ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                  color: restoreMessage.includes('✓') ? '#10b981' : '#ef4444',
+                  fontSize: '0.875rem',
+                }}>
+                  {restoreMessage}
+                </div>
+              )}
               {builds.length === 0 ? (
                 <div style={s.emptyTab}>
-                  <History size={32} style={{ color: '#334155', marginBottom: '0.75rem' }} />
+                  <History size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
                   <p>No build history yet.</p>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {[...builds].reverse().map((b) => (
-                    <div key={b.id} style={s.buildRow}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ ...s.badge, background: 'rgba(99,102,241,0.2)', color: '#818cf8' }}>
-                          #{b.build_number}
-                        </span>
-                        <span style={{ fontSize: '0.75rem', color: '#475569' }}>
-                          {new Date(b.created_at).toLocaleString()}
-                        </span>
+                    <div key={b.id} style={{ ...s.buildRow, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ ...s.badge, background: 'rgba(99,102,241,0.2)', color: '#818cf8' }}>
+                            #{b.build_number}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: '#475569' }}>
+                            {new Date(b.created_at).toLocaleString()}
+                          </span>
+                          {b.snapshot_path && (
+                            <span style={{ ...s.badge, background: 'rgba(16,185,129,0.12)', color: '#10b981', fontSize: '0.7rem' }}>
+                              snapshot
+                            </span>
+                          )}
+                        </div>
+                        {b.summary && (
+                          <p style={{ margin: '0.35rem 0 0', fontSize: '0.85rem', color: '#94a3b8', whiteSpace: 'pre-wrap' }}>
+                            {b.summary}
+                          </p>
+                        )}
                       </div>
-                      {b.summary && (
-                        <p style={{ margin: '0.35rem 0 0', fontSize: '0.85rem', color: '#94a3b8', whiteSpace: 'pre-wrap' }}>
-                          {b.summary}
-                        </p>
+                      {b.snapshot_path && (
+                        <button
+                          onClick={() => handleRestoreBuild(b.id)}
+                          disabled={restoringBuildId === b.id}
+                          style={{
+                            ...s.outlineBtn,
+                            opacity: restoringBuildId === b.id ? 0.7 : 1,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {restoringBuildId === b.id ? (
+                            <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                          ) : (
+                            <RotateCcw size={12} />
+                          )}
+                          {restoringBuildId === b.id ? 'Restoring…' : 'Restore'}
+                        </button>
                       )}
                     </div>
                   ))}

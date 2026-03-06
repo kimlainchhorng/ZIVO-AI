@@ -200,7 +200,7 @@ export default function ProjectsPage() {
                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem',
                       }}
                     >
-                      <ExternalLink size={14} /> Open
+                      <ExternalLink size={14} /> Workspace
                     </a>
                     <button
                       onClick={() => handleDuplicate(project.id)}
