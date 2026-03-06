@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
+import GlobalProviders from "./GlobalProviders";
 
 export const metadata: Metadata = {
   title: "ZIVO AI — Agentic App Builder",
@@ -16,6 +17,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
+        <GlobalProviders />
         {children}
         <Toaster />
       </body>
