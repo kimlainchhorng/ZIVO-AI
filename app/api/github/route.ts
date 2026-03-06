@@ -16,12 +16,28 @@ const RequestSchema = z.object({
   commitMessage: z.string().default('Deploy from ZIVO-AI'),
 });
 
+function toPageIdentifier(name: string): string {
+  const pascal = name
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .replace(/(?:^|\s)([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase());
+  return /^\d/.test(pascal) ? `Page${pascal}` : pascal || 'Page';
+}
+
+function escapeJSX(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function sectionToJSX(section: Section): string {
   return `
   <section className="py-16 px-8">
     <div className="max-w-6xl mx-auto">
-      <h2 className="text-3xl font-bold mb-6">${section.title}</h2>
-      <p className="text-lg opacity-80">${section.content.slice(0, 200).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+      <h2 className="text-3xl font-bold mb-6">${escapeJSX(section.title)}</h2>
+      <p className="text-lg opacity-80">${escapeJSX(section.content.slice(0, 200))}</p>
     </div>
   </section>`.trim();
 }
@@ -32,13 +48,13 @@ function generateFiles(uiOutput: UIOutput): Record<string, string> {
   const files: Record<string, string> = {};
 
   const navLinks = uiOutput.navigation?.links
-    .map((l) => `        <a href="${l.href}" className="hover:opacity-75 transition-opacity">${l.label}</a>`)
+    .map((l) => `        <a href="${escapeJSX(l.href)}" className="hover:opacity-75 transition-opacity">${escapeJSX(l.label)}</a>`)
     .join('\n') ?? '';
 
   files['components/Navigation.tsx'] = `export function Navigation() {
   return (
     <nav className="flex items-center justify-between px-8 py-4 ${colors.classes} border-b border-white/10">
-      <span className="text-xl font-bold">${uiOutput.navigation?.logo ?? uiOutput.title}</span>
+      <span className="text-xl font-bold">${escapeJSX(uiOutput.navigation?.logo ?? uiOutput.title)}</span>
       <div className="flex items-center gap-6">
 ${navLinks}
       </div>
@@ -49,7 +65,7 @@ ${navLinks}
   files['components/Footer.tsx'] = `export function Footer() {
   return (
     <footer className="py-8 px-8 ${colors.classes} border-t border-white/10 text-center">
-      <p className="opacity-60">${uiOutput.footer?.copyright ?? `© ${new Date().getFullYear()} ${uiOutput.title}`}</p>
+      <p className="opacity-60">${escapeJSX(uiOutput.footer?.copyright ?? `© ${new Date().getFullYear()} ${uiOutput.title}`)}</p>
     </footer>
   );
 }`;
@@ -60,7 +76,7 @@ ${navLinks}
     files[filePath] = `import { Navigation } from '@/components/Navigation';
 import { Footer } from '@/components/Footer';
 
-export default function ${page.name.replace(/\s+/g, '')}Page() {
+export default function ${toPageIdentifier(page.name)}Page() {
   return (
     <div className="min-h-screen ${colors.classes}">
       <Navigation />

@@ -14,16 +14,46 @@ const RequestSchema = z.object({
   exportType: z.enum(['react', 'nextjs', 'tailwind', 'zip']),
 });
 
+/** Converts a snake_case/kebab-case section type to a PascalCase React component name. */
+function toComponentName(raw: string): string {
+  const pascal = raw
+    .replace(/[^a-zA-Z0-9_]/g, '_')
+    .replace(/(?:^|_)([a-z])/g, (_, l: string) => l.toUpperCase());
+  // Ensure the identifier doesn't start with a digit
+  return /^\d/.test(pascal) ? `S${pascal}` : pascal;
+}
+
+/** Sanitizes a human-readable page name into a valid PascalCase JS identifier. */
+function toPageIdentifier(name: string): string {
+  const pascal = name
+    .replace(/[^a-zA-Z0-9 ]/g, '')
+    .replace(/(?:^|\s)([a-zA-Z0-9])/g, (_, c: string) => c.toUpperCase());
+  return /^\d/.test(pascal) ? `Page${pascal}` : pascal || 'Page';
+}
+
+/** Escapes a string for safe embedding inside a JSX text node or attribute. */
+function escapeJSX(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function sectionToComponent(section: Section, preset: keyof typeof stylePresets = 'premium'): string {
   const colors = stylePresets[preset];
-  const bgStyle = section.bgColor ? `style={{ backgroundColor: '${section.bgColor}' }}` : '';
+  const bgStyle = section.bgColor ? `style={{ backgroundColor: '${escapeJSX(section.bgColor)}' }}` : '';
+  const name = toComponentName(section.type);
+  const safeTitle = escapeJSX(section.title);
+  const safeContent = escapeJSX(section.content.slice(0, 200));
   return `
-function ${section.type.charAt(0).toUpperCase() + section.type.slice(1).replace(/_([a-z])/g, (_, l: string) => l.toUpperCase())}Section() {
+function ${name}Section() {
   return (
     <section className="py-16 px-8 ${colors.classes}" ${bgStyle}>
       <div className="max-w-6xl mx-auto">
-        <h2 className="text-3xl font-bold mb-6">${section.title}</h2>
-        <p className="text-lg opacity-80">${section.content.replace(/`/g, '\\`').slice(0, 200)}</p>
+        <h2 className="text-3xl font-bold mb-6">${safeTitle}</h2>
+        <p className="text-lg opacity-80">${safeContent}</p>
       </div>
     </section>
   );
@@ -38,7 +68,7 @@ function generateReactApp(uiOutput: UIOutput): Record<string, string> {
   const components = allSections.map((s) => sectionToComponent(s, preset)).join('\n\n');
 
   const sectionRenders = allSections
-    .map((s) => `      <${s.type.charAt(0).toUpperCase() + s.type.slice(1).replace(/_([a-z])/g, (_, l: string) => l.toUpperCase())}Section />`)
+    .map((s) => `      <${toComponentName(s.type)}Section />`)
     .join('\n');
 
   const navLinks = uiOutput.navigation?.links
@@ -123,7 +153,7 @@ ${navLinks}
     const path = page.isHome ? 'app/page.tsx' : `app/${page.slug}/page.tsx`;
     const sectionComponents = page.sections.map((s) => sectionToComponent(s, preset)).join('\n\n');
     const sectionRenders = page.sections
-      .map((s) => `      <${s.type.charAt(0).toUpperCase() + s.type.slice(1).replace(/_([a-z])/g, (_, l: string) => l.toUpperCase())}Section />`)
+      .map((s) => `      <${toComponentName(s.type)}Section />`)
       .join('\n');
 
     files[path] = `import { Navigation } from '@/components/Navigation';
@@ -131,7 +161,7 @@ import { Footer } from '@/components/Footer';
 
 ${sectionComponents}
 
-export default function ${page.name.replace(/\s+/g, '')}Page() {
+export default function ${toPageIdentifier(page.name)}Page() {
   return (
     <div className="min-h-screen ${colors.classes}">
       <Navigation />
@@ -176,7 +206,7 @@ function generateTailwindComponents(uiOutput: UIOutput): Record<string, string> 
   const allSections = uiOutput.pages.flatMap((p) => p.sections);
 
   for (const section of allSections) {
-    const name = section.type.charAt(0).toUpperCase() + section.type.slice(1).replace(/_([a-z])/g, (_, l: string) => l.toUpperCase());
+    const name = toComponentName(section.type);
     files[`components/${name}Section.tsx`] = `${sectionToComponent(section, preset)}
 
 export { ${name}Section };`;

@@ -1,78 +1,89 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
+import OpenAI from 'openai';
+import { ImageGenerationRequestSchema } from '@/types/builder';
+import { injectStylePreset } from '@/lib/theme';
+import { extractBearerToken, getUserFromToken, createAuthedClient } from '@/lib/db/projects-db';
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
-type ImageSize = "1024x1024" | "1792x1024" | "1024x1792";
-type ImageQuality = "standard" | "hd";
-type ImageStyle = "vivid" | "natural";
-type ImagePurpose = "hero" | "illustration" | "icon" | "logo" | "og-image";
-
-interface DalleImageObject {
-  b64_json?: string;
-  url?: string;
+// DALL-E 3 only supports 1024x1024, 1792x1024, 1024x1792
+function mapToDallE3Size(size: string): '1024x1024' | '1792x1024' | '1024x1792' {
+  if (size === '1792x1024') return '1792x1024';
+  if (size === '1080x1920') return '1024x1792';
+  return '1024x1024';
 }
 
-interface DalleResponse {
-  data: DalleImageObject[];
-}
+export async function POST(req: Request) {
+  const token = extractBearerToken(req.headers.get('Authorization'));
 
-export async function POST(req: Request): Promise<NextResponse> {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const parsed = ImageGenerationRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { prompt, imageType, size, stylePreset, projectId } = parsed.data;
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "OPENAI_API_KEY is not configured" }, { status: 500 });
+    return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 });
   }
 
-  const body = await req.json().catch(() => ({})) as {
-    prompt: string;
-    size?: ImageSize;
-    quality?: ImageQuality;
-    style?: ImageStyle;
-    purpose?: ImagePurpose;
-  };
+  const openai = new OpenAI({ apiKey });
 
-  if (!body.prompt) {
-    return NextResponse.json({ error: "prompt is required" }, { status: 400 });
-  }
+  const styleContext = stylePreset ? injectStylePreset(stylePreset) : '';
+  const fullPrompt = `${imageType.replace(/_/g, ' ')} for a brand: ${prompt}. ${styleContext}`.trim();
+  const dallESize = mapToDallE3Size(size);
 
-  const size: ImageSize = body.size ?? "1024x1024";
-  const quality: ImageQuality = body.quality ?? "standard";
-  const style: ImageStyle = body.style ?? "vivid";
-
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "dall-e-3",
-      prompt: body.prompt,
+  try {
+    const response = await openai.images.generate({
+      model: 'dall-e-3',
+      prompt: fullPrompt,
+      size: dallESize,
+      quality: 'hd',
       n: 1,
-      size,
-      quality,
-      style,
-      response_format: "b64_json",
-    }),
-  });
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    return NextResponse.json({ error: `Image generation failed: ${errorText}` }, { status: response.status });
+    const imageUrl = response.data?.[0]?.url;
+    if (!imageUrl) {
+      return NextResponse.json({ error: 'No image URL returned from DALL-E' }, { status: 500 });
+    }
+
+    // Save to image_gallery if authenticated
+    let galleryId: string | undefined;
+    if (token) {
+      try {
+        const user = await getUserFromToken(token);
+        if (user) {
+          const client = createAuthedClient(token);
+          const { data: galleryRow } = await client
+            .from('image_gallery')
+            .insert({
+              owner_id: user.id,
+              project_id: projectId ?? null,
+              url: imageUrl,
+              prompt,
+              image_type: imageType,
+              size,
+              style_preset: stylePreset ?? null,
+            })
+            .select('id')
+            .single();
+          galleryId = galleryRow?.id;
+        }
+      } catch {
+        // Non-fatal: gallery save failed
+      }
+    }
+
+    return NextResponse.json({ success: true, url: imageUrl, galleryId });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: (err as Error).message ?? 'Image generation failed' }, { status: 500 });
   }
-
-  const data = (await response.json()) as DalleResponse;
-  const imageObject = data.data[0];
-
-  const dataUrl = imageObject?.b64_json
-    ? `data:image/png;base64,${imageObject.b64_json}`
-    : "";
-
-  return NextResponse.json({
-    type: "image",
-    dataUrl,
-    url: imageObject?.url ?? "",
-    size,
-    prompt: body.prompt,
-    purpose: body.purpose ?? null,
-  });
 }

@@ -240,3 +240,16 @@ export async function appendProjectBuild(
   if (error) throw new Error(`appendProjectBuild insert: ${error.message}`);
   return data as DbProjectBuild;
 }
+
+
+/** Alias for getProject — fetches a single project by ID. */
+export async function getProjectById(token: string, projectId: string): Promise<DbProject | null> {
+  return getProject(token, projectId);
+}
+
+/** Deletes a project by ID (RLS ensures only the owner can delete). */
+export async function deleteProject(token: string, projectId: string): Promise<void> {
+  const client = createAuthedClient(token);
+  const { error } = await client.from("projects").delete().eq("id", projectId);
+  if (error) throw new Error(`deleteProject: ${error.message}`);
+}
