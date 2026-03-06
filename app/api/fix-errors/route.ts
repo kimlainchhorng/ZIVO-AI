@@ -1,46 +1,25 @@
 import { NextResponse } from "next/server";
 import { fixFile } from "@/agents/code-fixer";
+import { FixErrorsRequestSchema } from "@/lib/schemas";
+import type { BuildError, FixFile, FixErrorsRequest, FixErrorsResponse } from "@/lib/schemas";
+
+export { type FixFile, type BuildError, type FixErrorsRequest, type FixErrorsResponse };
 
 export const runtime = "nodejs";
-
-export interface FixFile {
-  path: string;
-  content: string;
-  action: "create" | "update" | "delete";
-}
-
-export interface BuildError {
-  file?: string;
-  line?: number;
-  message: string;
-  type: "typescript" | "eslint" | "runtime" | "missing-import";
-}
-
-export interface FixErrorsRequest {
-  files: FixFile[];
-  errors: BuildError[];
-  iteration?: number;
-}
-
-export interface FixErrorsResponse {
-  files: FixFile[];
-  fixed: number;
-  summary: string;
-  iterations: number;
-}
 
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
-    const files: FixFile[] = Array.isArray(body?.files) ? body.files : [];
-    const errors: BuildError[] = Array.isArray(body?.errors) ? body.errors : [];
-    const iteration: number = typeof body?.iteration === "number" ? body.iteration : 0;
+
+    const parsed = FixErrorsRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
+    }
+
+    const { files, errors, iteration, broadFix } = parsed.data;
 
     if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json({ error: "OPENAI_API_KEY is missing" }, { status: 500 });
-    }
-    if (!files.length) {
-      return NextResponse.json({ error: "No files provided" }, { status: 400 });
     }
 
     if (!errors.length) {
@@ -85,6 +64,7 @@ export async function POST(req: Request) {
             rule: e.type,
           })),
           projectContext,
+          broadFix,
         });
 
         fixedFiles[fileIndex] = {

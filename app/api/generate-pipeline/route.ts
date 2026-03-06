@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { GeneratePipelineRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
 
@@ -15,9 +16,29 @@ export interface PipelineFile {
 
 export interface GeneratePipelineRequest {
   appName?: string;
-  pipelineType?: "etl" | "cron" | "webhook" | "queue" | "all";
+  pipelineType?:
+    | "etl"
+    | "cron"
+    | "webhook"
+    | "queue"
+    | "streaming"
+    | "event-driven"
+    | "ml-inference"
+    | "notification"
+    | "data-sync"
+    | "all";
   description?: string;
-  queueProvider?: "bullmq" | "inngest";
+  queueProvider?: "bullmq" | "inngest" | "kafka" | "redis-streams" | "sqs";
+  schedule?: string;
+  // When retryPolicy is omitted, the AI defaults to exponential backoff with 3 retries and 1000ms base delay.
+  retryPolicy?: {
+    maxRetries: number;
+    backoffMs: number;
+    strategy: "fixed" | "exponential";
+  };
+  deadLetterQueue?: boolean;
+  monitoring?: boolean;
+  outputFormat?: "ts" | "yaml" | "both";
 }
 
 export interface GeneratePipelineResponse {
@@ -25,6 +46,9 @@ export interface GeneratePipelineResponse {
   summary: string;
   setupInstructions: string;
   requiredEnvVars: string[];
+  architecture?: string;
+  estimatedThroughput?: string;
+  warnings?: string[];
 }
 
 const PIPELINE_SYSTEM_PROMPT = `You are ZIVO AI — an expert in data pipeline architecture.
@@ -38,10 +62,24 @@ Respond ONLY with a valid JSON object:
   ],
   "summary": "Brief description",
   "setupInstructions": "Step-by-step setup",
-  "requiredEnvVars": []
+  "requiredEnvVars": [],
+  "architecture": "ASCII diagram of the pipeline",
+  "estimatedThroughput": "e.g. ~10k events/sec with BullMQ",
+  "warnings": []
 }
 
-Always include pipeline workers, queue setup, scheduling configuration, and TypeScript types.
+Pipeline generation rules:
+- Always include retry logic with exponential backoff by default.
+- When deadLetterQueue is true, add a DLQ consumer and routing logic for failed messages.
+- When monitoring is true, add OpenTelemetry tracing hooks AND a Prometheus metrics endpoint (/metrics).
+- When outputFormat is "both", generate TypeScript source files AND a YAML deployment manifest.
+- Support queue providers: BullMQ, Inngest, Kafka, Redis Streams, and SQS — use the correct SDK for each.
+- For "ml-inference" type: include model warm-up, request batching, and a fallback/circuit-breaker.
+- For "event-driven" type: include event schema (Zod), emitter, listener, and a saga orchestrator pattern.
+- For "data-sync" type: include change-data-capture (CDC) with Debezium or polling, and a conflict resolution strategy (last-write-wins or CRDTs).
+- For "notification" type: include a multi-channel dispatcher (email via Resend, SMS via Twilio, push via FCM, Slack webhook).
+- Always include pipeline workers, queue setup, scheduling configuration, and TypeScript types.
+- Include an ASCII architecture diagram in the "architecture" field.
 
 Return ONLY valid JSON, no markdown fences, no extra text.`;
 
@@ -54,18 +92,35 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = await req.json() as GeneratePipelineRequest;
+    const rawBody = await req.json() as GeneratePipelineRequest;
+
+    const schemaResult = GeneratePipelineRequestSchema.safeParse(rawBody);
+    if (!schemaResult.success) {
+      return NextResponse.json({ error: schemaResult.error.issues }, { status: 400 });
+    }
+
+    // Use validated data for schema-defined fields; fall back to rawBody for extended fields
     const {
-      appName = "My App",
-      pipelineType = "etl",
-      description = "data processing pipeline",
-      queueProvider = "bullmq",
-    } = body;
+      appName = schemaResult.data.appName,
+      pipelineType = schemaResult.data.pipelineType,
+      description = schemaResult.data.description,
+      queueProvider = schemaResult.data.queueProvider,
+      schedule,
+      retryPolicy,
+      deadLetterQueue = false,
+      monitoring = false,
+      outputFormat = "ts",
+    } = rawBody;
 
     const userPrompt = `Generate a data pipeline for "${appName}".
 Pipeline type: ${pipelineType}
 Description: ${description}
 Queue provider: ${queueProvider}
+${schedule ? `Schedule (cron): ${schedule}` : ""}
+${retryPolicy ? `Retry policy: maxRetries=${retryPolicy.maxRetries}, backoffMs=${retryPolicy.backoffMs}, strategy=${retryPolicy.strategy}` : ""}
+Dead-letter queue: ${deadLetterQueue}
+Monitoring (OpenTelemetry + Prometheus): ${monitoring}
+Output format: ${outputFormat}
 
 Include ETL workers, job queue setup, scheduling, and error handling.`;
 

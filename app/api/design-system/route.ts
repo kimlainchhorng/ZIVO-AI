@@ -2,6 +2,7 @@
 // Returns { files, designTokens, summary }
 import { NextResponse } from "next/server";
 import { generateDesignSystem } from "@/lib/design/design-system";
+import { DesignSystemRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
 
@@ -41,6 +42,11 @@ export async function POST(req: Request): Promise<Response> {
       description?: string;
       mood?: string;
     };
+
+    const schemaResult = DesignSystemRequestSchema.safeParse(body);
+    if (!schemaResult.success) {
+      return NextResponse.json({ error: schemaResult.error.issues }, { status: 400 });
+    }
 
     const {
       appName = "My App",

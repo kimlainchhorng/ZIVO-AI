@@ -75,7 +75,8 @@ Rules:
 - Add concise comments only where needed.
 - File paths should be relative to the project root.
 - For delete actions, content should be an empty string.
-- Include package.json with all necessary dependencies.`;
+- Include package.json with all necessary dependencies.
+- NEVER use axios for HTTP requests. Always use the native fetch API with async/await. axios is NOT available in the generated project environment.`;
 
 export const CODE_BUILDER_PLAN_PROMPT = `You are ZIVO AI — an expert software architect with 20+ years of experience. The user wants you to think deeply and create a comprehensive project plan.
 
