@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Image, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
+import { View, Text, Image as RNImage, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
 import { colors, spacing, borderRadius, typography } from "../../theme/tokens";
 import { currentUser, type User } from "../../lib/mock-data";
 
@@ -36,7 +36,7 @@ export default function ProfileScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Avatar & name */}
       <View style={styles.header}>
-        <Image source={{ uri: user.avatar }} style={styles.avatar} />
+        <RNImage source={{ uri: user.avatar }} style={styles.avatar} />
         <Text style={styles.name}>{user.name}</Text>
         <Text style={styles.email}>{user.email}</Text>
         <View style={styles.roleBadge}>
@@ -101,3 +101,6 @@ const styles = StyleSheet.create({
   joined: { textAlign: "center", fontSize: typography.fontSize.xs, color: colors.textMuted, marginTop: spacing.xl },
   errorText: { color: colors.error, fontSize: typography.fontSize.base },
 });
+
+
+
