@@ -1,14 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Toaster } from "@/components/ui/toaster";
 import GlobalProviders from "./GlobalProviders";
 
-// Using local system fonts instead of Google Fonts for offline compatibility
-const geistSans = { variable: "--font-geist-sans" };
-const geistMono = { variable: "--font-geist-mono" };
-
 export const metadata: Metadata = {
-  title: "ZIVO AI — The AI Builder Platform",
-  description: "Build, deploy and scale AI-powered applications with ZIVO AI",
+  title: "ZIVO AI — Agentic App Builder",
+  description: "Build, deploy, and iterate full-stack apps with ZIVO AI",
+  keywords: ["Builder", "Workflow", "Templates", "History", "Connectors"],
 };
 
 export default function RootLayout({
@@ -17,12 +15,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="en" suppressHydrationWarning>
+      <body className="antialiased">
         <GlobalProviders />
         {children}
+        <Toaster />
       </body>
     </html>
   );

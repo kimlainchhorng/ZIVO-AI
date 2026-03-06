@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { Suspense } from "react";
-import { addHistoryEntry } from "../history/page";
+import { addHistoryEntry } from "@/lib/history-store";
 import PlanViewer from "@/components/PlanViewer";
 import BuildOutputPanel from "@/components/BuildOutputPanel";
 import DiffViewer from "@/components/DiffViewer";

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import NavBar from '../../components/NavBar';
+import { GitBranch, Database, Brain, UserCheck, Webhook, Clock } from 'lucide-react';
+import NavBar from '../components/NavBar';
 
 const COLORS = {
   bg: "#0a0b14",
@@ -112,27 +113,72 @@ function StepIcon({ type }: { type: StepType }) {
 
 const WORKFLOW_TEMPLATES = [
   {
-    name: "Code → Review → Deploy",
+    id: "ci_cd",
+    name: "CI/CD Pipeline",
+    description: "Validate → Build → Test → Deploy",
+    icon: GitBranch,
     steps: [
-      { type: "Generate Code" as StepType, input: "Build a React component for a login form with validation" },
-      { type: "Ask AI" as StepType, input: "Review the code above for best practices, type safety, and potential bugs" },
-      { type: "Deploy" as StepType, input: "Deploy the reviewed component to Vercel" },
+      { type: "Security Scan" as StepType, input: "Validate source code for syntax errors and lint issues" },
+      { type: "Generate Code" as StepType, input: "Build the project and compile TypeScript to JavaScript" },
+      { type: "Ask AI" as StepType, input: "Run unit and integration tests, report results" },
+      { type: "Deploy" as StepType, input: "Deploy the built artifact to production on Vercel" },
     ],
   },
   {
-    name: "Scrape → Summarize → Report",
+    id: "data_pipeline",
+    name: "Data Pipeline",
+    description: "Scrape → Transform → Store → Notify",
+    icon: Database,
     steps: [
       { type: "Scrape URL" as StepType, input: "https://news.ycombinator.com" },
-      { type: "Summarize" as StepType, input: "Summarize the top 5 stories from the scraped content" },
-      { type: "Transform" as StepType, input: "Format the summary as a professional daily digest email" },
+      { type: "Transform" as StepType, input: "Extract titles, scores, and links from scraped HTML into structured JSON" },
+      { type: "Ask AI" as StepType, input: "Summarize the transformed data and store it as a daily report" },
+      { type: "Ask AI" as StepType, input: "Send a Slack notification that the pipeline completed successfully" },
     ],
   },
   {
-    name: "Security Scan → Fix → Report",
+    id: "ai_research",
+    name: "AI Research Chain",
+    description: "Fetch articles → Summarize each → Compile report",
+    icon: Brain,
     steps: [
-      { type: "Security Scan" as StepType, input: "Scan the codebase for SQL injection, XSS, CSRF, and exposed secrets" },
-      { type: "Generate Code" as StepType, input: "Fix all critical and high severity vulnerabilities found in the scan" },
-      { type: "Summarize" as StepType, input: "Generate a security audit report with fixed issues and recommendations" },
+      { type: "Scrape URL" as StepType, input: "https://arxiv.org/list/cs.AI/recent" },
+      { type: "Ask AI" as StepType, input: "Summarize each article abstract in 2-3 sentences" },
+      { type: "Summarize" as StepType, input: "Compile all summaries into a structured weekly AI research digest" },
+    ],
+  },
+  {
+    id: "user_onboarding",
+    name: "User Onboarding",
+    description: "Create account → Send welcome email → Notify team",
+    icon: UserCheck,
+    steps: [
+      { type: "Generate Code" as StepType, input: "Create user account in the database with hashed password and profile defaults" },
+      { type: "Ask AI" as StepType, input: "Send a personalized welcome email with getting-started guide" },
+      { type: "Ask AI" as StepType, input: "Notify the growth team Slack channel about the new user signup" },
+    ],
+  },
+  {
+    id: "webhook_processor",
+    name: "Webhook Processor",
+    description: "Receive → Validate → Process → Respond",
+    icon: Webhook,
+    steps: [
+      { type: "Ask AI" as StepType, input: "Receive and parse the incoming webhook payload" },
+      { type: "Security Scan" as StepType, input: "Validate the webhook signature and payload schema" },
+      { type: "Transform" as StepType, input: "Process the event and update the relevant database records" },
+      { type: "Ask AI" as StepType, input: "Send a 200 OK response with processing confirmation" },
+    ],
+  },
+  {
+    id: "scheduled_report",
+    name: "Scheduled Report",
+    description: "Query DB → Generate report with AI → Email stakeholders",
+    icon: Clock,
+    steps: [
+      { type: "Ask AI" as StepType, input: "Query the database for last 7 days of key business metrics" },
+      { type: "Summarize" as StepType, input: "Generate a comprehensive weekly business report with insights and trends using AI" },
+      { type: "Ask AI" as StepType, input: "Email the generated report to all stakeholders and leadership team" },
     ],
   },
 ];
@@ -147,6 +193,10 @@ export default function WorkflowPage() {
   const [runStats, setRunStats] = useState<RunStats | null>(null);
   const [showTemplates, setShowTemplates] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
 
   function addStep(type: StepType = "Ask AI") {
     setSteps((prev) => [...prev, { id: genId(), type, input: "", status: "pending" }]);
@@ -271,6 +321,48 @@ export default function WorkflowPage() {
     setSteps(tpl.steps.map((s) => ({ id: genId(), ...s, status: "pending" as StepStatus })));
     setShowTemplates(false);
     setRunStats(null);
+    setAiExplanation(null);
+  }
+
+  async function generateWithAI() {
+    if (!aiPrompt.trim() || aiGenerating) return;
+    setAiGenerating(true);
+    setAiError(null);
+    setAiExplanation(null);
+    try {
+      const res = await fetch('/api/workflow/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: aiPrompt.trim() }),
+      });
+      const data = await res.json() as {
+        workflow?: { name?: string; steps?: Array<{ id?: string; type?: string; label?: string; config?: Record<string, unknown> }> };
+        explanation?: string;
+        error?: string;
+      };
+      if (!res.ok || data.error) {
+        setAiError(data.error ?? 'Generation failed');
+        return;
+      }
+      if (data.workflow) {
+        const wf = data.workflow;
+        if (wf.name) setWorkflowName(wf.name);
+        if (Array.isArray(wf.steps) && wf.steps.length > 0) {
+          setSteps(wf.steps.map((s) => ({
+            id: genId(),
+            type: (s.type ?? 'Ask AI') as StepType,
+            input: s.config ? JSON.stringify(s.config) : (s.label ?? ''),
+            status: 'pending' as StepStatus,
+          })));
+        }
+        setAiExplanation(data.explanation ?? null);
+        setRunStats(null);
+      }
+    } catch {
+      setAiError('Request failed. Please try again.');
+    } finally {
+      setAiGenerating(false);
+    }
   }
 
   const statusIcon: Record<StepStatus, string> = {
@@ -355,17 +447,23 @@ export default function WorkflowPage() {
               </button>
               {showTemplates && (
                 <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', animation: 'slideDown 0.2s ease' }}>
-                  {WORKFLOW_TEMPLATES.map((tpl) => (
-                    <button
-                      key={tpl.name}
-                      className="zwf-btn"
-                      onClick={() => loadTemplate(tpl)}
-                      style={{ padding: '0.6rem 0.75rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textPrimary, cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left', transition: 'opacity 0.15s' }}
-                    >
-                      <div style={{ fontWeight: 600, marginBottom: '0.2rem' }}>{tpl.name}</div>
-                      <div style={{ fontSize: '0.75rem', color: COLORS.textMuted }}>{tpl.steps.length} steps</div>
-                    </button>
-                  ))}
+                  {WORKFLOW_TEMPLATES.map((tpl) => {
+                    const Icon = tpl.icon;
+                    return (
+                      <button
+                        key={tpl.id}
+                        className="zwf-btn"
+                        onClick={() => loadTemplate(tpl)}
+                        style={{ padding: '0.6rem 0.75rem', background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textPrimary, cursor: 'pointer', fontSize: '0.8125rem', textAlign: 'left', transition: 'opacity 0.15s' }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                          <Icon size={14} style={{ color: COLORS.accent, flexShrink: 0 }} />
+                          <span style={{ fontWeight: 600 }}>{tpl.name}</span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: COLORS.textMuted }}>{tpl.description}</div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -403,6 +501,42 @@ export default function WorkflowPage() {
 
           {/* Main Area */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '1.5rem 2rem', gap: '1.25rem', overflowY: 'auto', animation: 'fadeIn 0.4s ease' }}>
+
+            {/* Generate with AI */}
+            <div style={{ background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: '14px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <p style={{ margin: 0, fontSize: '0.75rem', fontWeight: 600, color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Generate with AI</p>
+              <textarea
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) generateWithAI(); }}
+                placeholder="e.g. Fetch data from my API, summarize it with AI, then send an email notification"
+                rows={3}
+                style={{ width: '100%', background: COLORS.bg, border: `1px solid ${COLORS.border}`, borderRadius: '8px', color: COLORS.textPrimary, padding: '0.65rem 0.85rem', fontSize: '0.875rem', outline: 'none', resize: 'vertical', fontFamily: 'inherit', boxSizing: 'border-box' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <button
+                  className="zwf-btn"
+                  onClick={generateWithAI}
+                  disabled={aiGenerating || !aiPrompt.trim()}
+                  style={{ padding: '0.5rem 1.25rem', background: aiGenerating || !aiPrompt.trim() ? 'rgba(99,102,241,0.3)' : COLORS.accentGradient, border: 'none', borderRadius: '8px', color: '#fff', cursor: aiGenerating || !aiPrompt.trim() ? 'not-allowed' : 'pointer', fontSize: '0.875rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', transition: 'opacity 0.15s' }}
+                >
+                  {aiGenerating ? (
+                    <><span style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.3)', borderTop: '2px solid #fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} /> Generating…</>
+                  ) : '✦ Generate Workflow'}
+                </button>
+                {aiGenerating && <span style={{ fontSize: '0.8125rem', color: COLORS.textMuted }}>AI is designing your workflow…</span>}
+              </div>
+              {aiError && (
+                <div style={{ padding: '0.6rem 0.85rem', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', fontSize: '0.8125rem', color: COLORS.error }}>
+                  {aiError}
+                </div>
+              )}
+              {aiExplanation && (
+                <div style={{ padding: '0.6rem 0.85rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '8px', fontSize: '0.8125rem', color: COLORS.textSecondary, animation: 'slideDown 0.3s ease' }}>
+                  ✦ {aiExplanation}
+                </div>
+              )}
+            </div>
 
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
