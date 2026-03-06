@@ -1093,6 +1093,7 @@ function AIPageInner() {
       if (!isCrossOriginIsolated) {
         setWebsiteLivePreviewRunning(false);
         setWebsiteLivePreviewStatus(null);
+        setWebsiteLivePreviewError("Live runtime needs cross-origin isolation in this browser context. Use Remote Preview (sign in required) or enable COOP/COEP for local runtime.");
         return;
       }
 
@@ -5619,12 +5620,4 @@ export default function AIPage() {
     </Suspense>
   );
 }
-
-
-
-
-
-
-
-
 
