@@ -304,12 +304,24 @@ export async function appendProjectBuildWithSnapshot(
       });
     if (!uploadError) {
       // Update the record with the snapshot path
-      const { data: updated } = await client
+      const { data: updated, error: updateError } = await client
         .from("project_builds")
         .update({ snapshot_path: snapshotPath })
         .eq("id", build.id)
         .select()
         .single();
+      if (updateError) {
+        // Best-effort cleanup: remove the uploaded snapshot to avoid orphaned objects
+        try {
+          await client.storage
+            .from(STORAGE_BUCKET_SNAPSHOTS)
+            .remove([`${projectId}/${build.id}.json`]);
+        } catch {
+          // Swallow cleanup errors; build insert already succeeded
+        }
+        // Non-fatal — return the original build record without a snapshot_path
+        return build;
+      }
       return (updated ?? build) as DbProjectBuild;
     }
   } catch {
@@ -353,14 +365,30 @@ export async function restoreProjectFromSnapshot(
   const snapshot = JSON.parse(json) as { files: Array<{ path: string; content: string }> };
   if (!Array.isArray(snapshot.files)) throw new Error("Invalid snapshot format");
 
-  // Delete all existing files for the project then upsert snapshot files
-  const { error: deleteError } = await client
-    .from("project_files")
-    .delete()
-    .eq("project_id", projectId);
-  if (deleteError) throw new Error(`Failed to clear project files: ${deleteError.message}`);
+  const snapshotPaths = snapshot.files.map((f) => f.path);
 
-  await upsertProjectFiles(token, projectId, snapshot.files.map((f) => ({ path: f.path, content: f.content, generated_by: GENERATED_BY_SNAPSHOT_RESTORE })));
+  // Upsert snapshot files first so we never leave the project empty if the upsert fails.
+  await upsertProjectFiles(
+    token,
+    projectId,
+    snapshot.files.map((f) => ({ path: f.path, content: f.content, generated_by: GENERATED_BY_SNAPSHOT_RESTORE }))
+  );
+
+  // Then delete any existing project files not present in the snapshot.
+  if (snapshotPaths.length === 0) {
+    const { error: deleteError } = await client
+      .from("project_files")
+      .delete()
+      .eq("project_id", projectId);
+    if (deleteError) throw new Error(`Failed to clear project files: ${deleteError.message}`);
+  } else {
+    const { error: deleteError } = await client
+      .from("project_files")
+      .delete()
+      .eq("project_id", projectId)
+      .not("path", "in", `(${snapshotPaths.map((p) => `"${p}"`).join(",")})`);
+    if (deleteError) throw new Error(`Failed to delete stale project files: ${deleteError.message}`);
+  }
 }
 
 

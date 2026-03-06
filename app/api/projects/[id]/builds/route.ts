@@ -25,6 +25,10 @@ export async function GET(req: Request, { params }: RouteParams) {
     const project = await getProjectById(token, id);
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
+    if (project.owner_user_id !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const client = createAuthedClient(token);
     const { data: builds, error } = await client
       .from("project_builds")

@@ -44,6 +44,10 @@ export async function POST(req: Request, { params }: RouteParams) {
     const project = await getProjectById(token, id);
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
+    if (project.owner_user_id !== user.id) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     await restoreProjectFromSnapshot(token, id, buildId);
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
