@@ -20,7 +20,7 @@ const COLORS = {
   textMuted: "#475569",
 };
 
-type StepType = "Generate Code" | "Ask AI" | "Transform" | "Summarize" | "Scrape URL" | "Deploy" | "Security Scan";
+type StepType = "Generate Code" | "Ask AI" | "Transform" | "Summarize" | "Scrape URL" | "Deploy" | "Security Scan" | "Test Generation" | "API Mock" | "Database Schema" | "CI/CD Pipeline" | "Performance Audit" | "ML Training" | "Data Validation" | "Notification" | "Caching Layer" | "Rate Limiter" | "Auth Middleware" | "File Processing" | "Image Processing";
 type StepStatus = "pending" | "running" | "done" | "error";
 
 interface WorkflowStep {
@@ -54,7 +54,15 @@ interface RunHistoryEntry {
   elapsed: number;
 }
 
-const STEP_TYPES: StepType[] = ["Generate Code", "Ask AI", "Transform", "Summarize", "Scrape URL", "Deploy", "Security Scan"];
+const STEP_TYPES: StepType[] = [
+  "Generate Code", "Ask AI", "Transform", "Summarize",
+  "Scrape URL", "Deploy", "Security Scan",
+  "Test Generation", "API Mock", "Database Schema",
+  "CI/CD Pipeline", "Performance Audit",
+  "ML Training", "Data Validation", "Notification",
+  "Caching Layer", "Rate Limiter", "Auth Middleware",
+  "File Processing", "Image Processing",
+];
 const WORKFLOWS_KEY = "zivo_workflows";
 const RUN_HISTORY_KEY = "zivo_workflow_runs";
 
@@ -90,6 +98,19 @@ const STEP_COLORS: Record<StepType, string> = {
   "Scrape URL": "#f59e0b",
   "Deploy": "#ef4444",
   "Security Scan": "#f97316",
+  "Test Generation": "#3b82f6",
+  "API Mock": "#a78bfa",
+  "Database Schema": "#22c55e",
+  "CI/CD Pipeline": "#0ea5e9",
+  "Performance Audit": "#fb923c",
+  "ML Training": "#ec4899",
+  "Data Validation": "#14b8a6",
+  "Notification": "#f59e0b",
+  "Caching Layer": "#84cc16",
+  "Rate Limiter": "#f97316",
+  "Auth Middleware": "#a855f7",
+  "File Processing": "#06b6d4",
+  "Image Processing": "#e11d48",
 };
 
 function StepIcon({ type }: { type: StepType }) {
@@ -107,7 +128,7 @@ function StepIcon({ type }: { type: StepType }) {
     return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>;
   if (type === "Deploy")
     return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>;
-  // Security Scan
+  // Security Scan — shield icon (default fallback for unknown types too)
   return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>;
 }
 
@@ -179,6 +200,69 @@ const WORKFLOW_TEMPLATES = [
       { type: "Ask AI" as StepType, input: "Query the database for last 7 days of key business metrics" },
       { type: "Summarize" as StepType, input: "Generate a comprehensive weekly business report with insights and trends using AI" },
       { type: "Ask AI" as StepType, input: "Email the generated report to all stakeholders and leadership team" },
+    ],
+  },
+  {
+    id: "ml_training",
+    name: "ML Training Pipeline",
+    description: "Preprocess → Train → Evaluate → Deploy Model",
+    icon: Brain,
+    steps: [
+      { type: "Data Validation" as StepType, input: "Validate dataset schema, check for nulls and class imbalance" },
+      { type: "Transform" as StepType, input: "Normalize features, encode categoricals, split train/val/test" },
+      { type: "ML Training" as StepType, input: "Train a gradient-boosted classifier with cross-validation" },
+      { type: "Performance Audit" as StepType, input: "Evaluate model accuracy, precision, recall, F1 and AUC-ROC" },
+      { type: "Deploy" as StepType, input: "Package model as a REST inference endpoint and deploy to production" },
+    ],
+  },
+  {
+    id: "file_processing",
+    name: "File Processing Pipeline",
+    description: "Upload → Parse → Validate → Store",
+    icon: Database,
+    steps: [
+      { type: "File Processing" as StepType, input: "Accept CSV/XLSX/PDF file upload, parse into structured rows" },
+      { type: "Data Validation" as StepType, input: "Validate column types, required fields, and row count limits" },
+      { type: "Transform" as StepType, input: "Normalize values, deduplicate rows, enrich with lookup data" },
+      { type: "Ask AI" as StepType, input: "Generate a human-readable summary of the uploaded dataset" },
+      { type: "Deploy" as StepType, input: "Store processed data in the database and emit a completion event" },
+    ],
+  },
+  {
+    id: "auth_security",
+    name: "Auth & Security Pipeline",
+    description: "Authenticate → Authorize → Audit → Alert",
+    icon: UserCheck,
+    steps: [
+      { type: "Auth Middleware" as StepType, input: "Validate JWT token, refresh if expiring, reject blacklisted tokens" },
+      { type: "Security Scan" as StepType, input: "Check request payload for injection attacks and forbidden patterns" },
+      { type: "Rate Limiter" as StepType, input: "Apply per-user sliding-window rate limit of 100 req/min" },
+      { type: "Ask AI" as StepType, input: "Log the audit trail entry and summarise the security event" },
+      { type: "Notification" as StepType, input: "Send security alert email/Slack if anomaly threshold is exceeded" },
+    ],
+  },
+  {
+    id: "notification_broadcast",
+    name: "Notification Broadcast",
+    description: "Trigger → Personalise → Dispatch → Track",
+    icon: Webhook,
+    steps: [
+      { type: "Ask AI" as StepType, input: "Personalise notification content based on user preferences and history" },
+      { type: "Caching Layer" as StepType, input: "Check notification dedup cache to avoid sending duplicates" },
+      { type: "Notification" as StepType, input: "Dispatch via email, push notification, and Slack in parallel" },
+      { type: "Transform" as StepType, input: "Record delivery status and update notification_log table" },
+    ],
+  },
+  {
+    id: "image_pipeline",
+    name: "Image Processing Pipeline",
+    description: "Upload → Process → Optimise → Serve",
+    icon: GitBranch,
+    steps: [
+      { type: "File Processing" as StepType, input: "Accept image upload (JPEG/PNG/WebP), validate MIME type and size" },
+      { type: "Image Processing" as StepType, input: "Resize to 3 breakpoints (320/768/1280px), convert to WebP" },
+      { type: "Security Scan" as StepType, input: "Scan image for NSFW content using moderation API" },
+      { type: "Deploy" as StepType, input: "Upload processed variants to CDN and update asset database record" },
     ],
   },
 ];
