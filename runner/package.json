@@ -1,0 +1,22 @@
+{
+  "name": "zivo-runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Remote runner for ZIVO-AI quality jobs",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node --esm src/index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.98.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

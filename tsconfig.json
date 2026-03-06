@@ -38,7 +38,8 @@
   ],
   "exclude": [
     "node_modules",
+    "mobile",
+    "runner"
     "mobile"
-    "node_modules"
   ]
 }

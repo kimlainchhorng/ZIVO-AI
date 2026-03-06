@@ -25,3 +25,23 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
+
+  # ─── Remote runner — executes quality jobs outside the main app container ───
+  runner:
+    build: ./runner
+    restart: unless-stopped
+    environment:
+      # Supabase connection (service role — never expose to the browser)
+      - SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      # Concurrency and polling tuning
+      - RUNNER_CONCURRENCY=${RUNNER_CONCURRENCY:-2}
+      - RUNNER_POLL_INTERVAL_MS=${RUNNER_POLL_INTERVAL_MS:-5000}
+    # No ports exposed — the runner is a background worker
+    # Resource limits: prevent runaway project builds from starving other services
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+

@@ -63,10 +63,12 @@ export const ProjectVersionSchema = z.object({
 export const DeploymentSchema = z.object({
   id: z.string().uuid(),
   projectId: z.string().uuid(),
-  provider: z.enum(['vercel', 'github']),
+  provider: z.enum(['vercel', 'github', 'docker']),
   deployUrl: z.string().optional(),
   githubRepo: z.string().optional(),
   githubBranch: z.string().optional(),
+  dockerEndpoint: z.string().optional(),
+  commitSha: z.string().optional(),
   status: z.enum(['pending', 'building', 'success', 'error']),
   errorMessage: z.string().optional(),
   deployedAt: z.string().optional(),

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import SidebarLayout from '@/components/layout/SidebarLayout';
+import PlanChecklist from '@/components/builder/PlanChecklist';
 import {
   ArrowLeft,
   Play,
@@ -29,6 +30,12 @@ import {
   Trash2,
   UserPlus,
   Shield,
+  Rocket,
+  Download,
+  Github,
+  Container,
+  ExternalLink,
+  ClipboardList,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -82,21 +89,25 @@ interface SSEDoneData {
 // ─── Quality Pass types ────────────────────────────────────────────────────────
 
 interface CheckResult {
-  check: 'build' | 'lint' | 'typecheck';
+  check: 'install' | 'build' | 'lint' | 'typecheck';
   passed: boolean;
   output: string;
   durationMs: number;
 }
 
-type QualityRunStatus = 'queued' | 'running' | 'passed' | 'failed';
+type QualityRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'stopped';
 
 interface QualityRun {
   id: string;
+  project_id: string;
   status: QualityRunStatus;
-  logs: string;
-  checks: CheckResult[] | null;
-  fix_attempts: number;
-  max_retries: number;
+  type: string;
+  attempt: number;
+  max_attempts: number;
+  result_json: { passed: boolean; checks: CheckResult[] } | null;
+  logs_storage_path: string | null;
+  /** Signed URL returned by the status API for log download */
+  logsUrl: string | null;
   started_at: string | null;
   finished_at: string | null;
   created_at: string;
@@ -214,6 +225,27 @@ function CheckBadge({ result }: { result: CheckResult }) {
 
 function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean }) {
   const [showLogs, setShowLogs] = useState(false);
+  const [fetchedLogs, setFetchedLogs] = useState<string | null>(null);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const checks = run.result_json?.checks ?? [];
+  const attemptLabel = run.max_attempts > 1 ? ` (attempt ${run.attempt}/${run.max_attempts})` : '';
+
+  async function handleToggleLogs() {
+    if (showLogs) { setShowLogs(false); return; }
+    setShowLogs(true);
+    if (!fetchedLogs && run.logsUrl) {
+      setLoadingLogs(true);
+      try {
+        const res = await fetch(run.logsUrl);
+        setFetchedLogs(res.ok ? await res.text() : 'Failed to load logs.');
+      } catch {
+        setFetchedLogs('Failed to load logs.');
+      } finally {
+        setLoadingLogs(false);
+      }
+    }
+  }
+
   return (
     <div
       style={{
@@ -233,27 +265,24 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
           ? <CheckCircle2 size={16} color="#10b981" />
           : <XCircle size={16} color="#ef4444" />}
         <span style={{ fontWeight: 600, color: qualityStatusColor(run.status) }}>
-          {qualityStatusLabel(run.status)}
+          {qualityStatusLabel(run.status)}{attemptLabel}
         </span>
-        {run.fix_attempts > 0 && (
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>(auto-fixed {run.fix_attempts}×)</span>
-        )}
         <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#475569' }}>
           {new Date(run.created_at).toLocaleString()}
         </span>
       </div>
 
-      {run.checks && run.checks.length > 0 && (
+      {checks.length > 0 && (
         <div style={{ marginBottom: '0.5rem' }}>
-          {run.checks.map((c) => (
+          {checks.map((c) => (
             <CheckBadge key={c.check} result={c} />
           ))}
         </div>
       )}
 
-      {run.logs && (
+      {(run.logsUrl || run.logs_storage_path) && (
         <button
-          onClick={() => setShowLogs((v) => !v)}
+          onClick={handleToggleLogs}
           style={{
             background: 'transparent', border: 'none', color: '#6366f1',
             cursor: 'pointer', fontSize: '0.8rem', padding: '0.25rem 0',
@@ -264,7 +293,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
           {showLogs ? 'Hide logs' : 'Show full logs'}
         </button>
       )}
-      {showLogs && run.logs && (
+      {showLogs && (
         <pre
           style={{
             marginTop: '0.5rem', fontSize: '0.72rem', color: '#64748b',
@@ -273,7 +302,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
             maxHeight: '400px', overflow: 'auto',
           }}
         >
-          {run.logs}
+          {loadingLogs ? 'Loading logs…' : (fetchedLogs ?? 'No logs available.')}
         </pre>
       )}
     </div>
@@ -283,6 +312,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
 // ─── Component ────────────────────────────────────────────────────────────────
 
 type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'domains' | 'deployments' | 'team';
+type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'publish';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -332,11 +362,22 @@ export default function ProjectWorkspacePage() {
   const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('viewer');
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  // Publish state
+  const [ghRepoName, setGhRepoName] = useState('');
+  const [ghPat, setGhPat] = useState('');
+  const [ghPublishing, setGhPublishing] = useState(false);
+  const [ghResult, setGhResult] = useState<{ repoUrl?: string; commitSha?: string; error?: string } | null>(null);
+  const [dockerEndpoint, setDockerEndpoint] = useState('');
+  const [dockerToken, setDockerToken] = useState('');
+  const [dockerDeploying, setDockerDeploying] = useState(false);
+  const [dockerResult, setDockerResult] = useState<{ success?: boolean; status?: string; message?: string; error?: string } | null>(null);
+  const [zipDownloading, setZipDownloading] = useState(false);
 
   // UI
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
   const streamEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [planDrawerOpen, setPlanDrawerOpen] = useState(false);
 
   // Restore state
   const [restoringBuildId, setRestoringBuildId] = useState<string | null>(null);
@@ -474,25 +515,30 @@ export default function ProjectWorkspacePage() {
     };
   }, [activeQualityRunId, pollQualityRun]);
 
-  async function handleStartQuality(maxRetries: number) {
+  async function handleStartQuality(previousRunId?: string) {
     if (!token || qualityStarting) return;
     setQualityStarting(true);
     try {
+      const body: Record<string, string> = {};
+      if (previousRunId) body.previousRunId = previousRunId;
       const res = await fetch(`/api/projects/${projectId}/quality/start`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxRetries }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.ok && data.runId) {
         setActiveQualityRunId(data.runId as string);
         setQualityRuns((prev) => [{
           id: data.runId as string,
+          project_id: projectId,
           status: 'queued',
-          logs: '',
-          checks: null,
-          fix_attempts: 0,
-          max_retries: maxRetries,
+          type: 'quality',
+          attempt: 1,
+          max_attempts: 4,
+          result_json: null,
+          logs_storage_path: null,
+          logsUrl: null,
           started_at: null,
           finished_at: null,
           created_at: new Date().toISOString(),
@@ -747,6 +793,72 @@ export default function ProjectWorkspacePage() {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) await fetchMembers();
+  // ─── Publish handlers ──────────────────────────────────────────────────────
+
+  async function handleExportZip() {
+    if (!token || !projectId) return;
+    setZipDownloading(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/export.zip`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ error: 'Download failed' }))).error);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project?.title ?? 'project'}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setZipDownloading(false);
+    }
+  }
+
+  async function handleGithubPublish() {
+    if (!token || !projectId) return;
+    if (!ghRepoName.trim()) { alert('Enter a repository name'); return; }
+    if (!ghPat.trim()) { alert('Enter your GitHub PAT'); return; }
+    setGhPublishing(true);
+    setGhResult(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/publish/github`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ repoName: ghRepoName.trim(), githubToken: ghPat.trim() }),
+      });
+      const data = await res.json() as { repoUrl?: string; commitSha?: string; error?: string };
+      setGhResult(data);
+    } catch (err) {
+      setGhResult({ error: err instanceof Error ? err.message : 'Unknown error' });
+    } finally {
+      setGhPublishing(false);
+    }
+  }
+
+  async function handleDockerDeploy() {
+    if (!token || !projectId) return;
+    if (!dockerEndpoint.trim()) { alert('Enter a Docker deploy endpoint URL'); return; }
+    if (!dockerToken.trim()) { alert('Enter the Docker deploy token'); return; }
+    setDockerDeploying(true);
+    setDockerResult(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/publish/docker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ endpoint: dockerEndpoint.trim(), token: dockerToken.trim() }),
+      });
+      const data = await res.json() as { success?: boolean; status?: string; message?: string; error?: string };
+      setDockerResult(data);
+    } catch (err) {
+      setDockerResult({ error: err instanceof Error ? err.message : 'Unknown error' });
+    } finally {
+      setDockerDeploying(false);
+    }
   }
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -804,7 +916,9 @@ export default function ProjectWorkspacePage() {
 
   return (
     <SidebarLayout>
-      <div style={s.page}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1.5rem', minHeight: '100vh', background: '#0a0a0f' }}>
+        {/* ── Main content column ── */}
+        <div style={{ ...s.page, flex: 1, minWidth: 0, marginBottom: 0 }}>
         {/* ── Header ── */}
         <div style={s.header}>
           <Link href="/projects" style={s.backBtn}>
@@ -829,6 +943,22 @@ export default function ProjectWorkspacePage() {
               )}
             </div>
           </div>
+          {/* Plan & Checklist toggle button */}
+          <button
+            onClick={() => setPlanDrawerOpen((v) => !v)}
+            title="Plan & Checklist"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.45rem 0.875rem', borderRadius: '8px',
+              background: planDrawerOpen ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.08)',
+              color: planDrawerOpen ? '#818cf8' : '#64748b',
+              border: `1px solid ${planDrawerOpen ? 'rgba(99,102,241,0.4)' : 'rgba(99,102,241,0.15)'}`,
+              cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, whiteSpace: 'nowrap',
+            }}
+          >
+            <ClipboardList size={15} />
+            Plan &amp; Checklist
+          </button>
         </div>
 
         {/* ── Continue Build Panel ── */}
@@ -942,6 +1072,7 @@ export default function ProjectWorkspacePage() {
         {/* ── Tabs ── */}
         <div style={s.tabs}>
           {(['conversation', 'files', 'builds', 'quality', 'domains', 'deployments', 'team'] as Tab[]).map((tab) => (
+          {(['conversation', 'files', 'builds', 'quality', 'publish'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -954,6 +1085,7 @@ export default function ProjectWorkspacePage() {
               {tab === 'domains' && <Globe size={14} />}
               {tab === 'deployments' && <Server size={14} />}
               {tab === 'team' && <Users size={14} />}
+              {tab === 'publish' && <Rocket size={14} />}
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'files' && files.length > 0 && (
                 <span style={s.badge}>{files.length}</span>
@@ -1131,13 +1263,13 @@ export default function ProjectWorkspacePage() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                 <div>
                   <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>
-                    build · lint · typecheck — strict gate, up to 3 auto-fix retries
+                    build · lint · typecheck — runs in remote runner, app applies AI fixes
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.75rem' }}>
                   {canAutoFix && (
                     <button
-                      onClick={() => handleStartQuality(3)}
+                      onClick={() => handleStartQuality(latestQualityRun?.id)}
                       disabled={qualityStarting}
                       style={{
                         display: 'flex', alignItems: 'center', gap: '0.4rem',
@@ -1152,7 +1284,7 @@ export default function ProjectWorkspacePage() {
                     </button>
                   )}
                   <button
-                    onClick={() => handleStartQuality(0)}
+                    onClick={() => handleStartQuality()}
                     disabled={qualityStarting || isQualityRunning}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '0.4rem',
@@ -1181,8 +1313,8 @@ export default function ProjectWorkspacePage() {
               >
                 <AlertTriangle size={14} style={{ marginTop: '1px', flexShrink: 0 }} />
                 <span>
-                  <strong>Security note:</strong> Checks run inside the app container by executing
-                  project files as child processes. Only use with trusted code.
+                  <strong>Security note:</strong> Checks run in an isolated remote runner container,
+                  not in the app. Logs are stored in Supabase Storage.
                 </span>
               </div>
 
@@ -1199,6 +1331,166 @@ export default function ProjectWorkspacePage() {
               )}
             </div>
           )}
+
+          {/* ── Publish ── */}
+          {activeTab === 'publish' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+              {/* Export ZIP */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Download size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Export ZIP</p>
+                </div>
+                <p style={s.panelDesc}>Download all project files as a ZIP archive.</p>
+                <button
+                  onClick={handleExportZip}
+                  disabled={zipDownloading}
+                  style={{
+                    ...s.primaryBtn,
+                    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                    color: '#fff',
+                    cursor: zipDownloading ? 'not-allowed' : 'pointer',
+                    opacity: zipDownloading ? 0.6 : 1,
+                    alignSelf: 'flex-start',
+                  }}
+                >
+                  {zipDownloading
+                    ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Preparing…</>
+                    : <><Download size={14} /> Download ZIP</>}
+                </button>
+              </div>
+
+              {/* Push to GitHub */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Github size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Push to GitHub</p>
+                </div>
+                <p style={s.panelDesc}>
+                  Push project files to a GitHub repository using a Personal Access Token.
+                  The repo will be created if it does not exist.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Repository name (e.g. my-awesome-app)"
+                    value={ghRepoName}
+                    onChange={(e) => setGhRepoName(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <input
+                    type="password"
+                    placeholder="GitHub PAT (repo scope required)"
+                    value={ghPat}
+                    onChange={(e) => setGhPat(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <button
+                    onClick={handleGithubPublish}
+                    disabled={ghPublishing}
+                    style={{
+                      ...s.primaryBtn,
+                      background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                      color: '#fff',
+                      cursor: ghPublishing ? 'not-allowed' : 'pointer',
+                      opacity: ghPublishing ? 0.6 : 1,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    {ghPublishing
+                      ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Pushing…</>
+                      : <><Github size={14} /> Push to GitHub</>}
+                  </button>
+                  {ghResult && (
+                    ghResult.error
+                      ? <div style={s.errorBox}><XCircle size={14} /> {ghResult.error}</div>
+                      : <div style={{
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          padding: '0.625rem 0.75rem', borderRadius: '8px',
+                          background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)',
+                          color: '#10b981', fontSize: '0.85rem',
+                        }}>
+                          <CheckCircle2 size={14} />
+                          <span>Published! </span>
+                          {ghResult.repoUrl && (
+                            <a href={ghResult.repoUrl} target="_blank" rel="noopener noreferrer"
+                              style={{ color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {ghResult.repoUrl} <ExternalLink size={12} />
+                            </a>
+                          )}
+                        </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Deploy to Docker */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Container size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Deploy to Docker Server</p>
+                </div>
+                <p style={s.panelDesc}>
+                  Trigger a deploy on your self-hosted Docker server.
+                  See <a href="https://github.com/kimlainchhorng/ZIVO-AI/blob/main/docs/docker-deploy-agent.md"
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ color: '#818cf8' }}>Docker Deploy Agent docs</a> to set up your server.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  <input
+                    type="url"
+                    placeholder="Docker deploy endpoint URL (e.g. https://my-server:4242/deploy)"
+                    value={dockerEndpoint}
+                    onChange={(e) => setDockerEndpoint(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Deploy token (shared secret with your Docker server)"
+                    value={dockerToken}
+                    onChange={(e) => setDockerToken(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <button
+                    onClick={handleDockerDeploy}
+                    disabled={dockerDeploying}
+                    style={{
+                      ...s.primaryBtn,
+                      background: 'linear-gradient(135deg,#0ea5e9,#0284c7)',
+                      color: '#fff',
+                      cursor: dockerDeploying ? 'not-allowed' : 'pointer',
+                      opacity: dockerDeploying ? 0.6 : 1,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    {dockerDeploying
+                      ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Deploying…</>
+                      : <><Rocket size={14} /> Deploy</>}
+                  </button>
+                  {dockerResult && (
+                    dockerResult.error
+                      ? <div style={s.errorBox}><XCircle size={14} /> {dockerResult.error}</div>
+                      : <div style={{
+                          padding: '0.625rem 0.75rem', borderRadius: '8px',
+                          background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)',
+                          color: '#10b981', fontSize: '0.85rem',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <CheckCircle2 size={14} />
+                            <strong>Deploy triggered</strong>
+                            {dockerResult.status && <span style={{ color: '#64748b' }}>· {dockerResult.status}</span>}
+                          </div>
+                          {dockerResult.message && (
+                            <p style={{ margin: '0.25rem 0 0', color: '#94a3b8', fontSize: '0.8rem' }}>{dockerResult.message}</p>
+                          )}
+                        </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+        </div>
 
           {/* ── Domains ── */}
           {activeTab === 'domains' && (
@@ -1554,6 +1846,21 @@ export default function ProjectWorkspacePage() {
           )}
         </div>
         <iframe key={iframeKey} src="about:blank" style={{ display: 'none' }} title="preview-cache-bust" />
+        </div>{/* end main content column */}
+
+        {/* ── Plan & Checklist right-side drawer ── */}
+        {planDrawerOpen && token && (
+          <div style={{
+            width: '340px', flexShrink: 0, paddingTop: '2rem', paddingRight: '1.5rem',
+            position: 'sticky', top: 0, maxHeight: '100vh', overflowY: 'auto',
+          }}>
+            <PlanChecklist
+              projectId={projectId}
+              token={token}
+              onApplied={() => { fetchFiles(); fetchBuilds(); fetchMessages(); }}
+            />
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -1571,7 +1878,6 @@ const styles = {
     minHeight: '100vh',
     background: '#0a0a0f',
     color: '#f1f5f9',
-    maxWidth: '900px',
   } as React.CSSProperties,
 
   header: {
@@ -1579,6 +1885,7 @@ const styles = {
     alignItems: 'flex-start',
     gap: '1rem',
     marginBottom: '1.5rem',
+    flexWrap: 'wrap',
   } as React.CSSProperties,
 
   backBtn: {
