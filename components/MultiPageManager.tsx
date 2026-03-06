@@ -95,9 +95,14 @@ export default function MultiPageManager({
   function handleAddCustomPage() {
     const name = customPageName.trim();
     if (!name) return;
-    const slug = name.toLowerCase().replace(/\s+/g, '-');
+    const slug = name
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'page';
     const newPage: Page = {
-      id: `page-${Date.now()}`,
+      id: crypto.randomUUID(),
       name,
       slug,
       sections: [],

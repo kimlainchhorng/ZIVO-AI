@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Github, Rocket, CheckCircle2, XCircle, Loader2, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
@@ -44,10 +44,14 @@ export default function DeployModal({ projectId, onClose, initialTarget = 'githu
   const [githubToken, setGithubToken] = useState('');
 
   // Vercel fields
-  const [vercelToken, setVercelToken] = useState(
-    typeof window !== 'undefined' ? localStorage.getItem('zivo_vercel_token') ?? '' : ''
-  );
+  const [vercelToken, setVercelToken] = useState('');
   const [teamId, setTeamId] = useState('');
+
+  // Load saved Vercel token after mount to avoid SSR hydration mismatch
+  useEffect(() => {
+    const saved = localStorage.getItem('zivo_vercel_token');
+    if (saved) setVercelToken(saved);
+  }, []);
 
   async function handleDeploy() {
     if (!projectId) { toast.error('No project selected'); return; }

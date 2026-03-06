@@ -159,8 +159,9 @@ Do not include any markdown, code blocks, or extra text — only the raw JSON ob
             .single();
           versionId = versionRow?.id;
         }
-      } catch {
-        // Non-fatal: version save failed
+      } catch (versionErr: unknown) {
+        // Non-fatal: version save failed — log for monitoring
+        console.warn('[generate-website] Version save failed:', (versionErr as Error).message);
       }
     }
 
