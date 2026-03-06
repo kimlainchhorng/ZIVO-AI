@@ -129,7 +129,7 @@ export async function POST(req: Request, { params }: RouteParams) {
       },
       body: JSON.stringify(webhookPayload),
       // 30 second timeout
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(300_000), // 5-minute timeout for docker ops
     });
 
     const bodyText = await webhookRes.text().catch(() => "");

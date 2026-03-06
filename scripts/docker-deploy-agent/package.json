@@ -1,0 +1,11 @@
+{
+  "name": "zivo-deploy-agent",
+  "version": "1.0.0",
+  "description": "Lightweight ZIVO-AI Docker deploy agent",
+  "main": "server.js",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {}
+}

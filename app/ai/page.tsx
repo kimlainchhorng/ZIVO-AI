@@ -156,8 +156,6 @@ const SUGGEST_DEBOUNCE_MS = 800;
 // Max characters of existing code sent to the enhance endpoint
 const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 // Mobile phone frame dimensions for preview
-const _MOBILE_FRAME_WIDTH = 375;
-const _MOBILE_FRAME_HEIGHT = 812;
 // Max characters shown in the quick prompt suggestion chip text
 const MAX_PROMPT_SUGGESTION_LENGTH = 72;
 

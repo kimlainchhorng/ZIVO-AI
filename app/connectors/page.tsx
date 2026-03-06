@@ -184,7 +184,6 @@ const ConnectorComponent = () => {
   const [resendError, setResendError] = useState<string>('');
   const [resendLoading, setResendLoading] = useState(false);
   const [storageError, setStorageError] = useState<string>('');
-  const [_mapsError, setMapsError] = useState<string>('');
 
   function updateState(patch: Partial<ConnectorState>): void {
     setConnState((prev) => {
@@ -347,18 +346,14 @@ const ConnectorComponent = () => {
 
   function _handleMapsConnect(e: React.FormEvent) {
     e.preventDefault();
-    setMapsError('');
+    // mapsError removed
     if (!connState.mapsApiKey.trim()) {
-      setMapsError('Google Maps API key is required.');
+      // mapsError removed
       return;
     }
     updateState({ mapsConnected: true });
   }
 
-  function _handleMapsDisconnect() {
-    updateState({ mapsConnected: false, mapsApiKey: '' });
-    setMapsError('');
-  }
 
   return (
     <div style={{ maxWidth: 600, margin: '2rem auto', padding: '0 1rem', fontFamily: 'system-ui, sans-serif', color: '#f9fafb' }}>

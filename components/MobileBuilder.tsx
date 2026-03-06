@@ -19,28 +19,12 @@ interface GenerateMobileResponse {
   setup_instructions?: string;
 }
 
-const _PLATFORM_LABELS: Record<MobilePlatform, string> = {
-  flutter: "Flutter / Dart",
-  "react-native": "React Native",
-  kotlin: "Kotlin (Android)",
-  swift: "Swift (iOS)",
-};
-
-const _PLATFORM_ICONS: Record<MobilePlatform, string> = {
-  flutter: "🦋",
-  "react-native": "⚛️",
-  kotlin: "🤖",
-  swift: "🍎",
-};
-
 export default function MobileBuilder() {
   const [platform, setPlatform] = useState<MobilePlatform>("flutter");
   const [description, setDescription] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [result, setResult] = useState<GenerateMobileResponse | null>(null);
-  const [_selectedFile, _setSelectedFile] = useState<GeneratedFile | null>(null);
-  const [_copied, _setCopied] = useState<boolean>(false);
   const [_downloadError, setDownloadError] = useState<string | null>(null);
 
   async function handleGenerate(e: React.FormEvent) {
@@ -69,8 +53,7 @@ export default function MobileBuilder() {
       const data = (await res.json()) as GenerateMobileResponse;
       setResult(data);
       if (data.files?.length > 0) {
-        _setSelectedFile(data.files[0]);
-      }
+        }
     } catch (err: unknown) {
       setError((err as Error).message || "An unexpected error occurred.");
     } finally {
@@ -81,10 +64,7 @@ export default function MobileBuilder() {
   async function _handleCopy(content: string) {
     try {
       await navigator.clipboard.writeText(content);
-      _setCopied(true);
-      setTimeout(() => _setCopied(false), 1500);
     } catch {
-      _setCopied(false);
       setError("Copy failed. Please select and copy the code manually.");
     }
   }
