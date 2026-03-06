@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@supabase/supabase-js';
 
 const COLORS = {
@@ -24,7 +25,11 @@ function getSupabaseClient() {
   return createClient(url, key);
 }
 
+/** Delay in milliseconds before redirecting after a successful login/signup. */
+const REDIRECT_DELAY_MS = 1000;
+
 export default function AuthPage() {
+  const router = useRouter();
   const [tab, setTab] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,9 +49,10 @@ export default function AuthPage() {
     // If already logged in, redirect
     const existing = localStorage.getItem('zivo_supabase_token');
     if (existing) {
-      window.location.href = redirectTo;
+      router.push(redirectTo);
     }
-  }, [redirectTo]);
+  // router from useRouter() is stable across renders; included for exhaustive-deps compliance
+  }, [redirectTo, router]);
 
   async function handleEmailAuth(e: React.FormEvent) {
     e.preventDefault();
@@ -78,7 +84,7 @@ export default function AuthPage() {
       } else if (result.data.session?.access_token) {
         localStorage.setItem('zivo_supabase_token', result.data.session.access_token);
         setSuccess(tab === 'signup' ? 'Account created! Redirecting…' : 'Logged in! Redirecting…');
-        setTimeout(() => { window.location.href = redirectTo; }, 1000);
+        setTimeout(() => { router.push(redirectTo); }, REDIRECT_DELAY_MS);
       } else if (tab === 'signup') {
         setSuccess('Check your email to confirm your account, then log in.');
       }
