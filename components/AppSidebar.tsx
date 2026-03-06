@@ -34,6 +34,7 @@ import {
   ChevronRight,
   Home,
   Database,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -41,7 +42,6 @@ interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
-  badge?: string;
 }
 
 interface NavGroup {
@@ -55,12 +55,25 @@ const NAV_GROUPS: NavGroup[] = [
     id: 'build',
     title: 'Build',
     items: [
+      { label: 'AI Builder', href: '/ai', icon: Wand2 },
+      { label: 'UI Builder', href: '/ui-builder', icon: Layers },
+      { label: 'Schema Designer', href: '/schema-designer', icon: Code2 },
       { label: 'Builder', href: '/builder', icon: Home },
       { label: 'Visual Builder', href: '/visual-builder', icon: Layers },
       { label: 'Project Wizard', href: '/project-wizard', icon: Wand2 },
       { label: 'Mobile Pipeline', href: '/mobile-pipeline', icon: Smartphone },
       { label: 'AI Code Review', href: '/ai-code-review', icon: Code2 },
       { label: 'Template Marketplace', href: '/template-marketplace', icon: Package },
+    ],
+  },
+  {
+    id: 'data',
+    title: 'Data & APIs',
+    items: [
+      { label: 'Schema Designer', href: '/schema-designer', icon: Database },
+      { label: 'API Generator', href: '/api-generator', icon: Zap },
+      { label: 'Webhook Inspector', href: '/webhook-inspector', icon: Activity },
+      { label: 'API Client Generator', href: '/api-client', icon: Globe },
     ],
   },
   {
@@ -86,19 +99,10 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    id: 'data',
-    title: 'Data & APIs',
-    items: [
-      { label: 'Schema Designer', href: '/schema-designer', icon: Database },
-      { label: 'API Generator', href: '/api-generator', icon: Zap },
-      { label: 'Webhook Inspector', href: '/webhook-inspector', icon: Activity },
-      { label: 'API Client', href: '/api-client', icon: Globe, badge: 'New' },
-    ],
-  },
-  {
     id: 'devops',
     title: 'DevOps',
     items: [
+      { label: 'Webhook Inspector', href: '/webhook-inspector', icon: Activity },
       { label: 'Status Page', href: '/status', icon: Activity },
       { label: 'Performance Panel', href: '/performance-panel', icon: BarChart2 },
       { label: 'Component Marketplace', href: '/component-marketplace', icon: Store },
@@ -141,13 +145,22 @@ const NAV_GROUPS: NavGroup[] = [
 
 const STORAGE_KEY = 'zivo-sidebar-collapsed';
 
+/** Default collapsed state: all groups collapsed except 'build'. */
+function getDefaultCollapsedState(): Record<string, boolean> {
+  const state: Record<string, boolean> = {};
+  for (const group of NAV_GROUPS) {
+    state[group.id] = group.id !== 'build';
+  }
+  return state;
+}
+
 function readCollapsedState(): Record<string, boolean> {
-  if (typeof window === 'undefined') return {};
+  if (typeof window === 'undefined') return getDefaultCollapsedState();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : getDefaultCollapsedState();
   } catch {
-    return {};
+    return getDefaultCollapsedState();
   }
 }
 
@@ -172,13 +185,17 @@ export default function AppSidebar() {
     });
   }
 
-  const allItems = NAV_GROUPS.flatMap((g) => g.items);
-  const filteredItems = search
-    ? allItems.filter((item) =>
-        item.label.toLowerCase().includes(search.toLowerCase()) ||
-        item.href.toLowerCase().includes(search.toLowerCase())
-      )
-    : null;
+  const query = search.trim().toLowerCase();
+
+  /** When searching, flatten all groups into a single filtered list. */
+  const filteredGroups = query
+    ? NAV_GROUPS.map((g) => ({
+        ...g,
+        items: g.items.filter((item) => item.label.toLowerCase().includes(query)),
+      })).filter((g) => g.items.length > 0)
+    : NAV_GROUPS;
+
+  const hasResults = filteredGroups.length > 0;
 
   return (
     <aside
@@ -238,24 +255,35 @@ export default function AppSidebar() {
             ZIVO<span style={{ color: '#6366f1' }}>-AI</span>
           </span>
         </Link>
-      </div>
 
-      {/* Search */}
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid #1f1f1f' }}>
-        <div style={{ position: 'relative' }}>
+        {/* Search */}
+        <div style={{ position: 'relative', marginTop: 12 }}>
           <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search…"
             className="zivo-sidebar-search"
+            placeholder="Search…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search navigation"
           />
           {search && (
             <button
               onClick={() => setSearch('')}
-              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#475569', cursor: 'pointer', padding: 0 }}
+              aria-label="Clear search"
+              style={{
+                position: 'absolute',
+                right: 8,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                color: '#475569',
+                display: 'flex',
+                alignItems: 'center',
+                padding: 0,
+              }}
             >
-              ×
+              <X size={13} />
             </button>
           )}
         </div>
@@ -269,166 +297,112 @@ export default function AppSidebar() {
           overflowY: 'auto',
         }}
       >
-        {filteredItems ? (
-          /* Search results: flat list without group headers */
-          <div>
-            {filteredItems.length === 0 && (
-              <div style={{ padding: '8px', fontSize: 12, color: '#475569', textAlign: 'center' }}>
-                No results
-              </div>
-            )}
-            {filteredItems.map((item) => {
-              const isActive = pathname === item.href;
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={`search-${item.href}-${item.label}`}
-                  href={item.href}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '7px 8px',
-                    borderRadius: 6,
-                    textDecoration: 'none',
-                    color: isActive ? '#818cf8' : '#9ca3af',
-                    backgroundColor: isActive ? 'rgba(99,102,241,0.15)' : 'transparent',
-                    fontSize: 13,
-                    fontWeight: isActive ? 500 : 400,
-                    transition: 'background-color 0.15s ease, color 0.15s ease',
-                    marginBottom: 1,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) {
-                      const el = e.currentTarget as HTMLAnchorElement;
-                      el.style.backgroundColor = '#1a1a2e';
-                      el.style.color = '#ffffff';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) {
-                      const el = e.currentTarget as HTMLAnchorElement;
-                      el.style.backgroundColor = 'transparent';
-                      el.style.color = '#9ca3af';
-                    }
-                  }}
-                >
-                  <Icon size={15} style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75 }} />
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {item.label}
-                  </span>
-                  {item.badge && (
-                    <span className={`zivo-nav-badge new`}>{item.badge}</span>
-                  )}
-                </Link>
-              );
-            })}
+        {!hasResults && (
+          <div style={{ padding: '8px', color: '#475569', fontSize: 13, textAlign: 'center' }}>
+            No results
           </div>
-        ) : (
-          /* Normal grouped nav */
-          NAV_GROUPS.map((group) => {
-            const isCollapsed = !!collapsed[group.id];
-
-            return (
-              <div key={group.id} style={{ marginBottom: 4 }}>
-                {/* Group header */}
-                <button
-                  onClick={() => toggleGroup(group.id)}
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '6px 8px',
-                    borderRadius: 6,
-                    border: 'none',
-                    backgroundColor: 'transparent',
-                    cursor: 'pointer',
-                    color: '#6b7280',
-                    fontSize: 11,
-                    fontWeight: 600,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    transition: 'color 0.15s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.color = '#6b7280';
-                  }}
-                >
-                  <span>{group.title}</span>
-                  {isCollapsed ? (
-                    <ChevronRight size={13} />
-                  ) : (
-                    <ChevronDown size={13} />
-                  )}
-                </button>
-
-                {/* Group items */}
-                <div
-                  style={{
-                    overflow: 'hidden',
-                    maxHeight: isCollapsed ? 0 : 1000,
-                    transition: 'max-height 0.2s ease',
-                  }}
-                >
-                  {group.items.map((item) => {
-                    const isActive = pathname === item.href;
-                    const Icon = item.icon;
-
-                    return (
-                      <Link
-                        key={`${group.id}-${item.href}-${item.label}`}
-                        href={item.href}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 10,
-                          padding: '7px 8px',
-                          borderRadius: 6,
-                          textDecoration: 'none',
-                          color: isActive ? '#818cf8' : '#9ca3af',
-                          backgroundColor: isActive ? 'rgba(99,102,241,0.15)' : 'transparent',
-                          fontSize: 13,
-                          fontWeight: isActive ? 500 : 400,
-                          transition: 'background-color 0.15s ease, color 0.15s ease',
-                          marginBottom: 1,
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!isActive) {
-                            const el = e.currentTarget as HTMLAnchorElement;
-                            el.style.backgroundColor = '#1a1a2e';
-                            el.style.color = '#ffffff';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isActive) {
-                            const el = e.currentTarget as HTMLAnchorElement;
-                            el.style.backgroundColor = 'transparent';
-                            el.style.color = '#9ca3af';
-                          }
-                        }}
-                      >
-                        <Icon
-                          size={15}
-                          style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75 }}
-                        />
-                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.label}
-                        </span>
-                        {item.badge && (
-                          <span className={`zivo-nav-badge new`}>{item.badge}</span>
-                        )}
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })
         )}
+
+        {filteredGroups.map((group) => {
+          const isCollapsed = query ? false : !!collapsed[group.id];
+
+          return (
+            <div key={group.id} style={{ marginBottom: 4 }}>
+              {/* Group header */}
+              <button
+                onClick={() => toggleGroup(group.id)}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  border: 'none',
+                  backgroundColor: 'transparent',
+                  cursor: 'pointer',
+                  color: '#6b7280',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: '0.08em',
+                  textTransform: 'uppercase',
+                  transition: 'color 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.color = '#6b7280';
+                }}
+              >
+                <span>{group.title}</span>
+                {isCollapsed ? (
+                  <ChevronRight size={13} />
+                ) : (
+                  <ChevronDown size={13} />
+                )}
+              </button>
+
+              {/* Group items */}
+              <div
+                style={{
+                  overflow: 'hidden',
+                  maxHeight: isCollapsed ? 0 : 1000,
+                  transition: 'max-height 0.2s ease',
+                }}
+              >
+                {group.items.map((item) => {
+                  const isActive = pathname === item.href;
+                  const Icon = item.icon;
+
+                  return (
+                    <Link
+                      key={`${group.id}-${item.href}-${item.label}`}
+                      href={item.href}
+                      title={item.label}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '7px 8px',
+                        borderRadius: 6,
+                        textDecoration: 'none',
+                        color: isActive ? '#818cf8' : '#9ca3af',
+                        backgroundColor: isActive ? 'rgba(99,102,241,0.15)' : 'transparent',
+                        fontSize: 13,
+                        fontWeight: isActive ? 500 : 400,
+                        transition: 'background-color 0.15s ease, color 0.15s ease',
+                        marginBottom: 1,
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) {
+                          const el = e.currentTarget as HTMLAnchorElement;
+                          el.style.backgroundColor = '#1a1a2e';
+                          el.style.color = '#ffffff';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) {
+                          const el = e.currentTarget as HTMLAnchorElement;
+                          el.style.backgroundColor = 'transparent';
+                          el.style.color = '#9ca3af';
+                        }
+                      }}
+                    >
+                      <Icon
+                        size={15}
+                        style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75 }}
+                      />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {item.label}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </nav>
 
       {/* Footer */}

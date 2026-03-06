@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { fixFile } from "@/agents/code-fixer";
-import { FixErrorsRequestSchema, BuildError } from "@/lib/schemas";
+import { FixErrorsRequestSchema } from "@/lib/schemas";
+import type { BuildError, FixFile, FixErrorsRequest, FixErrorsResponse } from "@/lib/schemas";
+
+export { type FixFile, type BuildError, type FixErrorsRequest, type FixErrorsResponse };
 
 export const runtime = "nodejs";
 

@@ -2,9 +2,18 @@ import { z } from "zod";
 
 export const GeneratePipelineRequestSchema = z.object({
   appName: z.string().optional().default("My App"),
-  pipelineType: z.enum(["etl", "cron", "webhook", "queue", "all"]).optional().default("etl"),
+  pipelineType: z
+    .enum([
+      "etl", "cron", "webhook", "queue", "streaming",
+      "event-driven", "ml-inference", "notification", "data-sync", "all",
+    ])
+    .optional()
+    .default("etl"),
   description: z.string().optional().default("data processing pipeline"),
-  queueProvider: z.enum(["bullmq", "inngest"]).optional().default("bullmq"),
+  queueProvider: z
+    .enum(["bullmq", "inngest", "kafka", "redis-streams", "sqs"])
+    .optional()
+    .default("bullmq"),
 });
 
 export const PipelineFileSchema = z.object({

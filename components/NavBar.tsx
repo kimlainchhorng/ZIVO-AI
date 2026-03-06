@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_LINKS = [
@@ -25,10 +26,23 @@ export function NavBar({ className, right }: NavBarProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMobileOpen(false);
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [mobileOpen]);
+
   return (
     <header
       className={cn(
-        'flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0a0b14] px-6 relative',
+        'relative flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0a0b14] px-6',
         className
       )}
     >
@@ -44,7 +58,7 @@ export function NavBar({ className, right }: NavBarProps) {
         <div className="mx-1 h-5 w-px bg-white/10" aria-hidden="true" />
 
         {/* Desktop nav */}
-        <nav aria-label="Main navigation" className="hidden sm:flex gap-0.5">
+        <nav aria-label="Main navigation" className="hidden items-center gap-0.5 md:flex">
           {NAV_LINKS.map(({ label, href }) => (
             <Link
               key={href}
@@ -60,33 +74,43 @@ export function NavBar({ className, right }: NavBarProps) {
             </Link>
           ))}
         </nav>
-      </div>
 
-      {/* Right slot + mobile toggle */}
-      <div className="flex items-center gap-2">
-        {right && <div className="flex items-center gap-2">{right}</div>}
-        {/* Hamburger button — visible only on mobile */}
+        {/* Mobile hamburger */}
         <button
-          className="sm:hidden flex items-center justify-center w-8 h-8 rounded-md text-slate-400 hover:bg-white/5 hover:text-slate-200 transition-colors border-0 bg-transparent cursor-pointer"
-          onClick={() => setMobileOpen((v) => !v)}
-          aria-label="Toggle navigation menu"
+          aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
           aria-expanded={mobileOpen}
+          onClick={() => setMobileOpen((v) => !v)}
+          className="flex items-center justify-center rounded-md p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-200 md:hidden"
         >
-          ☰
+          {mobileOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
       </div>
+
+      {/* Right slot */}
+      {right && <div className="flex items-center gap-2">{right}</div>}
 
       {/* Mobile dropdown */}
       {mobileOpen && (
         <nav
           aria-label="Mobile navigation"
-          className="sm:hidden absolute top-12 left-0 right-0 z-50 border-b border-white/[0.08] bg-[#0a0b14] px-4 py-3 flex flex-col gap-1"
+          style={{
+            position: 'absolute',
+            top: '48px',
+            left: 0,
+            right: 0,
+            background: '#0a0b14',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
+            zIndex: 100,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '0.5rem 1rem',
+            gap: '0.25rem',
+          }}
         >
           {NAV_LINKS.map(({ label, href }) => (
             <Link
               key={href}
               href={href}
-              onClick={() => setMobileOpen(false)}
               className={cn(
                 'rounded-md px-3 py-2 text-sm font-medium transition-colors no-underline',
                 pathname === href || pathname.startsWith(href + '/')

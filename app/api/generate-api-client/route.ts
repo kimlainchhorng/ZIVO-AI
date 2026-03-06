@@ -33,12 +33,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const parsed = APIClientRequestSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
+    const schemaResult = APIClientRequestSchema.safeParse(body);
+    if (!schemaResult.success) {
+      return NextResponse.json({ error: schemaResult.error.issues }, { status: 400 });
     }
 
-    const { openApiSpec, language, clientName } = parsed.data;
+    const { openApiSpec, language, clientName } = schemaResult.data;
 
     const prompt = `Generate a typed ${language} API client from this OpenAPI 3.x spec.
 Client class name: ${clientName}

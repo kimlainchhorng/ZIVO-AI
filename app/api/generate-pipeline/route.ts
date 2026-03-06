@@ -99,11 +99,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: schemaResult.error.issues }, { status: 400 });
     }
 
+    // Use validated data for schema-defined fields; fall back to rawBody for extended fields
     const {
-      appName = "My App",
-      pipelineType = "etl",
-      description = "data processing pipeline",
-      queueProvider = "bullmq",
+      appName = schemaResult.data.appName,
+      pipelineType = schemaResult.data.pipelineType,
+      description = schemaResult.data.description,
+      queueProvider = schemaResult.data.queueProvider,
       schedule,
       retryPolicy,
       deadLetterQueue = false,

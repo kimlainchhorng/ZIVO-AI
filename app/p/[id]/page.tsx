@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 
 const COLORS = {
   bg: '#0a0b14',
@@ -42,8 +43,9 @@ function getFileIcon(path: string) {
   return <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>;
 }
 
-export default function PublicProjectPage({ params }: { params: Promise<{ id: string }> }) {
-  const [id, setId] = useState<string | null>(null);
+export default function PublicProjectPage() {
+  const params = useParams<{ id: string | string[] }>();
+  const id = typeof params?.id === 'string' ? params.id : Array.isArray(params?.id) ? params.id[0] : null;
   const [project, setProject] = useState<Project | null>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [activeFile, setActiveFile] = useState<ProjectFile | null>(null);
@@ -52,10 +54,6 @@ export default function PublicProjectPage({ params }: { params: Promise<{ id: st
   const [copyDone, setCopyDone] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'preview' | 'files'>('preview');
-
-  useEffect(() => {
-    params.then(({ id: resolvedId }) => setId(resolvedId));
-  }, [params]);
 
   useEffect(() => {
     if (!id) return;
@@ -246,3 +244,4 @@ export default function PublicProjectPage({ params }: { params: Promise<{ id: st
     </div>
   );
 }
+

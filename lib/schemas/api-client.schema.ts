@@ -6,13 +6,13 @@ export const APIClientRequestSchema = z.object({
   clientName: z.string().min(1).default("ApiClient"),
 });
 
-export const APIClientFileSchema = z.object({
+export const GeneratedClientFileSchema = z.object({
   path: z.string(),
   content: z.string(),
 });
 
 export const APIClientResponseSchema = z.object({
-  files: z.array(APIClientFileSchema),
+  files: z.array(GeneratedClientFileSchema),
   usage: z.string(),
   dependencies: z.array(z.string()),
 });

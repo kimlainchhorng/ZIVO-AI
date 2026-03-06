@@ -33,7 +33,7 @@ export interface DesignSystemResponse {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const rawBody = await req.json().catch(() => ({})) as {
+    const body = await req.json().catch(() => ({})) as {
       appName?: string;
       primaryColor?: string;
       style?: string;
@@ -43,12 +43,11 @@ export async function POST(req: Request): Promise<Response> {
       mood?: string;
     };
 
-    const parsed = DesignSystemRequestSchema.safeParse(rawBody);
-    if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
+    const schemaResult = DesignSystemRequestSchema.safeParse(body);
+    if (!schemaResult.success) {
+      return NextResponse.json({ error: schemaResult.error.issues }, { status: 400 });
     }
 
-    const body = rawBody;
     const {
       appName = "My App",
       primaryColor = "#6366f1",

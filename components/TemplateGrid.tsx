@@ -2,73 +2,81 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Globe, Smartphone, ShoppingCart, Lock, LayoutDashboard, Monitor, ArrowRight } from 'lucide-react';
+import Image from 'next/image';
+import { ArrowRight } from 'lucide-react';
 
-export interface Template {
+interface Template {
   id: string;
   title: string;
   description: string;
-  icon: React.ReactNode;
-  gradient: string;
+  image: string;
   href: string;
 }
 
 const DEFAULT_TEMPLATES: Template[] = [
   {
-    id: 'landing-page',
-    title: 'Landing Page',
-    description: 'Modern hero + features + CTA layout',
-    icon: <Globe size={20} />,
-    gradient: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-    href: '/ai?mode=website&template=landing-page',
+    id: 'saas-landing',
+    title: 'SaaS Landing Page',
+    description: 'Hero, features, pricing & CTA',
+    image: 'https://images.pexels.com/photos/196644/pexels-photo-196644.jpeg?auto=compress&cs=tinysrgb&w=600&h=360&fit=crop',
+    href: '/ai?mode=code&prompt=Build+a+modern+SaaS+landing+page+with+hero,+features,+pricing,+and+CTA+sections',
+  },
+  {
+    id: 'minimal-portfolio',
+    title: 'Minimal Portfolio',
+    description: 'Clean personal work showcase',
+    image: 'https://images.pexels.com/photos/1779487/pexels-photo-1779487.jpeg?auto=compress&cs=tinysrgb&w=600&h=360&fit=crop',
+    href: '/ai?mode=code&prompt=Build+a+minimal+personal+portfolio+with+about,+projects,+and+contact+sections',
+  },
+  {
+    id: 'ecommerce-store',
+    title: 'E-commerce Store',
+    description: 'Premium design for webstore',
+    image: 'https://images.pexels.com/photos/5632402/pexels-photo-5632402.jpeg?auto=compress&cs=tinysrgb&w=600&h=360&fit=crop',
+    href: '/ai?mode=code&prompt=Build+an+e-commerce+store+with+product+listings,+cart,+and+checkout+flow',
+  },
+  {
+    id: 'event-platform',
+    title: 'Event Platform',
+    description: 'Find, register, create events',
+    image: 'https://images.pexels.com/photos/2747449/pexels-photo-2747449.jpeg?auto=compress&cs=tinysrgb&w=600&h=360&fit=crop',
+    href: '/ai?mode=code&prompt=Build+an+event+platform+where+users+can+browse,+register+for,+and+create+events',
+  },
+  {
+    id: 'lifestyle-blog',
+    title: 'Lifestyle Blog',
+    description: 'Sophisticated blog design',
+    image: 'https://images.pexels.com/photos/6335/man-coffee-cup-pen.jpg?auto=compress&cs=tinysrgb&w=600&h=360&fit=crop',
+    href: '/ai?mode=code&prompt=Build+a+lifestyle+blog+with+article+listings,+categories,+and+reading+view',
+  },
+  {
+    id: 'visual-landing',
+    title: 'Visual Landing Page',
+    description: 'Showcase your company',
+    image: 'https://images.pexels.com/photos/3183150/pexels-photo-3183150.jpeg?auto=compress&cs=tinysrgb&w=600&h=360&fit=crop',
+    href: '/ai?mode=code&prompt=Build+a+visually+striking+company+landing+page+with+bold+typography+and+imagery',
+  },
+  {
+    id: 'photographer-portfolio',
+    title: 'Photographer Portfolio',
+    description: 'Interactive image showcase',
+    image: 'https://images.pexels.com/photos/3379934/pexels-photo-3379934.jpeg?auto=compress&cs=tinysrgb&w=600&h=360&fit=crop',
+    href: '/ai?mode=code&prompt=Build+a+photographer+portfolio+with+gallery,+lightbox,+and+contact+form',
   },
   {
     id: 'saas-dashboard',
     title: 'SaaS Dashboard',
-    description: 'Analytics, sidebar nav, data tables',
-    icon: <LayoutDashboard size={20} />,
-    gradient: 'linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)',
-    href: '/ai?mode=website&template=saas-dashboard',
-  },
-  {
-    id: 'ecommerce',
-    title: 'E-commerce',
-    description: 'Product grid, cart & checkout flow',
-    icon: <ShoppingCart size={20} />,
-    gradient: 'linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)',
-    href: '/ai?mode=website&template=ecommerce',
-  },
-  {
-    id: 'auth-flow',
-    title: 'Auth Flow',
-    description: 'Sign in, sign up & password reset',
-    icon: <Lock size={20} />,
-    gradient: 'linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)',
-    href: '/ai?mode=website&template=auth-flow',
-  },
-  {
-    id: 'mobile-app',
-    title: 'Mobile App',
-    description: 'React Native-style mobile screens',
-    icon: <Smartphone size={20} />,
-    gradient: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)',
-    href: '/ai?mode=mobile',
-  },
-  {
-    id: 'portfolio',
-    title: 'Portfolio',
-    description: 'Showcase work with project gallery',
-    icon: <Monitor size={20} />,
-    gradient: 'linear-gradient(135deg, #475569 0%, #6366f1 100%)',
-    href: '/ai?mode=website&template=portfolio',
+    description: 'Analytics, sidebar, data tables',
+    image: 'https://images.pexels.com/photos/5077047/pexels-photo-5077047.jpeg?auto=compress&cs=tinysrgb&w=600&h=360&fit=crop',
+    href: '/ai?mode=code&prompt=Build+a+SaaS+analytics+dashboard+with+sidebar+navigation,+stats+cards,+and+data+tables',
   },
 ];
 
 type TabKey = 'recently-viewed' | 'my-projects' | 'templates';
 
 const TABS: { key: TabKey; label: string }[] = [
-  { key: 'recently-viewed', label: 'Recently Viewed' },
-  { key: 'my-projects', label: 'My Projects' },
+  { key: 'recently-viewed', label: 'Recently viewed' },
+  { key: 'my-projects', label: 'My projects' },
   { key: 'templates', label: 'Templates' },
 ];
 
@@ -78,46 +86,34 @@ interface TemplateGridProps {
 
 export default function TemplateGrid({ templates = DEFAULT_TEMPLATES }: TemplateGridProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('templates');
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const displayed = activeTab === 'templates' ? templates : [];
 
   return (
     <div style={{ width: '100%' }}>
-      {/* Tab switcher + Browse all */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: '1rem',
+          marginBottom: '1.25rem',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            gap: '0.25rem',
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '10px',
-            padding: '3px',
-          }}
-        >
+        <div style={{ display: 'flex', gap: '0.125rem' }}>
           {TABS.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               style={{
-                padding: '0.35rem 0.875rem',
-                borderRadius: '8px',
+                padding: '0.375rem 0.875rem',
+                borderRadius: 8,
                 border: 'none',
                 cursor: 'pointer',
                 fontSize: '0.8125rem',
                 fontWeight: activeTab === tab.key ? 600 : 400,
-                background:
-                  activeTab === tab.key
-                    ? 'rgba(99,102,241,0.2)'
-                    : 'transparent',
-                color: activeTab === tab.key ? '#818cf8' : '#64748b',
+                background: activeTab === tab.key ? 'rgba(255,255,255,0.07)' : 'transparent',
+                color: activeTab === tab.key ? '#e2e8f0' : '#475569',
                 transition: 'background 0.15s, color 0.15s',
               }}
             >
@@ -133,16 +129,16 @@ export default function TemplateGrid({ templates = DEFAULT_TEMPLATES }: Template
             alignItems: 'center',
             gap: '0.3rem',
             fontSize: '0.8125rem',
-            color: '#6366f1',
+            color: '#64748b',
             textDecoration: 'none',
             fontWeight: 500,
             transition: 'color 0.15s',
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.color = '#818cf8';
+            (e.currentTarget as HTMLAnchorElement).style.color = '#94a3b8';
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.color = '#6366f1';
+            (e.currentTarget as HTMLAnchorElement).style.color = '#64748b';
           }}
         >
           Browse all
@@ -150,60 +146,84 @@ export default function TemplateGrid({ templates = DEFAULT_TEMPLATES }: Template
         </Link>
       </div>
 
-      {/* Template cards horizontal scroll */}
       {displayed.length > 0 ? (
         <div
           style={{
-            display: 'flex',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
             gap: '0.875rem',
-            overflowX: 'auto',
-            paddingBottom: '0.75rem',
-            scrollbarWidth: 'thin',
-            scrollbarColor: 'rgba(255,255,255,0.1) transparent',
           }}
         >
           {displayed.map((tpl, i) => (
             <Link
               key={tpl.id}
               href={tpl.href}
-              className="zivo-template-card"
+              onMouseEnter={() => setHoveredId(tpl.id)}
+              onMouseLeave={() => setHoveredId(null)}
               style={{
                 textDecoration: 'none',
-                animationDelay: `${i * 0.06}s`,
+                borderRadius: 10,
+                overflow: 'hidden',
+                border: hoveredId === tpl.id
+                  ? '1px solid rgba(255,255,255,0.14)'
+                  : '1px solid rgba(255,255,255,0.06)',
+                background: 'rgba(255,255,255,0.03)',
+                display: 'flex',
+                flexDirection: 'column',
+                transition: 'border-color 0.15s, transform 0.15s, box-shadow 0.15s',
+                transform: hoveredId === tpl.id ? 'translateY(-2px)' : 'translateY(0)',
+                boxShadow: hoveredId === tpl.id
+                  ? '0 8px 24px rgba(0,0,0,0.35)'
+                  : '0 2px 8px rgba(0,0,0,0.15)',
+                animationDelay: `${i * 0.04}s`,
               }}
             >
-              {/* Gradient header */}
               <div
                 style={{
-                  height: 80,
-                  background: tpl.gradient,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  opacity: 0.9,
+                  width: '100%',
+                  aspectRatio: '16/9',
+                  overflow: 'hidden',
+                  background: '#0f1120',
                 }}
               >
-                {tpl.icon}
+                <Image
+                  src={tpl.image}
+                  alt={tpl.title}
+                  width={600}
+                  height={338}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    display: 'block',
+                    transition: 'transform 0.3s ease',
+                    transform: hoveredId === tpl.id ? 'scale(1.04)' : 'scale(1)',
+                  }}
+                />
               </div>
 
-              {/* Card body */}
-              <div style={{ padding: '0.75rem' }}>
+              <div style={{ padding: '0.625rem 0.75rem 0.75rem' }}>
                 <div
                   style={{
-                    fontSize: '0.875rem',
+                    fontSize: '0.8125rem',
                     fontWeight: 600,
-                    color: '#f1f5f9',
-                    marginBottom: '0.25rem',
+                    color: '#e2e8f0',
+                    marginBottom: '0.2rem',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
                 >
                   {tpl.title}
                 </div>
                 <div
                   style={{
-                    fontSize: '0.75rem',
-                    color: '#64748b',
+                    fontSize: '0.7125rem',
+                    color: '#475569',
                     lineHeight: 1.4,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                   }}
                 >
                   {tpl.description}
@@ -215,11 +235,11 @@ export default function TemplateGrid({ templates = DEFAULT_TEMPLATES }: Template
       ) : (
         <div
           style={{
-            padding: '2rem',
+            padding: '2.5rem',
             textAlign: 'center',
-            color: '#475569',
+            color: '#334155',
             fontSize: '0.875rem',
-            border: '1px dashed rgba(255,255,255,0.08)',
+            border: '1px dashed rgba(255,255,255,0.06)',
             borderRadius: 12,
           }}
         >

@@ -2340,7 +2340,6 @@ body {
   justify-content: center;
   color: #818cf8;
   flex-shrink: 0;
-  font-size: 1.125rem;
 }
 
 .zivo-quick-card-title {
@@ -2368,7 +2367,6 @@ body {
   font-family: inherit;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
-  box-sizing: border-box;
 }
 
 .zivo-sidebar-search:focus {
