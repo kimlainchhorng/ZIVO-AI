@@ -125,6 +125,48 @@ export const stylePresets = {
     },
     tailwindClasses: 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white font-sans',
   },
+  retro: {
+    name: 'Retro',
+    colors: {
+      primary: '#f97316',
+      secondary: '#ea580c',
+      accent: '#facc15',
+      background: '#fef9c3',
+      surface: '#fef08a',
+      border: '#1c1917',
+      text: '#1c1917',
+      muted: '#57534e',
+    },
+    fonts: { sans: 'VT323, monospace', mono: 'VT323, monospace' },
+    radius: { sm: '0px', md: '0px', lg: '0px', full: '0px' },
+    shadows: {
+      sm: '2px 2px 0px #1c1917',
+      md: '4px 4px 0px #1c1917',
+      lg: '6px 6px 0px #1c1917',
+    },
+    tailwindClasses: 'bg-yellow-50 text-stone-900 font-mono',
+  },
+  brutalist: {
+    name: 'Brutalist',
+    colors: {
+      primary: '#000000',
+      secondary: '#171717',
+      accent: '#dc2626',
+      background: '#ffffff',
+      surface: '#f5f5f5',
+      border: '#000000',
+      text: '#000000',
+      muted: '#525252',
+    },
+    fonts: { sans: 'Arial Black, Impact, sans-serif', mono: 'Courier New, monospace' },
+    radius: { sm: '0px', md: '0px', lg: '0px', full: '0px' },
+    shadows: {
+      sm: '3px 3px 0px #000000',
+      md: '5px 5px 0px #000000',
+      lg: '8px 8px 0px #000000',
+    },
+    tailwindClasses: 'bg-white text-black font-sans',
+  },
 } as const;
 
 export type StylePresetKey = keyof typeof stylePresets;

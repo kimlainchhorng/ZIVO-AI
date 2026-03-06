@@ -59,6 +59,26 @@ export const stylePresets = {
     description: 'Modern glassmorphism with purple gradient background and frosted glass cards',
     classes: 'bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white font-sans',
   },
+  retro: {
+    primaryColor: '#f97316',
+    backgroundColor: '#fef9c3',
+    textColor: '#1c1917',
+    fontFamily: 'VT323, monospace',
+    borderRadius: '0px',
+    shadowStyle: '4px 4px 0px #1c1917',
+    description: 'Retro pixel-art style with bold outlines, warm yellows, and monospace fonts',
+    classes: 'bg-yellow-50 text-stone-900 font-mono',
+  },
+  brutalist: {
+    primaryColor: '#000000',
+    backgroundColor: '#ffffff',
+    textColor: '#000000',
+    fontFamily: 'Arial Black, Impact, sans-serif',
+    borderRadius: '0px',
+    shadowStyle: '6px 6px 0px #000000',
+    description: 'Raw brutalist design with stark black-and-white contrast and heavy borders',
+    classes: 'bg-white text-black font-sans',
+  },
 } as const;
 
 export type StylePreset = keyof typeof stylePresets;
