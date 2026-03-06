@@ -1084,6 +1084,22 @@ export default function ProjectWorkspacePage() {
                   </button>
                 </div>
               )}
+              {lastBuildId && (
+                <iframe
+                  key={iframeKey}
+                  src={`/p/${projectId}`}
+                  sandbox="allow-scripts allow-same-origin"
+                  style={{
+                    marginTop: '0.75rem',
+                    width: '100%',
+                    height: '400px',
+                    border: '1px solid rgba(99,102,241,0.2)',
+                    borderRadius: '8px',
+                    background: '#0f172a',
+                  }}
+                  title="Project preview"
+                />
+              )}
             </div>
           )}
         </div>
