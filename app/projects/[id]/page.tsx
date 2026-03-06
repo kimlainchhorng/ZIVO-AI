@@ -1884,7 +1884,7 @@ export default function ProjectWorkspacePage() {
         </div>{/* end main content column */}
 
         {/* ── Plan & Checklist right-side drawer ── */}
-        {planDrawerOpen && token ? (
+        {planDrawerOpen && token && (
           <div style={{
             width: '340px', flexShrink: 0, paddingTop: '2rem', paddingRight: '1.5rem',
             position: 'sticky', top: 0, maxHeight: '100vh', overflowY: 'auto',
@@ -1895,7 +1895,7 @@ export default function ProjectWorkspacePage() {
               onApplied={() => { fetchFiles(); fetchBuilds(); fetchMessages(); }}
             />
           </div>
-        ) : null}
+        )}
       </div>
 
     </SidebarLayout>

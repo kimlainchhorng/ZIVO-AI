@@ -453,7 +453,7 @@ export default function DesignTokensPanel({
           </select>
         </div>
         <p style={{ fontSize: '0.73rem', color: '#475569', margin: 0 }}>
-          Selecting a preset overwrites all tokens. You can still customise individual values below.
+          Selecting a preset overwrites all tokens. You can still customize individual values below.
         </p>
       </Section>
 
