@@ -173,6 +173,40 @@ export function tokensToCSS(tokens: DesignTokens): string {
   return lines.join("\n");
 }
 
+// ─── ZIVO Brand Design System ─────────────────────────────────────────────────
+
+export const ZIVO_COLORS = {
+  bg: '#0a0b14',
+  bgPanel: '#0f1120',
+  bgCard: 'rgba(255,255,255,0.04)',
+  border: 'rgba(255,255,255,0.08)',
+  borderHover: 'rgba(255,255,255,0.16)',
+  accent: '#6366f1',
+  accentLight: '#818cf8',
+  accentGradient: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+  success: '#10b981',
+  warning: '#f59e0b',
+  error: '#ef4444',
+  textPrimary: '#f1f5f9',
+  textSecondary: '#94a3b8',
+  textMuted: '#475569',
+} as const;
+
+export const ZIVO_RADII = {
+  sm: '6px',
+  md: '10px',
+  lg: '14px',
+  xl: '20px',
+  full: '9999px',
+} as const;
+
+export const ZIVO_SHADOWS = {
+  card: '0 4px 24px rgba(0,0,0,0.3)',
+  accent: '0 4px 24px rgba(99,102,241,0.35)',
+  accentHover: '0 8px 32px rgba(99,102,241,0.5)',
+  glow: '0 0 0 3px rgba(99,102,241,0.15)',
+} as const;
+
 /**
  * Converts DesignTokens to a Tailwind config extend block.
  */

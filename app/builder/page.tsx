@@ -1,241 +1,180 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { Globe, Smartphone, Layers, FolderOpen } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Globe, Smartphone, Code2, Layers, FolderOpen, Zap } from 'lucide-react';
+import PromptCard from '@/components/PromptCard';
+import TemplateGrid from '@/components/TemplateGrid';
+
+type BuildMode = 'website' | 'mobile' | 'code' | 'ui';
+
+const MODES: { key: BuildMode; label: string; icon: React.ReactNode; href: string }[] = [
+  { key: 'website', label: 'Website', icon: <Globe size={14} />, href: '/ai?mode=website' },
+  { key: 'mobile', label: 'Mobile App', icon: <Smartphone size={14} />, href: '/ai?mode=mobile' },
+  { key: 'code', label: 'Code Builder', icon: <Code2 size={14} />, href: '/ai?mode=code' },
+  { key: 'ui', label: 'UI Builder', icon: <Layers size={14} />, href: '/ui-builder' },
+];
 
 /**
- * Builder Home — standalone landing page (no sidebar layout).
- * Provides entry CTAs to the main builder modes:
- *  - Website Builder  → /ai?mode=website
- *  - Mobile App Builder → /ai?mode=mobile
- *  - UI Visual Builder  → /ui-builder
+ * Builder Home — Lovable-inspired animated dashboard with prompt card,
+ * mode pills, and template grid.
  */
 export default function BuilderHomePage() {
+  const router = useRouter();
+  const [activeMode, setActiveMode] = useState<BuildMode>('website');
+
+  function handlePromptSubmit(value: string) {
+    const mode = activeMode;
+    const params = new URLSearchParams({ mode, prompt: value });
+    router.push(`/ai?${params.toString()}`);
+  }
+
   return (
     <main
+      className="zivo-hero-bg"
       style={{
         minHeight: '100vh',
-        backgroundColor: '#080810',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         padding: '2rem 1rem',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
+        fontFamily: 'var(--font-inter)',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
-      {/* Logo / Wordmark */}
-      <div style={{ marginBottom: '3rem', textAlign: 'center' }}>
+      {/* Ambient glow orbs */}
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          top: '10%',
+          left: '20%',
+          width: 500,
+          height: 500,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(99,102,241,0.12) 0%, transparent 70%)',
+          pointerEvents: 'none',
+          filter: 'blur(40px)',
+        }}
+      />
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          bottom: '15%',
+          right: '15%',
+          width: 400,
+          height: 400,
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(139,92,246,0.1) 0%, transparent 70%)',
+          pointerEvents: 'none',
+          filter: 'blur(50px)',
+        }}
+      />
+
+      {/* Logo wordmark */}
+      <div
+        className="zivo-fade-in-up"
+        style={{ marginBottom: '0.75rem', textAlign: 'center' }}
+      >
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+            padding: '0.35rem 0.875rem',
+            borderRadius: 9999,
+            border: '1px solid rgba(99,102,241,0.25)',
+            background: 'rgba(99,102,241,0.08)',
+            marginBottom: '1.25rem',
+          }}
+        >
+          <Zap size={13} color="#818cf8" />
+          <span style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 600, letterSpacing: '0.05em' }}>
+            AI-POWERED
+          </span>
+        </div>
+      </div>
+
+      {/* Hero heading */}
+      <div
+        className="zivo-fade-in-up"
+        style={{ textAlign: 'center', marginBottom: '2.5rem', animationDelay: '0.05s' }}
+      >
         <h1
           style={{
-            fontSize: '2rem',
+            fontSize: 'clamp(2rem, 5vw, 3.25rem)',
             fontWeight: 800,
-            color: '#ffffff',
+            color: '#f1f5f9',
             letterSpacing: '-0.04em',
+            lineHeight: 1.1,
             margin: 0,
           }}
         >
-          ZIVO<span style={{ color: '#6366f1' }}>-AI</span>
+          What will you{' '}
+          <span className="zivo-gradient-text">build today?</span>
         </h1>
         <p
           style={{
-            marginTop: '0.5rem',
-            color: '#94a3b8',
-            fontSize: '1rem',
+            marginTop: '0.875rem',
+            color: '#64748b',
+            fontSize: '1.0625rem',
+            maxWidth: 480,
+            margin: '0.875rem auto 0',
           }}
         >
-          What would you like to build today?
+          Describe your idea and ZIVO AI will generate a full application in seconds.
         </p>
       </div>
 
-      {/* CTA Cards */}
+      {/* Prompt card */}
       <div
+        className="zivo-fade-in-up"
+        style={{ width: '100%', maxWidth: 640, marginBottom: '1.25rem', animationDelay: '0.1s' }}
+      >
+        <PromptCard
+          placeholder="Describe what you want to build…"
+          onSubmit={handlePromptSubmit}
+        />
+      </div>
+
+      {/* Mode pills */}
+      <div
+        className="zivo-fade-in-up"
         style={{
           display: 'flex',
-          flexDirection: 'column',
-          gap: '1rem',
-          width: '100%',
-          maxWidth: '460px',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
+          justifyContent: 'center',
+          marginBottom: '4rem',
+          animationDelay: '0.15s',
         }}
       >
-        {/* Primary CTA — Website Builder */}
-        <Link
-          href="/ai?mode=website"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1rem',
-            padding: '1.25rem 1.5rem',
-            borderRadius: '12px',
-            textDecoration: 'none',
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-            boxShadow: '0 4px 24px rgba(99,102,241,0.35)',
-            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(-2px)';
-            (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 8px 32px rgba(99,102,241,0.45)';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.transform = 'translateY(0)';
-            (e.currentTarget as HTMLAnchorElement).style.boxShadow = '0 4px 24px rgba(99,102,241,0.35)';
-          }}
-        >
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              backgroundColor: 'rgba(255,255,255,0.15)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
+        {MODES.map((m) => (
+          <button
+            key={m.key}
+            onClick={() => setActiveMode(m.key)}
+            className={`zivo-mode-pill${activeMode === m.key ? ' active' : ''}`}
           >
-            <Globe size={22} color="#fff" />
-          </div>
-          <div>
-            <div
-              style={{
-                fontSize: '1rem',
-                fontWeight: 700,
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-              }}
-            >
-              Website Builder
-              <span
-                style={{
-                  fontSize: '0.65rem',
-                  fontWeight: 600,
-                  backgroundColor: 'rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  borderRadius: 4,
-                  padding: '2px 7px',
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Recommended
-              </span>
-            </div>
-            <div style={{ fontSize: '0.825rem', color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-              Generate a full website with AI in seconds
-            </div>
-          </div>
-        </Link>
+            {m.icon}
+            {m.label}
+          </button>
+        ))}
+      </div>
 
-        {/* Secondary CTA — Mobile App Builder */}
-        <Link
-          href="/ai?mode=mobile"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1rem',
-            padding: '1.25rem 1.5rem',
-            borderRadius: '12px',
-            textDecoration: 'none',
-            backgroundColor: '#0f1020',
-            border: '1px solid rgba(99,102,241,0.2)',
-            transition: 'border-color 0.15s ease, background-color 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(99,102,241,0.5)';
-            (e.currentTarget as HTMLAnchorElement).style.backgroundColor = '#141528';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(99,102,241,0.2)';
-            (e.currentTarget as HTMLAnchorElement).style.backgroundColor = '#0f1020';
-          }}
-        >
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              backgroundColor: 'rgba(99,102,241,0.12)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <Smartphone size={22} color="#818cf8" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#f1f5f9' }}>
-              Mobile App Builder
-            </div>
-            <div style={{ fontSize: '0.825rem', color: '#64748b', marginTop: 2 }}>
-              Build React Native-style mobile apps with AI
-            </div>
-          </div>
-        </Link>
-
-        {/* Secondary CTA — UI Visual Builder */}
-        <Link
-          href="/ui-builder"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1rem',
-            padding: '1.25rem 1.5rem',
-            borderRadius: '12px',
-            textDecoration: 'none',
-            backgroundColor: '#0f1020',
-            border: '1px solid rgba(99,102,241,0.2)',
-            transition: 'border-color 0.15s ease, background-color 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(99,102,241,0.5)';
-            (e.currentTarget as HTMLAnchorElement).style.backgroundColor = '#141528';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.borderColor = 'rgba(99,102,241,0.2)';
-            (e.currentTarget as HTMLAnchorElement).style.backgroundColor = '#0f1020';
-          }}
-        >
-          <div
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              backgroundColor: 'rgba(99,102,241,0.12)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <Layers size={22} color="#818cf8" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1rem', fontWeight: 600, color: '#f1f5f9' }}>
-              UI Visual Builder
-              <span
-                style={{
-                  fontSize: '0.65rem',
-                  fontWeight: 600,
-                  backgroundColor: 'rgba(99,102,241,0.15)',
-                  color: '#818cf8',
-                  borderRadius: 4,
-                  padding: '2px 7px',
-                  marginLeft: '0.5rem',
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                }}
-              >
-                Advanced
-              </span>
-            </div>
-            <div style={{ fontSize: '0.825rem', color: '#64748b', marginTop: 2 }}>
-              Drag-and-drop component canvas with live preview
-            </div>
-          </div>
-        </Link>
+      {/* Template / recent projects section */}
+      <div
+        className="zivo-fade-in-up"
+        style={{
+          width: '100%',
+          maxWidth: 900,
+          animationDelay: '0.2s',
+        }}
+      >
+        <TemplateGrid />
       </div>
 
       {/* Open Projects link */}
@@ -246,7 +185,7 @@ export default function BuilderHomePage() {
             display: 'inline-flex',
             alignItems: 'center',
             gap: '0.4rem',
-            color: '#64748b',
+            color: '#475569',
             fontSize: '0.875rem',
             textDecoration: 'none',
             transition: 'color 0.15s ease',
@@ -255,7 +194,7 @@ export default function BuilderHomePage() {
             (e.currentTarget as HTMLAnchorElement).style.color = '#94a3b8';
           }}
           onMouseLeave={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.color = '#64748b';
+            (e.currentTarget as HTMLAnchorElement).style.color = '#475569';
           }}
         >
           <FolderOpen size={15} />
@@ -265,3 +204,4 @@ export default function BuilderHomePage() {
     </main>
   );
 }
+

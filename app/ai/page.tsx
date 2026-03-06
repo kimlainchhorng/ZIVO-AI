@@ -2272,6 +2272,9 @@ function AIPageInner() {
 
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: COLORS.bg, color: COLORS.textPrimary, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif", overflow: "hidden" }}>
 
+        {/* Top gradient accent border */}
+        <div className="zivo-top-border" />
+
         {/* Top Nav */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: "#0a0b14", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -2697,18 +2700,20 @@ function AIPageInner() {
                   >
                     +
                   </button>
-                  {/* Model selector */}
+                  {/* Model selector — styled ModelBadge */}
                   <div style={{ position: "relative", flexShrink: 0 }}>
                     <select
                       className="zivo-select"
                       value={model}
                       onChange={(e) => setModel(e.target.value)}
-                      style={{ appearance: "none", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "20px", color: COLORS.accent, padding: "0.25rem 1.5rem 0.25rem 0.625rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer" }}
+                      style={{ appearance: "none", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "20px", color: COLORS.accent, padding: "0.25rem 1.75rem 0.25rem 0.75rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer" }}
                     >
                       {MODELS.map((m) => (
                         <option key={m.value} value={m.value} style={{ background: COLORS.bgPanel }}>{m.label}</option>
                       ))}
                     </select>
+                    {/* Live green dot indicator */}
+                    <span style={{ position: "absolute", left: "0.55rem", top: "50%", transform: "translateY(-50%)", width: "6px", height: "6px", borderRadius: "50%", background: COLORS.success, pointerEvents: "none" }} />
                     <span style={{ position: "absolute", right: "0.45rem", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: "0.6rem", color: COLORS.accent }}>▾</span>
                   </div>
                   {/* Voice input (Web Speech API) */}
@@ -3993,17 +3998,47 @@ function AIPageInner() {
                 </button>
                 {/* Scrollable log area */}
                 {buildOutputOpen && (
-                  <div style={{ maxHeight: "140px", overflowY: "auto", background: "#000", padding: "0.5rem 1rem" }}>
-                    <div style={{ fontFamily: "'Fira Code', 'SF Mono', monospace", fontSize: "0.75rem", lineHeight: 1.7 }}>
-                      {consoleLogs.slice(-60).map((log, i) => (
-                        <div key={i} style={{ color: log.type === "error" ? COLORS.error : log.type === "success" ? COLORS.success : "#4ade80" }}>
-                          {log.text}
+                  <div>
+                    {/* Progress bar */}
+                    {(loading || buildIterationCount > 0) && (
+                      <div style={{ padding: "0.4rem 1rem 0.35rem", background: COLORS.bgPanel }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.3rem" }}>
+                          <span style={{ fontSize: "0.65rem", color: COLORS.textMuted }}>
+                            {loading ? `Pass ${buildIteration}/8` : `Completed ${buildIterationCount} pass${buildIterationCount !== 1 ? "es" : ""}`}
+                          </span>
+                          <span style={{ fontSize: "0.65rem", fontWeight: 600, color: loading ? COLORS.warning : consoleLogs.some((l) => l.type === "error") ? COLORS.error : COLORS.success }}>
+                            {loading ? "Running…" : consoleLogs.some((l) => l.type === "error") ? "Errors found" : "Passed ✓"}
+                          </span>
                         </div>
-                      ))}
-                      {loading && (
-                        <span style={{ display: "inline-block", width: "7px", height: "1em", background: "#4ade80", verticalAlign: "middle", animation: "cursorBlink 1s step-end infinite" }} />
-                      )}
-                      <div ref={consoleEndRef} />
+                        <div style={{ height: "3px", background: "rgba(255,255,255,0.06)", borderRadius: "9999px", overflow: "hidden" }}>
+                          <div style={{
+                            height: "100%",
+                            borderRadius: "9999px",
+                            background: loading
+                              ? COLORS.warning
+                              : consoleLogs.some((l) => l.type === "error")
+                              ? COLORS.error
+                              : COLORS.success,
+                            width: loading
+                              ? `${Math.max(4, Math.round((buildIteration / 8) * 100))}%`
+                              : "100%",
+                            transition: "width 0.4s ease, background 0.3s ease",
+                          }} />
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ maxHeight: "140px", overflowY: "auto", background: "#000", padding: "0.5rem 1rem" }}>
+                      <div style={{ fontFamily: "'Fira Code', 'SF Mono', monospace", fontSize: "0.75rem", lineHeight: 1.7 }}>
+                        {consoleLogs.slice(-60).map((log, i) => (
+                          <div key={i} style={{ color: log.type === "error" ? COLORS.error : log.type === "success" ? COLORS.success : "#4ade80" }}>
+                            {log.text}
+                          </div>
+                        ))}
+                        {loading && (
+                          <span style={{ display: "inline-block", width: "7px", height: "1em", background: "#4ade80", verticalAlign: "middle", animation: "cursorBlink 1s step-end infinite" }} />
+                        )}
+                        <div ref={consoleEndRef} />
+                      </div>
                     </div>
                   </div>
                 )}
