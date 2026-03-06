@@ -178,6 +178,7 @@ describe('CompletenessGate', () => {
   /** Build a minimal set of files that satisfies all completeness requirements */
   function buildCompleteFileset(): GeneratedFile[] {
     const requiredPaths = [
+      'app/app/page.tsx',
       'app/page.tsx',
       'app/about/page.tsx',
       'app/contact/page.tsx',
@@ -314,6 +315,27 @@ describe('CompletenessGate', () => {
     const result = runCompletenessGate(files);
     const summary = summarizeCompletenessGate(result);
     expect(summary).toContain('missing');
+  });
+
+  it('fails when SaaS /app route (app/app/page.tsx) is missing', () => {
+    const files = buildCompleteFileset().filter((f) => f.path !== 'app/app/page.tsx');
+    const result = runCompletenessGate(files);
+    expect(result.passed).toBe(false);
+    const issue = result.issues.find((i) => i.rule === 'required-file:app/app/page.tsx');
+    expect(issue).toBeDefined();
+    expect(issue?.severity).toBe('error');
+  });
+
+  it('missingSaasRoutes is empty when all SaaS-standard routes are present', () => {
+    const files = buildCompleteFileset();
+    const result = runCompletenessGate(files);
+    expect(result.missingSaasRoutes).toHaveLength(0);
+  });
+
+  it('missingSaasRoutes lists /app when app/app/page.tsx is absent', () => {
+    const files = buildCompleteFileset().filter((f) => f.path !== 'app/app/page.tsx');
+    const result = runCompletenessGate(files);
+    expect(result.missingSaasRoutes).toContain('/app');
   });
 });
 
