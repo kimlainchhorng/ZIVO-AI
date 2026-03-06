@@ -182,7 +182,10 @@ async def chat(req: ChatRequest) -> Union[ChatResponse, StreamingResponse]:
     if req.system_prompt:
         messages.append({"role": "system", "content": req.system_prompt})
     else:
-        messages.append({"role": "system", "content": "You are ZIVO AI, an expert full-stack developer."})
+        messages.append({
+            "role": "system",
+            "content": "You are ZIVO AI, an expert full-stack developer.",
+        })
     messages.extend([m.model_dump() for m in req.messages])
 
     if req.stream:
