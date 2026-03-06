@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { stripMarkdownFences } from "../../../lib/code-parser";
+import { APIClientRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
-
-interface APIClientBody {
-  openApiSpec: string;
-  language: "typescript" | "python" | "curl";
-  clientName?: string;
-}
 
 interface GeneratedFile {
   path: string;
@@ -38,14 +33,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
 
-    const { openApiSpec, language, clientName = "ApiClient" } = body as Partial<APIClientBody>;
+    const parsed = APIClientRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
+    }
 
-    if (!openApiSpec || typeof openApiSpec !== "string") {
-      return NextResponse.json({ error: "openApiSpec is required" }, { status: 400 });
-    }
-    if (!language || !["typescript", "python", "curl"].includes(language)) {
-      return NextResponse.json({ error: "language must be typescript, python, or curl" }, { status: 400 });
-    }
+    const { openApiSpec, language, clientName } = parsed.data;
 
     const prompt = `Generate a typed ${language} API client from this OpenAPI 3.x spec.
 Client class name: ${clientName}

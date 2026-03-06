@@ -1,7 +1,17 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from "react";
 import UsageDashboard from "@/components/UsageDashboard";
+
+const QUICK_ACTIONS = [
+  { href: '/ai', icon: '🤖', title: 'AI Builder', desc: 'Generate apps and sites with AI' },
+  { href: '/schema-designer', icon: '🗃️', title: 'Schema Designer', desc: 'Design and export database schemas' },
+  { href: '/api-generator', icon: '⚡', title: 'API Generator', desc: 'Generate REST API routes instantly' },
+  { href: '/workflow', icon: '🔄', title: 'Workflow', desc: 'Build and automate data pipelines' },
+  { href: '/component-library', icon: '🎨', title: 'Component Library', desc: 'Browse and copy UI components' },
+  { href: '/api-client', icon: '🔌', title: 'API Client', desc: 'Generate typed clients from OpenAPI specs' },
+];
 
 const COLORS = {
   bg: "#0a0b14",
@@ -234,7 +244,25 @@ export default function DashboardPage() {
               </table>
             </div>
 
-            {/* Quick Actions */}
+            {/* Quick Actions Grid */}
+            <div style={{ marginBottom: "1.5rem", animation: "fadeIn 0.55s ease" }}>
+              <h2 style={{ margin: "0 0 0.75rem", fontSize: "0.9375rem", fontWeight: 600, color: COLORS.textPrimary }}>Quick Actions</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "1rem" }}>
+                {QUICK_ACTIONS.map((action) => (
+                  <Link
+                    key={action.href}
+                    href={action.href}
+                    className="zivo-quick-card"
+                  >
+                    <div className="zivo-quick-card-icon">{action.icon}</div>
+                    <span className="zivo-quick-card-title">{action.title}</span>
+                    <span className="zivo-quick-card-desc">{action.desc}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick Actions (legacy row) */}
             <div style={{ display: "flex", gap: "1rem", animation: "fadeIn 0.6s ease", flexWrap: "wrap" }}>
               <a href="/ai" style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.75rem 1.25rem", background: COLORS.accentGradient, borderRadius: "10px", color: "#fff", textDecoration: "none", fontWeight: 600, fontSize: "0.9rem" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>

@@ -33,6 +33,7 @@ import {
   ChevronDown,
   ChevronRight,
   Home,
+  Database,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -40,6 +41,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  badge?: string;
 }
 
 interface NavGroup {
@@ -84,10 +86,19 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    id: 'data',
+    title: 'Data & APIs',
+    items: [
+      { label: 'Schema Designer', href: '/schema-designer', icon: Database },
+      { label: 'API Generator', href: '/api-generator', icon: Zap },
+      { label: 'Webhook Inspector', href: '/webhook-inspector', icon: Activity },
+      { label: 'API Client', href: '/api-client', icon: Globe, badge: 'New' },
+    ],
+  },
+  {
     id: 'devops',
     title: 'DevOps',
     items: [
-      { label: 'Webhook Inspector', href: '/webhook-inspector', icon: Activity },
       { label: 'Status Page', href: '/status', icon: Activity },
       { label: 'Performance Panel', href: '/performance-panel', icon: BarChart2 },
       { label: 'Component Marketplace', href: '/component-marketplace', icon: Store },
@@ -151,6 +162,7 @@ function writeCollapsedState(state: Record<string, boolean>): void {
 export default function AppSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => readCollapsedState());
+  const [search, setSearch] = useState('');
 
   function toggleGroup(id: string) {
     setCollapsed((prev) => {
@@ -159,6 +171,14 @@ export default function AppSidebar() {
       return next;
     });
   }
+
+  const allItems = NAV_GROUPS.flatMap((g) => g.items);
+  const filteredItems = search
+    ? allItems.filter((item) =>
+        item.label.toLowerCase().includes(search.toLowerCase()) ||
+        item.href.toLowerCase().includes(search.toLowerCase())
+      )
+    : null;
 
   return (
     <aside
@@ -220,6 +240,27 @@ export default function AppSidebar() {
         </Link>
       </div>
 
+      {/* Search */}
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid #1f1f1f' }}>
+        <div style={{ position: 'relative' }}>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="zivo-sidebar-search"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#475569', cursor: 'pointer', padding: 0 }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Navigation */}
       <nav
         style={{
@@ -228,105 +269,166 @@ export default function AppSidebar() {
           overflowY: 'auto',
         }}
       >
-        {NAV_GROUPS.map((group) => {
-          const isCollapsed = !!collapsed[group.id];
-
-          return (
-            <div key={group.id} style={{ marginBottom: 4 }}>
-              {/* Group header */}
-              <button
-                onClick={() => toggleGroup(group.id)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '6px 8px',
-                  borderRadius: 6,
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  cursor: 'pointer',
-                  color: '#6b7280',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  transition: 'color 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
-                }}
-                onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLButtonElement).style.color = '#6b7280';
-                }}
-              >
-                <span>{group.title}</span>
-                {isCollapsed ? (
-                  <ChevronRight size={13} />
-                ) : (
-                  <ChevronDown size={13} />
-                )}
-              </button>
-
-              {/* Group items */}
-              <div
-                style={{
-                  overflow: 'hidden',
-                  maxHeight: isCollapsed ? 0 : 1000,
-                  transition: 'max-height 0.2s ease',
-                }}
-              >
-                {group.items.map((item) => {
-                  const isActive = pathname === item.href;
-                  const Icon = item.icon;
-
-                  return (
-                    <Link
-                      key={`${group.id}-${item.href}-${item.label}`}
-                      href={item.href}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '7px 8px',
-                        borderRadius: 6,
-                        textDecoration: 'none',
-                        color: isActive ? '#ffffff' : '#9ca3af',
-                        backgroundColor: isActive ? '#6366f1' : 'transparent',
-                        fontSize: 13,
-                        fontWeight: isActive ? 500 : 400,
-                        transition: 'background-color 0.15s ease, color 0.15s ease',
-                        marginBottom: 1,
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isActive) {
-                          const el = e.currentTarget as HTMLAnchorElement;
-                          el.style.backgroundColor = '#1a1a2e';
-                          el.style.color = '#ffffff';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isActive) {
-                          const el = e.currentTarget as HTMLAnchorElement;
-                          el.style.backgroundColor = 'transparent';
-                          el.style.color = '#9ca3af';
-                        }
-                      }}
-                    >
-                      <Icon
-                        size={15}
-                        style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75 }}
-                      />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {item.label}
-                      </span>
-                    </Link>
-                  );
-                })}
+        {filteredItems ? (
+          /* Search results: flat list without group headers */
+          <div>
+            {filteredItems.length === 0 && (
+              <div style={{ padding: '8px', fontSize: 12, color: '#475569', textAlign: 'center' }}>
+                No results
               </div>
-            </div>
-          );
-        })}
+            )}
+            {filteredItems.map((item) => {
+              const isActive = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={`search-${item.href}-${item.label}`}
+                  href={item.href}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    padding: '7px 8px',
+                    borderRadius: 6,
+                    textDecoration: 'none',
+                    color: isActive ? '#818cf8' : '#9ca3af',
+                    backgroundColor: isActive ? 'rgba(99,102,241,0.15)' : 'transparent',
+                    fontSize: 13,
+                    fontWeight: isActive ? 500 : 400,
+                    transition: 'background-color 0.15s ease, color 0.15s ease',
+                    marginBottom: 1,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) {
+                      const el = e.currentTarget as HTMLAnchorElement;
+                      el.style.backgroundColor = '#1a1a2e';
+                      el.style.color = '#ffffff';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) {
+                      const el = e.currentTarget as HTMLAnchorElement;
+                      el.style.backgroundColor = 'transparent';
+                      el.style.color = '#9ca3af';
+                    }
+                  }}
+                >
+                  <Icon size={15} style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75 }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.label}
+                  </span>
+                  {item.badge && (
+                    <span className={`zivo-nav-badge new`}>{item.badge}</span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          /* Normal grouped nav */
+          NAV_GROUPS.map((group) => {
+            const isCollapsed = !!collapsed[group.id];
+
+            return (
+              <div key={group.id} style={{ marginBottom: 4 }}>
+                {/* Group header */}
+                <button
+                  onClick={() => toggleGroup(group.id)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 8px',
+                    borderRadius: 6,
+                    border: 'none',
+                    backgroundColor: 'transparent',
+                    cursor: 'pointer',
+                    color: '#6b7280',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                    transition: 'color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.color = '#6b7280';
+                  }}
+                >
+                  <span>{group.title}</span>
+                  {isCollapsed ? (
+                    <ChevronRight size={13} />
+                  ) : (
+                    <ChevronDown size={13} />
+                  )}
+                </button>
+
+                {/* Group items */}
+                <div
+                  style={{
+                    overflow: 'hidden',
+                    maxHeight: isCollapsed ? 0 : 1000,
+                    transition: 'max-height 0.2s ease',
+                  }}
+                >
+                  {group.items.map((item) => {
+                    const isActive = pathname === item.href;
+                    const Icon = item.icon;
+
+                    return (
+                      <Link
+                        key={`${group.id}-${item.href}-${item.label}`}
+                        href={item.href}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '7px 8px',
+                          borderRadius: 6,
+                          textDecoration: 'none',
+                          color: isActive ? '#818cf8' : '#9ca3af',
+                          backgroundColor: isActive ? 'rgba(99,102,241,0.15)' : 'transparent',
+                          fontSize: 13,
+                          fontWeight: isActive ? 500 : 400,
+                          transition: 'background-color 0.15s ease, color 0.15s ease',
+                          marginBottom: 1,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isActive) {
+                            const el = e.currentTarget as HTMLAnchorElement;
+                            el.style.backgroundColor = '#1a1a2e';
+                            el.style.color = '#ffffff';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isActive) {
+                            const el = e.currentTarget as HTMLAnchorElement;
+                            el.style.backgroundColor = 'transparent';
+                            el.style.color = '#9ca3af';
+                          }
+                        }}
+                      >
+                        <Icon
+                          size={15}
+                          style={{ flexShrink: 0, opacity: isActive ? 1 : 0.75 }}
+                        />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.label}
+                        </span>
+                        {item.badge && (
+                          <span className={`zivo-nav-badge new`}>{item.badge}</span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
+        )}
       </nav>
 
       {/* Footer */}

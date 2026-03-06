@@ -2,6 +2,7 @@
 // Returns { files, designTokens, summary }
 import { NextResponse } from "next/server";
 import { generateDesignSystem } from "@/lib/design/design-system";
+import { DesignSystemRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,7 @@ export interface DesignSystemResponse {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    const body = await req.json().catch(() => ({})) as {
+    const rawBody = await req.json().catch(() => ({})) as {
       appName?: string;
       primaryColor?: string;
       style?: string;
@@ -42,6 +43,12 @@ export async function POST(req: Request): Promise<Response> {
       mood?: string;
     };
 
+    const parsed = DesignSystemRequestSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
+    }
+
+    const body = rawBody;
     const {
       appName = "My App",
       primaryColor = "#6366f1",

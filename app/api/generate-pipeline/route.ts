@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { GeneratePipelineRequestSchema } from "@/lib/schemas";
 
 export const runtime = "nodejs";
 
@@ -91,7 +92,13 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = await req.json() as GeneratePipelineRequest;
+    const rawBody = await req.json() as GeneratePipelineRequest;
+
+    const schemaResult = GeneratePipelineRequestSchema.safeParse(rawBody);
+    if (!schemaResult.success) {
+      return NextResponse.json({ error: schemaResult.error.issues }, { status: 400 });
+    }
+
     const {
       appName = "My App",
       pipelineType = "etl",
@@ -102,7 +109,7 @@ export async function POST(req: Request) {
       deadLetterQueue = false,
       monitoring = false,
       outputFormat = "ts",
-    } = body;
+    } = rawBody;
 
     const userPrompt = `Generate a data pipeline for "${appName}".
 Pipeline type: ${pipelineType}
