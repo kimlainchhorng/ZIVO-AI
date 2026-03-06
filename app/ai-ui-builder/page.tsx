@@ -103,7 +103,7 @@ function SortableSection({ section, pageId, onRegenerate, onDelete, onUpdate }: 
           }}>
             {section.type}
           </span>
-          <span style={{ flex: 1, fontSize: '0.9rem', fontWeight: 600, color: '#f1f5f9', truncate: 'true' }}>
+          <span style={{ flex: 1, fontSize: '0.9rem', fontWeight: 600, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {section.title}
           </span>
           <div style={{ display: 'flex', gap: '0.25rem' }}>
