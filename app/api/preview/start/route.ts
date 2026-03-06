@@ -1,115 +1,128 @@
+/**
+ * app/api/preview/start/route.ts
+ *
+ * POST /api/preview/start
+ * Body: { projectId: string }
+ * Headers: Authorization: Bearer <token>  (required)
+ *
+ * Verifies the user owns the project, fetches its files from Supabase,
+ * kicks off an async preview build in an isolated container, and returns
+ * { previewId }.
+ *
+ * The caller should then poll GET /api/preview/status?previewId=<id> until
+ * status === "running" to get the preview URL.
+ */
+
 import { NextResponse } from "next/server";
-import { extractBearerToken, getUserFromToken, getProjectFiles } from "@/lib/db/projects-db";
-import OpenAI from "openai";
-import { stripMarkdownFences } from "@/lib/code-parser";
+import { z } from "zod";
+import {
+  extractBearerToken,
+  getUserFromToken,
+  getProjectById,
+  getProjectFiles,
+} from "@/lib/db/projects-db";
+import {
+  createPreviewSession,
+  listUserPreviewSessions,
+  updatePreviewSession,
+} from "@/lib/preview-store";
+import { startPreview } from "@/lib/preview-runner";
 
 export const runtime = "nodejs";
 
-const MAX_FILES_FOR_PREVIEW = 5;
-const MAX_FILE_CONTENT_LENGTH = 600;
+const RequestSchema = z.object({
+  projectId: z.string().uuid(),
+});
 
-interface ProjectFile {
-  path: string;
-  content: string;
-}
+/** Maximum simultaneous previews per user. */
+const MAX_PREVIEWS_PER_USER = 3;
 
-function getClient(): OpenAI {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-}
-
-/**
- * POST /api/preview/start
- * Body: { projectId: string } | { files: ProjectFile[] }
- *
- * Generates a self-contained HTML preview for the given project and returns it.
- * Requires Authorization: Bearer <token> when using projectId.
- */
 export async function POST(req: Request) {
-  let body: { projectId?: unknown; files?: unknown };
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const token = extractBearerToken(req.headers.get("Authorization"));
+  if (!token) {
+    return NextResponse.json(
+      { error: "Authorization header with Bearer token is required" },
+      { status: 401 }
+    );
+  }
+
+  const user = await getUserFromToken(token);
+  if (!user) {
+    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+  }
+
+  // ── Validate body ─────────────────────────────────────────────────────────
+  let body: unknown;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  let files: ProjectFile[] = [];
-
-  if (body.projectId && typeof body.projectId === "string") {
-    const token = extractBearerToken(req.headers.get("Authorization"));
-    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    const user = await getUserFromToken(token);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-    try {
-      const dbFiles = await getProjectFiles(token, body.projectId);
-      files = dbFiles.map((f) => ({ path: f.path, content: f.content }));
-    } catch (err: unknown) {
-      return NextResponse.json(
-        { error: (err as Error).message ?? "Failed to load project files" },
-        { status: 500 }
-      );
-    }
-  } else if (Array.isArray(body.files)) {
-    files = (body.files as ProjectFile[]).filter(
-      (f) => typeof f.path === "string" && typeof f.content === "string"
-    );
-  } else {
-    return NextResponse.json({ error: "Provide projectId or files array" }, { status: 400 });
-  }
-
-  if (files.length === 0) {
-    return NextResponse.json({ error: "No files to preview" }, { status: 400 });
-  }
-
-  // If there is already a standalone HTML file, use it directly
-  const htmlFile = files.find(
-    (f) =>
-      f.path === "index.html" ||
-      f.path === "public/index.html" ||
-      f.path === "preview.html" ||
-      f.path === "preview_html"
-  );
-  if (htmlFile) {
-    return NextResponse.json({ status: "running", previewHtml: htmlFile.content });
-  }
-
-  if (!process.env.OPENAI_API_KEY) {
-    return NextResponse.json({ error: "OPENAI_API_KEY not configured" }, { status: 503 });
-  }
-
-  // Generate a preview via AI
-  const filesSummary = files
-    .slice(0, MAX_FILES_FOR_PREVIEW)
-    .map((f) => `// ${f.path}\n${f.content.slice(0, MAX_FILE_CONTENT_LENGTH)}`)
-    .join("\n\n---\n\n");
-
-  try {
-    const completion = await getClient().chat.completions.create({
-      model: "gpt-4o",
-      temperature: 0.3,
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a UI preview generator. Given project files, create a fully self-contained single HTML file that visually previews the application. Use inline CSS and minimal JavaScript. Return ONLY the HTML content.",
-        },
-        {
-          role: "user",
-          content: `Generate a static HTML preview for this project:\n\n${filesSummary}`,
-        },
-      ],
-    });
-    const previewHtml = stripMarkdownFences(
-      completion.choices[0]?.message?.content ??
-        "<html><body><h1>Preview unavailable</h1></body></html>"
-    );
-    return NextResponse.json({ status: "running", previewHtml });
-  } catch (err: unknown) {
+  const parsed = RequestSchema.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: (err as Error).message ?? "Failed to generate preview" },
+      { error: "Validation failed", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  const { projectId } = parsed.data;
+
+  // ── Verify project ownership ──────────────────────────────────────────────
+  const project = await getProjectById(token, projectId);
+  if (!project) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+  if (project.owner_user_id !== user.id) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // ── Rate-limit: cap concurrent previews per user ──────────────────────────
+  const existing = listUserPreviewSessions(user.id);
+  if (existing.length >= MAX_PREVIEWS_PER_USER) {
+    return NextResponse.json(
+      {
+        error: `You already have ${existing.length} active preview(s). Stop one before starting a new one.`,
+        activePreviewIds: existing.map((s) => s.previewId),
+      },
+      { status: 429 }
+    );
+  }
+
+  // ── Fetch project files ───────────────────────────────────────────────────
+  let files: Array<{ path: string; content: string }>;
+  try {
+    const dbFiles = await getProjectFiles(token, projectId);
+    files = dbFiles.map((f) => ({ path: f.path, content: f.content }));
+  } catch (err) {
+    return NextResponse.json(
+      {
+        error: "Failed to fetch project files",
+        details: err instanceof Error ? err.message : String(err),
+      },
       { status: 500 }
     );
   }
+
+  if (files.length === 0) {
+    return NextResponse.json(
+      { error: "Project has no files. Generate the website first." },
+      { status: 422 }
+    );
+  }
+
+  // ── Create session & kick off async build ─────────────────────────────────
+  const session = createPreviewSession(projectId, user.id);
+
+  // Fire-and-forget: build runs in the background; client polls for status.
+  void startPreview(session, files).catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[preview/start] Unhandled runner error for ${session.previewId}:`, message);
+    // Ensure the session reflects the failure so the client can see it via /status.
+    updatePreviewSession(session.previewId, { status: "failed", error: message });
+  });
+
+  return NextResponse.json({ previewId: session.previewId }, { status: 202 });
 }

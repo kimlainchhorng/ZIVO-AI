@@ -369,6 +369,47 @@ export async function getProjectById(token: string, projectId: string): Promise<
   return getProject(token, projectId);
 }
 
+// ─── Project Messages ──────────────────────────────────────────────────────────
+
+export interface DbProjectMessage {
+  id: string;
+  project_id: string;
+  owner_user_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  created_at: string;
+}
+
+/** Returns all messages for a project in chronological order. */
+export async function getProjectMessages(token: string, projectId: string): Promise<DbProjectMessage[]> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_messages")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`getProjectMessages: ${error.message}`);
+  return (data ?? []) as DbProjectMessage[];
+}
+
+/** Appends a single message to the project conversation thread. */
+export async function appendProjectMessage(
+  token: string,
+  projectId: string,
+  userId: string,
+  role: DbProjectMessage["role"],
+  content: string
+): Promise<DbProjectMessage> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_messages")
+    .insert({ project_id: projectId, owner_user_id: userId, role, content })
+    .select()
+    .single();
+  if (error) throw new Error(`appendProjectMessage: ${error.message}`);
+  return data as DbProjectMessage;
+}
+
 /** Deletes a project by ID (RLS ensures only the owner can delete). */
 export async function deleteProject(token: string, projectId: string): Promise<void> {
   const client = createAuthedClient(token);
