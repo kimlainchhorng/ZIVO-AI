@@ -1,166 +1,219 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { extractBearerToken, getUserFromToken, createAuthedClient } from '@/lib/db/projects-db';
+import { UIOutputSchema } from '@/types/builder';
+import { stylePresets } from '@/lib/theme';
+import type { UIOutput, Section } from '@/types/builder';
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
-type GithubErrorResponse = { message?: string };
+const RequestSchema = z.object({
+  projectId: z.string().uuid(),
+  versionId: z.string().uuid().optional(),
+  repoName: z.string().min(1).regex(/^[a-zA-Z0-9_.-]+$/, 'Invalid repo name'),
+  githubToken: z.string().min(1),
+  branch: z.string().default('main'),
+  commitMessage: z.string().default('Deploy from ZIVO-AI'),
+});
 
-function asErrorMessage(data: unknown): string | undefined {
-  if (typeof data === "string") return data;
-  if (data && typeof data === "object" && "message" in data) {
-    const msg = (data as GithubErrorResponse).message;
-    return typeof msg === "string" ? msg : undefined;
-  }
-  return undefined;
+function sectionToJSX(section: Section): string {
+  return `
+  <section className="py-16 px-8">
+    <div className="max-w-6xl mx-auto">
+      <h2 className="text-3xl font-bold mb-6">${section.title}</h2>
+      <p className="text-lg opacity-80">${section.content.slice(0, 200).replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+    </div>
+  </section>`.trim();
 }
 
-async function gh<T>(url: string, init?: RequestInit, token?: string): Promise<T> {
-  const resolvedToken = token ?? process.env.GITHUB_TOKEN;
-  if (!resolvedToken) throw new Error("Missing GITHUB_TOKEN");
+function generateFiles(uiOutput: UIOutput): Record<string, string> {
+  const preset = (uiOutput.stylePreset ?? 'premium') as keyof typeof stylePresets;
+  const colors = stylePresets[preset];
+  const files: Record<string, string> = {};
 
+  const navLinks = uiOutput.navigation?.links
+    .map((l) => `        <a href="${l.href}" className="hover:opacity-75 transition-opacity">${l.label}</a>`)
+    .join('\n') ?? '';
+
+  files['components/Navigation.tsx'] = `export function Navigation() {
+  return (
+    <nav className="flex items-center justify-between px-8 py-4 ${colors.classes} border-b border-white/10">
+      <span className="text-xl font-bold">${uiOutput.navigation?.logo ?? uiOutput.title}</span>
+      <div className="flex items-center gap-6">
+${navLinks}
+      </div>
+    </nav>
+  );
+}`;
+
+  files['components/Footer.tsx'] = `export function Footer() {
+  return (
+    <footer className="py-8 px-8 ${colors.classes} border-t border-white/10 text-center">
+      <p className="opacity-60">${uiOutput.footer?.copyright ?? `© ${new Date().getFullYear()} ${uiOutput.title}`}</p>
+    </footer>
+  );
+}`;
+
+  for (const page of uiOutput.pages) {
+    const filePath = page.isHome ? 'app/page.tsx' : `app/${page.slug}/page.tsx`;
+    const sections = page.sections.map(sectionToJSX).join('\n');
+    files[filePath] = `import { Navigation } from '@/components/Navigation';
+import { Footer } from '@/components/Footer';
+
+export default function ${page.name.replace(/\s+/g, '')}Page() {
+  return (
+    <div className="min-h-screen ${colors.classes}">
+      <Navigation />
+      <main>
+        ${sections}
+      </main>
+      <Footer />
+    </div>
+  );
+}`;
+  }
+
+  return files;
+}
+
+async function githubRequest(url: string, token: string, method: string, body?: unknown) {
   const res = await fetch(url, {
-    ...init,
+    method,
     headers: {
-      Authorization: `Bearer ${resolvedToken}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      ...(init?.headers || {}),
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/vnd.github+json',
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
     },
-    cache: "no-store",
+    body: body ? JSON.stringify(body) : undefined,
   });
-
-  const text = await res.text();
-  let data: unknown = null;
-  try {
-    data = text ? (JSON.parse(text) as unknown) : null;
-  } catch {
-    data = text;
-  }
-
-  if (!res.ok) {
-    const msg = asErrorMessage(data) ?? "GitHub API error";
-    throw new Error(`${res.status} ${res.statusText}: ${msg}`);
-  }
-  return data as T;
-}
-
-function b64(str: string): string {
-  return Buffer.from(str, "utf8").toString("base64");
-}
-
-async function getFileSha(owner: string, repo: string, path: string, branch: string, token?: string): Promise<string | null> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`;
-  try {
-    const data = await gh<{ sha: string }>(url, { method: "GET" }, token);
-    return data.sha;
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : "";
-    if (msg.includes("404")) return null;
-    throw e;
-  }
-}
-
-type UpsertPayload = { message: string; content: string; branch: string; sha?: string };
-type DeletePayload  = { message: string; sha: string; branch: string };
-
-type GithubResult =
-  | { path: string; action: "updated" | "created"; commit?: string }
-  | { path: string; action: "deleted"; commit?: string }
-  | { path: string; action: "skipped (not found)" };
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
+  return res;
 }
 
 export async function POST(req: Request) {
-  try {
-    const body: unknown = await req.json();
-    if (!isRecord(body)) {
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-    }
-
-    const mode  = body["mode"];
-    const files = body["files"];
-
-    if ((mode !== "upsert" && mode !== "delete") || !Array.isArray(files) || files.length === 0) {
-      return NextResponse.json({ error: "mode and files[] required" }, { status: 400 });
-    }
-
-    // Prefer token/repo from request body (user-connected), fall back to env vars
-    const bodyToken = typeof body["token"] === "string" && body["token"].trim() ? body["token"].trim() : undefined;
-    const bodyRepo  = typeof body["repo"]  === "string" && body["repo"].trim()  ? body["repo"].trim()  : undefined;
-
-    let owner: string;
-    let repoName: string;
-
-    if (bodyRepo) {
-      const parts = bodyRepo.split("/");
-      if (parts.length !== 2 || !parts[0] || !parts[1]) {
-        return NextResponse.json({ error: "repo must be in owner/repo format" }, { status: 400 });
-      }
-      owner    = parts[0];
-      repoName = parts[1];
-    } else {
-      owner    = process.env.GITHUB_OWNER!;
-      repoName = process.env.GITHUB_REPO!;
-      if (!owner || !repoName) {
-        return NextResponse.json({ error: "Missing GITHUB_OWNER or GITHUB_REPO in env" }, { status: 400 });
-      }
-    }
-
-    const token  = bodyToken;
-    const branch = process.env.GITHUB_BRANCH || "main";
-
-    const results: GithubResult[] = [];
-
-    for (const f of files) {
-      if (!isRecord(f)) throw new Error("Invalid file entry");
-
-      const filePath = typeof f["path"] === "string" ? f["path"].trim() : "";
-      if (!filePath) throw new Error("File path is required");
-
-      const apiUrl = `https://api.github.com/repos/${owner}/${repoName}/contents/${encodeURIComponent(filePath)}`;
-
-      if (mode === "upsert") {
-        const content = typeof f["content"] === "string" ? f["content"] : String(f["content"] ?? "");
-        const message = typeof f["message"] === "string" ? f["message"] : `AI update: ${filePath}`;
-        const sha = await getFileSha(owner, repoName, filePath, branch, token);
-
-        const payload: UpsertPayload = {
-          message,
-          content: b64(content),
-          branch,
-          ...(sha ? { sha } : {}),
-        };
-
-        const r = await gh<{ commit?: { sha?: string } }>(apiUrl, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        }, token);
-
-        results.push({ path: filePath, action: sha ? "updated" : "created", commit: r.commit?.sha });
-      } else {
-        const message = typeof f["message"] === "string" ? f["message"] : `AI delete: ${filePath}`;
-        const sha = await getFileSha(owner, repoName, filePath, branch, token);
-
-        if (!sha) {
-          results.push({ path: filePath, action: "skipped (not found)" });
-          continue;
-        }
-
-        const payload: DeletePayload = { message, sha, branch };
-
-        const r = await gh<{ commit?: { sha?: string } }>(apiUrl, {
-          method: "DELETE",
-          body: JSON.stringify(payload),
-        }, token);
-
-        results.push({ path: filePath, action: "deleted", commit: r.commit?.sha });
-      }
-    }
-
-    return NextResponse.json({ ok: true, results });
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
+  const token = extractBearerToken(req.headers.get('Authorization'));
+  if (!token) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const user = await getUserFromToken(token);
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const parsed = RequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Validation failed', details: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { projectId, versionId, repoName, githubToken, branch, commitMessage } = parsed.data;
+  const client = createAuthedClient(token);
+
+  // Load version snapshot
+  let query = client
+    .from('project_versions')
+    .select('*')
+    .eq('project_id', projectId)
+    .order('version_number', { ascending: false })
+    .limit(1);
+
+  if (versionId) {
+    query = client
+      .from('project_versions')
+      .select('*')
+      .eq('id', versionId)
+      .eq('project_id', projectId)
+      .limit(1);
+  }
+
+  const { data: versions } = await query;
+  if (!versions?.length) {
+    return NextResponse.json({ error: 'No version found' }, { status: 404 });
+  }
+
+  const snapshot = UIOutputSchema.safeParse(versions[0].snapshot);
+  if (!snapshot.success) {
+    return NextResponse.json({ error: 'Invalid snapshot data' }, { status: 500 });
+  }
+
+  const files = generateFiles(snapshot.data);
+
+  // Get GitHub user info
+  const meRes = await githubRequest('https://api.github.com/user', githubToken, 'GET');
+  if (!meRes.ok) {
+    return NextResponse.json({ error: 'Invalid GitHub token' }, { status: 401 });
+  }
+  const me = await meRes.json() as { login: string };
+  const owner = me.login;
+
+  // Check/create repo
+  const repoCheckRes = await githubRequest(`https://api.github.com/repos/${owner}/${repoName}`, githubToken, 'GET');
+  if (!repoCheckRes.ok) {
+    const createRes = await githubRequest('https://api.github.com/user/repos', githubToken, 'POST', {
+      name: repoName,
+      description: `Generated by ZIVO-AI`,
+      auto_init: true,
+      private: false,
+    });
+    if (!createRes.ok) {
+      const err = await createRes.text();
+      return NextResponse.json({ error: `Failed to create repo: ${err}` }, { status: 500 });
+    }
+    // Wait briefly for init
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  const repoUrl = `https://github.com/${owner}/${repoName}`;
+
+  // Push each file
+  for (const [filePath, content] of Object.entries(files)) {
+    const encodedContent = Buffer.from(content, 'utf8').toString('base64');
+
+    // Check if file exists to get sha
+    const existingRes = await githubRequest(
+      `https://api.github.com/repos/${owner}/${repoName}/contents/${filePath}`,
+      githubToken,
+      'GET'
+    );
+    const existingData = existingRes.ok ? (await existingRes.json() as { sha?: string }) : null;
+
+    await githubRequest(
+      `https://api.github.com/repos/${owner}/${repoName}/contents/${filePath}`,
+      githubToken,
+      'PUT',
+      {
+        message: commitMessage,
+        content: encodedContent,
+        branch,
+        ...(existingData?.sha ? { sha: existingData.sha } : {}),
+      }
+    );
+  }
+
+  // Save deployment record
+  const { data: deploymentRow } = await client
+    .from('project_deployments')
+    .insert({
+      project_id: projectId,
+      provider: 'github',
+      github_repo: `${owner}/${repoName}`,
+      github_branch: branch,
+      status: 'success',
+      deployed_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single();
+
+  return NextResponse.json({
+    success: true,
+    repoUrl,
+    deploymentId: deploymentRow?.id,
+  });
 }
