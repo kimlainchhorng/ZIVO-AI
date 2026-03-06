@@ -79,9 +79,9 @@ export async function POST(req: Request) {
     }
 
     const {
-      component = "dashboard",
-      description = "",
-    }: GenerateComponentsRequest = body;
+      component,
+      description,
+    } = schemaResult.data;
 
     const userPrompt = `Generate a production-ready "${component}" UI component${description ? ` for: "${description}"` : ""}.
 
