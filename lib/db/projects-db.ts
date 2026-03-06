@@ -475,6 +475,108 @@ export async function getProjectById(token: string, projectId: string): Promise<
   return getProject(token, projectId);
 }
 
+// ─── Project Jobs (DB-backed queue) ───────────────────────────────────────────
+
+export type JobType = "preview" | "quality" | "build";
+export type JobStatus = "queued" | "running" | "passed" | "failed" | "stopped";
+
+export interface DbProjectJob {
+  id: string;
+  project_id: string;
+  owner_user_id: string;
+  type: JobType;
+  status: JobStatus;
+  attempt: number;
+  max_attempts: number;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  result_json: unknown | null;
+  logs_storage_path: string | null;
+}
+
+/** Creates a new queued job row. */
+export async function createProjectJob(
+  token: string,
+  projectId: string,
+  ownerUserId: string,
+  type: JobType,
+  attempt = 1,
+  maxAttempts = 1
+): Promise<DbProjectJob> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_jobs")
+    .insert({ project_id: projectId, owner_user_id: ownerUserId, type, attempt, max_attempts: maxAttempts })
+    .select()
+    .single();
+  if (error) throw new Error(`createProjectJob: ${error.message}`);
+  return data as DbProjectJob;
+}
+
+/** Updates fields on a job (status, result, etc.). */
+export async function updateProjectJob(
+  token: string,
+  jobId: string,
+  updates: Partial<Pick<DbProjectJob, "status" | "started_at" | "finished_at" | "result_json" | "logs_storage_path">>
+): Promise<DbProjectJob> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_jobs")
+    .update(updates)
+    .eq("id", jobId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateProjectJob: ${error.message}`);
+  return data as DbProjectJob;
+}
+
+/** Fetches a single job by ID. */
+export async function getProjectJob(token: string, jobId: string): Promise<DbProjectJob | null> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_jobs")
+    .select("*")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (error) throw new Error(`getProjectJob: ${error.message}`);
+  return data as DbProjectJob | null;
+}
+
+/** Lists jobs for a project (newest first). */
+export async function listProjectJobs(
+  token: string,
+  projectId: string,
+  type?: JobType,
+  limit = 20
+): Promise<DbProjectJob[]> {
+  const client = createAuthedClient(token);
+  let query = client
+    .from("project_jobs")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (type) query = query.eq("type", type);
+  const { data, error } = await query;
+  if (error) throw new Error(`listProjectJobs: ${error.message}`);
+  return (data ?? []) as DbProjectJob[];
+}
+
+/** Generates a short-lived signed URL for a log file in the job-logs bucket. */
+export async function getJobLogSignedUrl(
+  token: string,
+  storagePath: string,
+  expiresInSeconds = 3600
+): Promise<string | null> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client.storage
+    .from("job-logs")
+    .createSignedUrl(storagePath, expiresInSeconds);
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
 // ─── Project Messages ──────────────────────────────────────────────────────────
 
 export interface DbProjectMessage {

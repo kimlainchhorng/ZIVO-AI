@@ -144,7 +144,7 @@ function loadFixSystemPrompt(): string {
   }
 }
 
-async function applyAIFix(
+export async function applyAIFix(
   files: QualityFile[],
   failedChecks: CheckResult[]
 ): Promise<QualityFile[]> {
