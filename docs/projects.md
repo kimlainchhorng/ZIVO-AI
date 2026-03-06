@@ -22,7 +22,8 @@ Run the following SQL files in the Supabase SQL Editor **in order**:
 
 1. `supabase/migrations/20260305000000_plugin_installs.sql` — plugin_installs table
 2. `supabase/migrations/20260305000001_projects_workspace.sql` — projects, project_files, project_builds tables + RLS
-3. `supabase/migrations/20260307000002_quality_runs.sql` — project_quality_runs table + RLS
+3. `supabase/migrations/20260306000003_project_messages.sql` — project_messages table + RLS
+4. `supabase/migrations/20260307000002_quality_runs.sql` — project_quality_runs table + RLS
 
 You can paste each file into the [Supabase SQL Editor](https://app.supabase.com/project/_/sql) and click **Run**.
 
@@ -68,6 +69,17 @@ You can paste each file into the [Supabase SQL Editor](https://app.supabase.com/
 | `summary`      | `text`      | Human-readable build summary                   |
 | `issues`       | `jsonb`     | Optional list of build issues                  |
 | `created_at`   | `timestamptz` |                                              |
+
+### `project_messages`
+
+| Column           | Type          | Notes                                            |
+|------------------|---------------|--------------------------------------------------|
+| `id`             | `uuid`        | Primary key                                      |
+| `project_id`     | `uuid`        | FK → `projects.id`                               |
+| `owner_user_id`  | `uuid`        | Supabase `auth.uid()` of the author              |
+| `role`           | `text`        | `user` \| `assistant` \| `system`               |
+| `content`        | `text`        | Message body                                     |
+| `created_at`     | `timestamptz` |                                                  |
 
 ---
 
@@ -122,6 +134,19 @@ Updates project metadata.
 ### `GET /api/projects/{id}/files`
 Returns full file contents for the project.  
 **Auth**: Required.
+
+### `GET /api/projects/{id}/builds`
+Returns build history for a project (ordered newest-first).  
+**Auth**: Required.
+
+### `GET /api/projects/{id}/messages`
+Returns the conversation thread for a project (ordered chronologically).  
+**Auth**: Required.
+
+### `POST /api/projects/{id}/messages`
+Appends a message to the project conversation thread.  
+**Auth**: Required.  
+**Body**: `{ role: "user"|"assistant"|"system"; content: string }`
 
 ### `POST /api/projects/{id}/continue`
 Continues building an existing project with an instruction.  
@@ -201,7 +226,7 @@ Migration: `supabase/migrations/20260307000002_quality_runs.sql`
 
 ### UI
 
-Navigate to `/projects/<id>` to see the **Quality Pass** panel:
+Navigate to `/projects/<id>` and click the **Quality** tab to see the Quality Pass panel:
 
 - **Run checks** — triggers a single-pass Quality Check (no auto-fix).
 - **Auto-fix & re-run** — re-triggers checks with up to 3 AI-fix retries (shown after a failure).
