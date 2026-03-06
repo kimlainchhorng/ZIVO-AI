@@ -192,7 +192,7 @@ export default function ProjectsPage() {
                   </p>
                   <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
                     <a
-                      href={`/ai-ui-builder?projectId=${project.id}`}
+                      href={`/projects/${project.id}`}
                       style={{
                         flex: 1, textAlign: 'center', padding: '0.5rem', borderRadius: '6px',
                         background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
