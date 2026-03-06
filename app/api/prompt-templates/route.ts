@@ -1,151 +1,74 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
-interface PromptTemplate {
-  id: string;
-  name: string;
-  content: string;
-  category: string;
-}
-
-interface PromptTemplateAction {
-  action: "create" | "update" | "delete" | "list";
-  template?: {
-    id?: string;
-    name: string;
-    content: string;
-    category: string;
-  };
-}
-
-const sampleTemplates: PromptTemplate[] = [
+const PROMPT_TEMPLATES = [
   {
-    id: "tpl_001",
-    name: "Code Review",
-    content:
-      "Review the following code for bugs, performance issues, and best practices:\n\n{{code}}",
-    category: "engineering",
+    id: 'saas-landing',
+    title: 'SaaS Landing Page',
+    description: 'A modern SaaS landing page with hero, features, pricing, and CTA sections',
+    prompt: 'Build a modern SaaS landing page with a compelling hero section, feature highlights, pricing tiers, customer testimonials, and a strong call-to-action. Include a navigation bar and footer.',
+    icon: '🚀',
+    tags: ['saas', 'landing'],
   },
   {
-    id: "tpl_002",
-    name: "PRD Draft",
-    content:
-      "Write a Product Requirements Document for the following feature:\n\n{{feature_description}}",
-    category: "product",
+    id: 'ride-share',
+    title: 'Ride-Share App',
+    description: 'A ride-share app UI with home, ride request, tracking, and payment screens',
+    prompt: 'Build a ride-share app UI with a home screen showing nearby drivers, a ride request form, real-time tracking view, ride history dashboard, and payment/wallet screen.',
+    icon: '🚗',
+    tags: ['mobile', 'app', 'transportation'],
   },
   {
-    id: "tpl_003",
-    name: "Unit Test Generator",
-    content:
-      "Generate unit tests for the following function using Jest:\n\n{{function_code}}",
-    category: "testing",
+    id: 'restaurant',
+    title: 'Restaurant App',
+    description: 'A restaurant app with menu, reservations, about, and contact pages',
+    prompt: 'Build a restaurant app with a beautiful menu page, table reservation system, about us story page, chef profiles, gallery, and contact information.',
+    icon: '��️',
+    tags: ['restaurant', 'food', 'booking'],
   },
   {
-    id: "tpl_004",
-    name: "SQL Query Optimizer",
-    content:
-      "Analyze and optimize the following SQL query for performance:\n\n{{sql_query}}",
-    category: "database",
+    id: 'delivery-dashboard',
+    title: 'Delivery Dashboard',
+    description: 'A delivery management dashboard with orders, tracking, analytics, and driver management',
+    prompt: 'Build a delivery management dashboard with active orders list, real-time package tracking, analytics charts for deliveries, driver management panel, and customer notifications center.',
+    icon: '📦',
+    tags: ['dashboard', 'logistics', 'analytics'],
   },
   {
-    id: "tpl_005",
-    name: "API Documentation",
-    content:
-      "Generate OpenAPI documentation for the following endpoint:\n\n{{endpoint_code}}",
-    category: "documentation",
+    id: 'luxury-brand',
+    title: 'Luxury Brand Homepage',
+    description: 'An ultra-premium luxury brand homepage with hero, collections, about, and contact',
+    prompt: 'Build an ultra-premium luxury brand homepage with a cinematic hero section, curated collections showcase, brand heritage story, artisan craftsmanship details, and exclusive contact form.',
+    icon: '💎',
+    tags: ['luxury', 'brand', 'ecommerce'],
+  },
+  {
+    id: 'startup',
+    title: 'Startup Homepage',
+    description: 'A modern startup homepage with hero, product features, team, testimonials, pricing, and CTA',
+    prompt: 'Build a modern startup homepage with an impactful hero section, product feature highlights, founding team profiles, customer testimonials, transparent pricing plans, and a compelling call-to-action.',
+    icon: '⚡',
+    tags: ['startup', 'saas', 'landing'],
+  },
+  {
+    id: 'ecommerce',
+    title: 'E-Commerce Store',
+    description: 'An e-commerce store with product grid, product detail, cart, and checkout pages',
+    prompt: 'Build an e-commerce store with a product grid homepage, individual product detail pages, shopping cart, checkout flow, order confirmation, and user account dashboard.',
+    icon: '🛍️',
+    tags: ['ecommerce', 'shop', 'retail'],
+  },
+  {
+    id: 'portfolio',
+    title: 'Creative Portfolio',
+    description: 'A creative portfolio with hero, work showcase, about, skills, and contact sections',
+    prompt: 'Build a creative portfolio website with a bold hero introduction, curated work showcase grid, personal about section with story, skills and expertise visualization, and contact form.',
+    icon: '🎨',
+    tags: ['portfolio', 'creative', 'personal'],
   },
 ];
 
 export async function GET() {
-  return NextResponse.json({
-    description:
-      "CRUD API for prompt templates. Supports list, create, update, and delete actions via POST.",
-    templates: sampleTemplates,
-  });
-}
-
-export async function POST(req: Request) {
-  try {
-    const body = (await req.json().catch(() => ({}))) as PromptTemplateAction;
-
-    const { action, template } = body;
-
-    if (!action) {
-      return NextResponse.json(
-        { error: "Missing required field: action" },
-        { status: 400 }
-      );
-    }
-
-    switch (action) {
-      case "list":
-        return NextResponse.json({ templates: sampleTemplates });
-
-      case "create": {
-        if (!template?.name || !template?.content || !template?.category) {
-          return NextResponse.json(
-            { error: "Template must include name, content, and category" },
-            { status: 400 }
-          );
-        }
-        const newTemplate: PromptTemplate = {
-          id: `tpl_${Date.now()}`,
-          name: template.name,
-          content: template.content,
-          category: template.category,
-        };
-        return NextResponse.json(
-          { message: "Template created", template: newTemplate },
-          { status: 201 }
-        );
-      }
-
-      case "update": {
-        if (!template?.id) {
-          return NextResponse.json(
-            { error: "Template id is required for update" },
-            { status: 400 }
-          );
-        }
-        if (!template?.name || !template?.content || !template?.category) {
-          return NextResponse.json(
-            { error: "Template must include name, content, and category" },
-            { status: 400 }
-          );
-        }
-        const updatedTemplate: PromptTemplate = {
-          id: template.id,
-          name: template.name,
-          content: template.content,
-          category: template.category,
-        };
-        return NextResponse.json({
-          message: "Template updated",
-          template: updatedTemplate,
-        });
-      }
-
-      case "delete": {
-        if (!template?.id) {
-          return NextResponse.json(
-            { error: "Template id is required for delete" },
-            { status: 400 }
-          );
-        }
-        return NextResponse.json({
-          message: `Template ${template.id} deleted`,
-        });
-      }
-
-      default:
-        return NextResponse.json(
-          { error: "Invalid action. Must be one of: create, update, delete, list" },
-          { status: 400 }
-        );
-    }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  return NextResponse.json({ templates: PROMPT_TEMPLATES });
 }

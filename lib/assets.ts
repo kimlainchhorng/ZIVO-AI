@@ -122,6 +122,7 @@ export function getSiteAssets(seed = 0): SiteAssets {
 export function getFeatureImageUrl(index: number, width = 800, height = 600): string {
   const len = FEATURE_IDS.length;
   const id = FEATURE_IDS[((index % len) + len) % len];
+  const id = FEATURE_IDS[index % FEATURE_IDS.length];
   return `https://picsum.photos/id/${id}/${width}/${height}`;
 }
 
@@ -129,6 +130,7 @@ export function getFeatureImageUrl(index: number, width = 800, height = 600): st
 export function getAvatarUrl(index: number, size = 128): string {
   const len = AVATAR_IDS.length;
   const id = AVATAR_IDS[((index % len) + len) % len];
+  const id = AVATAR_IDS[index % AVATAR_IDS.length];
   return `https://picsum.photos/id/${id}/${size}/${size}`;
 }
 
@@ -136,5 +138,6 @@ export function getAvatarUrl(index: number, size = 128): string {
 export function getHeroImageUrl(seed = 0, width = 1920, height = 1080): string {
   const len = HERO_IDS.length;
   const id = HERO_IDS[((seed % len) + len) % len];
+  const id = HERO_IDS[seed % HERO_IDS.length];
   return `https://picsum.photos/id/${id}/${width}/${height}`;
 }

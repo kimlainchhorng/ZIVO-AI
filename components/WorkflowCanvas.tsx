@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useCallback } from "react";
+import { Globe, Bot, GitBranch, Clock, Database, Lock, Package, Mail, CreditCard, Code, RotateCcw } from "lucide-react";
 import type { WorkflowNode, WorkflowEdge, WorkflowRun } from "@/app/api/workflow/execute/route";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -10,24 +11,24 @@ type NodeType = WorkflowNode["type"];
 interface PaletteItem {
   type: NodeType;
   label: string;
-  emoji: string;
+  icon: React.ReactElement;
   defaultConfig: Record<string, unknown>;
 }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const PALETTE_ITEMS: PaletteItem[] = [
-  { type: "http",      label: "HTTP Request", emoji: "🌐", defaultConfig: { url: "", method: "GET", headers: {}, body: "" } },
-  { type: "ai",        label: "AI Prompt",    emoji: "🤖", defaultConfig: { prompt: "Describe yourself in one sentence." } },
-  { type: "condition", label: "Condition",    emoji: "🔀", defaultConfig: { expression: "true" } },
-  { type: "delay",     label: "Delay",        emoji: "⏱️", defaultConfig: { ms: 1000 } },
-  { type: "db",        label: "Database",     emoji: "🗄️", defaultConfig: { query: "SELECT 1" } },
-  { type: "auth",      label: "Auth",         emoji: "🔐", defaultConfig: { provider: "supabase" } },
-  { type: "storage",   label: "Storage",      emoji: "📦", defaultConfig: { bucket: "default", key: "" } },
-  { type: "email",     label: "Email",        emoji: "📧", defaultConfig: { to: "", subject: "", body: "" } },
-  { type: "payments",  label: "Payments",     emoji: "💳", defaultConfig: { amount: 0, currency: "USD" } },
-  { type: "code",      label: "Code",         emoji: "💻", defaultConfig: { script: "// your code here" } },
-  { type: "loop",      label: "Loop",         emoji: "🔁", defaultConfig: { count: 3 } },
+  { type: "http",      label: "HTTP Request", icon: <Globe size={16} />,      defaultConfig: { url: "", method: "GET", headers: {}, body: "" } },
+  { type: "ai",        label: "AI Prompt",    icon: <Bot size={16} />,        defaultConfig: { prompt: "Describe yourself in one sentence." } },
+  { type: "condition", label: "Condition",    icon: <GitBranch size={16} />,  defaultConfig: { expression: "true" } },
+  { type: "delay",     label: "Delay",        icon: <Clock size={16} />,      defaultConfig: { ms: 1000 } },
+  { type: "db",        label: "Database",     icon: <Database size={16} />,   defaultConfig: { query: "SELECT 1" } },
+  { type: "auth",      label: "Auth",         icon: <Lock size={16} />,       defaultConfig: { provider: "supabase" } },
+  { type: "storage",   label: "Storage",      icon: <Package size={16} />,    defaultConfig: { bucket: "default", key: "" } },
+  { type: "email",     label: "Email",        icon: <Mail size={16} />,       defaultConfig: { to: "", subject: "", body: "" } },
+  { type: "payments",  label: "Payments",     icon: <CreditCard size={16} />, defaultConfig: { amount: 0, currency: "USD" } },
+  { type: "code",      label: "Code",         icon: <Code size={16} />,       defaultConfig: { script: "// your code here" } },
+  { type: "loop",      label: "Loop",         icon: <RotateCcw size={16} />,  defaultConfig: { count: 3 } },
 ];
 
 const THEME = {
@@ -108,7 +109,7 @@ function PalettePanel({
           onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = THEME.border; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
         >
-          <span style={{ fontSize: 16 }}>{item.emoji}</span>
+          <span style={{ display: "flex", alignItems: "center", color: THEME.muted }}>{item.icon}</span>
           <span>{item.label}</span>
         </button>
       ))}
@@ -147,7 +148,7 @@ function NodeCard({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-        <span style={{ fontSize: 18 }}>{palette?.emoji ?? "⚙️"}</span>
+        <span style={{ display: "flex", alignItems: "center", color: THEME.muted }}>{palette?.icon ?? <Code size={16} />}</span>
         <span style={{ fontSize: 13, fontWeight: 600, color: THEME.text }}>{node.label}</span>
       </div>
       <span

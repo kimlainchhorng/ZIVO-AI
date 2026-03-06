@@ -103,8 +103,8 @@ function _buildHunks(
   const hunks: string[] = [];
 
   // Track positions in old and new files
-  let oldPos = 0;
-  let newPos = 0;
+  let _oldPos = 0;
+  let _newPos = 0;
 
   // Find ranges of changes with context
   const changeRanges: Array<{ start: number; end: number }> = [];
@@ -148,8 +148,8 @@ function _buildHunks(
     }
     hunkOldStart = prevOld + 1;
     hunkNewStart = prevNew + 1;
-    oldPos = prevOld;
-    newPos = prevNew;
+    _oldPos = prevOld;
+    _newPos = prevNew;
 
     let oldCount = 0;
     let newCount = 0;
@@ -172,8 +172,8 @@ function _buildHunks(
     hunks.push(
       `@@ -${hunkOldStart},${oldCount} +${hunkNewStart},${newCount} @@\n${lines.join("\n")}`
     );
-    oldPos += oldCount;
-    newPos += newCount;
+    _oldPos += oldCount;
+    _newPos += newCount;
   }
 
   return hunks;

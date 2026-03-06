@@ -1,74 +1,61 @@
 import { NextResponse } from "next/server";
 import {
-  createProject,
-  getProject,
-  updateProject,
-  addFiles,
-  addConversationTurn,
-  listProjects,
-  deleteProject,
-} from "@/lib/project-memory";
-import { randomUUID } from "crypto";
+  extractBearerToken,
+  getUserFromToken,
+  listUserProjects,
+  createProject as dbCreateProject,
+} from "@/lib/db/projects-db";
 
 export const runtime = "nodejs";
 
+/** GET /api/projects — list current user's projects (requires auth). */
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const projectId = url.searchParams.get("projectId");
+  const token = extractBearerToken(req.headers.get("Authorization"));
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  if (projectId) {
-    const project = getProject(projectId);
-    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    return NextResponse.json({ project });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  try {
+    const projects = await listUserProjects(token);
+    return NextResponse.json({ projects });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: (err as Error).message ?? "Failed to list projects" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ projects: listProjects() });
 }
 
+/** POST /api/projects — create a new project (requires auth). */
 export async function POST(req: Request) {
-  const body = await req.json();
-  const { action, projectId, prompt, files, role, content, updates } = body as {
-    action: "create" | "update" | "add-files" | "add-message" | "delete";
-    projectId?: string;
-    prompt?: string;
-    files?: { path: string; content: string }[];
-    role?: "user" | "assistant";
-    content?: string;
-    updates?: Record<string, unknown>;
-  };
+  const token = extractBearerToken(req.headers.get("Authorization"));
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  switch (action) {
-    case "create": {
-      const id = projectId ?? randomUUID();
-      const project = createProject(id, prompt ?? "");
-      return NextResponse.json({ project }, { status: 201 });
-    }
-    case "update": {
-      if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
-      const project = updateProject(projectId, updates ?? {});
-      return NextResponse.json({ project });
-    }
-    case "add-files": {
-      if (!projectId || !files)
-        return NextResponse.json({ error: "projectId and files required" }, { status: 400 });
-      addFiles(projectId, files);
-      return NextResponse.json({ success: true });
-    }
-    case "add-message": {
-      if (!projectId || !role || !content)
-        return NextResponse.json(
-          { error: "projectId, role, content required" },
-          { status: 400 }
-        );
-      addConversationTurn(projectId, role, content);
-      return NextResponse.json({ success: true });
-    }
-    case "delete": {
-      if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
-      deleteProject(projectId);
-      return NextResponse.json({ success: true });
-    }
-    default:
-      return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+  const user = await getUserFromToken(token);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  let body: { title?: string; mode?: string; template?: string; client_idea?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  try {
+    const project = await dbCreateProject(token, user.id, {
+      title: body.title,
+      mode: (["code", "website_v2", "mobile_v2"].includes(body.mode ?? "")
+        ? body.mode
+        : "code") as "code" | "website_v2" | "mobile_v2",
+      template: body.template,
+      client_idea: body.client_idea,
+    });
+    return NextResponse.json({ project }, { status: 201 });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: (err as Error).message ?? "Failed to create project" },
+      { status: 500 }
+    );
   }
 }
