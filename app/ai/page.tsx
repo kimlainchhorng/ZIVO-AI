@@ -293,6 +293,15 @@ function AIPageInner() {
   const [websiteLivePreviewRunning, setWebsiteLivePreviewRunning] = useState(false);
   const [websiteLivePreviewStatus, setWebsiteLivePreviewStatus] = useState<string | null>(null);
   const [websiteLivePreviewError, setWebsiteLivePreviewError] = useState<string | null>(null);
+  // Remote preview runner state (Docker-based)
+  const [remotePreviewId, setRemotePreviewId] = useState<string | null>(null);
+  const [remotePreviewStatus, setRemotePreviewStatus] = useState<"queued" | "building" | "running" | "failed" | "stopped" | null>(null);
+  const [remotePreviewUrl, setRemotePreviewUrl] = useState<string | null>(null);
+  const [remotePreviewLogs, setRemotePreviewLogs] = useState<string[]>([]);
+  const [remotePreviewError, setRemotePreviewError] = useState<string | null>(null);
+  const [remotePreviewLoading, setRemotePreviewLoading] = useState(false);
+  const [websitePreviewTab, setWebsitePreviewTab] = useState<"webcontainer" | "remote">("webcontainer");
+  const remotePreviewPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Website v2 project persistence (Supabase)
   const [websiteProjectId, setWebsiteProjectId] = useState<string | null>(null);
   const [websiteContinueInstruction, setWebsiteContinueInstruction] = useState("");
@@ -1165,6 +1174,103 @@ function AIPageInner() {
       setWebsiteLivePreviewStatus(null);
       setWebsiteLivePreviewError("Live preview unavailable — showing static snapshot");
     }
+  }
+
+  // ── Remote preview runner helpers ──────────────────────────────────────────
+
+  function stopRemotePreviewPolling() {
+    if (remotePreviewPollRef.current) {
+      clearInterval(remotePreviewPollRef.current);
+      remotePreviewPollRef.current = null;
+    }
+  }
+
+  async function pollRemotePreviewStatus(pid: string, token: string) {
+    try {
+      const res = await fetch(`/api/preview/status?previewId=${encodeURIComponent(pid)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json() as {
+        status: "queued" | "building" | "running" | "failed" | "stopped";
+        url?: string;
+        logs?: string[];
+        error?: string;
+      };
+      setRemotePreviewStatus(data.status);
+      if (data.logs) setRemotePreviewLogs(data.logs);
+      if (data.error) setRemotePreviewError(data.error);
+      if (data.url) setRemotePreviewUrl(data.url);
+      if (data.status === "running" || data.status === "failed" || data.status === "stopped") {
+        stopRemotePreviewPolling();
+        setRemotePreviewLoading(false);
+      }
+    } catch {
+      // ignore transient fetch errors
+    }
+  }
+
+  async function handleStartRemotePreview() {
+    if (!websiteProjectId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) {
+      setRemotePreviewError("You must be signed in to start a remote preview.");
+      return;
+    }
+
+    stopRemotePreviewPolling();
+    setRemotePreviewLoading(true);
+    setRemotePreviewStatus("queued");
+    setRemotePreviewUrl(null);
+    setRemotePreviewLogs([]);
+    setRemotePreviewError(null);
+    setRemotePreviewId(null);
+
+    try {
+      const res = await fetch("/api/preview/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ projectId: websiteProjectId }),
+      });
+      const data = await res.json() as { previewId?: string; error?: string };
+      if (!res.ok || !data.previewId) {
+        setRemotePreviewError(data.error ?? "Failed to start preview");
+        setRemotePreviewLoading(false);
+        setRemotePreviewStatus("failed");
+        return;
+      }
+      const pid = data.previewId;
+      setRemotePreviewId(pid);
+      // Start polling every 3 seconds
+      remotePreviewPollRef.current = setInterval(() => {
+        void pollRemotePreviewStatus(pid, token);
+      }, 3000);
+      // Poll once immediately
+      void pollRemotePreviewStatus(pid, token);
+    } catch (err) {
+      setRemotePreviewError(err instanceof Error ? err.message : "Failed to start preview");
+      setRemotePreviewLoading(false);
+      setRemotePreviewStatus("failed");
+    }
+  }
+
+  async function handleStopRemotePreview() {
+    if (!remotePreviewId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) return;
+
+    stopRemotePreviewPolling();
+    try {
+      await fetch("/api/preview/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ previewId: remotePreviewId }),
+      });
+    } catch { /* ignore */ }
+
+    setRemotePreviewStatus("stopped");
+    setRemotePreviewUrl(null);
+    setRemotePreviewLoading(false);
   }
 
   async function handlePlan() {
@@ -2126,6 +2232,14 @@ function AIPageInner() {
       window.removeEventListener("mouseup", onMouseUp);
     };
   }, [leftPanelWidth]);
+
+  // Cleanup remote preview polling on unmount
+  useEffect(() => {
+    return () => {
+      stopRemotePreviewPolling();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>
@@ -3214,6 +3328,17 @@ function AIPageInner() {
                       </button>
                       {websiteLivePreviewStatus && (
                         <div style={{ marginTop: "0.45rem", fontSize: "0.72rem", color: COLORS.textSecondary }}>{websiteLivePreviewStatus}</div>
+                      )}
+                      {/* Remote preview shortcut — only shown when project is saved */}
+                      {websiteProjectId && (
+                        <button
+                          className="zivo-btn"
+                          onClick={() => setWebsitePreviewTab("remote")}
+                          style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: "1px solid rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.08)", color: COLORS.accent, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.35rem" }}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                          {remotePreviewStatus === "running" ? "View Remote Preview" : "Remote Preview"}
+                        </button>
                       )}
                     </div>
                   )}
@@ -4413,22 +4538,51 @@ function AIPageInner() {
             {/* ── Website Right Panel ── */}
             {mode === "website" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                {/* Toolbar with URL bar */}
+                {/* Toolbar with tabs + URL bar */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
-                  {/* URL bar */}
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "360px" }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                    <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1 }}>
-                      {websiteLivePreviewUrl ?? "preview"}
-                    </span>
+                  {/* Preview mode tabs */}
+                  <div style={{ display: "flex", gap: "1px", background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "3px", flexShrink: 0 }}>
+                    <button
+                      className="zivo-tab"
+                      onClick={() => setWebsitePreviewTab("webcontainer")}
+                      title="In-browser preview (WebContainer)"
+                      style={{ padding: "0.2rem 0.6rem", borderRadius: "5px", border: "none", background: websitePreviewTab === "webcontainer" ? COLORS.bgPanel : "transparent", color: websitePreviewTab === "webcontainer" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", fontWeight: websitePreviewTab === "webcontainer" ? 600 : 400, boxShadow: websitePreviewTab === "webcontainer" ? `0 0 0 1px ${COLORS.border}` : "none" }}
+                    >
+                      Browser
+                    </button>
+                    <button
+                      className="zivo-tab"
+                      onClick={() => setWebsitePreviewTab("remote")}
+                      title="Remote Docker preview runner"
+                      style={{ padding: "0.2rem 0.6rem", borderRadius: "5px", border: "none", background: websitePreviewTab === "remote" ? COLORS.bgPanel : "transparent", color: websitePreviewTab === "remote" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", fontWeight: websitePreviewTab === "remote" ? 600 : 400, boxShadow: websitePreviewTab === "remote" ? `0 0 0 1px ${COLORS.border}` : "none", display: "flex", alignItems: "center", gap: "0.25rem" }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                      Remote
+                    </button>
                   </div>
-                  {/* Reload button */}
-                  {(websiteLivePreviewUrl || websiteResult?.preview_html) && (
+                  {/* URL bar */}
+                  {websitePreviewTab === "webcontainer" && (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                      <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {websiteLivePreviewUrl ?? "preview"}
+                      </span>
+                    </div>
+                  )}
+                  {websitePreviewTab === "remote" && remotePreviewUrl && (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                      <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {remotePreviewUrl}
+                      </span>
+                    </div>
+                  )}
+                  {/* Reload button — webcontainer tab */}
+                  {websitePreviewTab === "webcontainer" && (websiteLivePreviewUrl || websiteResult?.preview_html) && (
                     <button
                       className="zivo-btn"
                       title="Reload preview"
                       onClick={() => {
-                        // Force re-render by toggling — use a key approach via state
                         if (websiteLivePreviewUrl) {
                           const url = websiteLivePreviewUrl;
                           setWebsiteLivePreviewUrl(null);
@@ -4438,21 +4592,36 @@ function AIPageInner() {
                       style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}
                     >↻</button>
                   )}
-                  {/* Live / Snapshot badge */}
-                  {websiteResult && (
+                  {/* Reload button — remote tab */}
+                  {websitePreviewTab === "remote" && remotePreviewUrl && (
+                    <button
+                      className="zivo-btn"
+                      title="Open in new tab"
+                      onClick={() => { if (remotePreviewUrl) window.open(remotePreviewUrl, "_blank", "noopener"); }}
+                      style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >↗</button>
+                  )}
+                  {/* Live / Snapshot badge — webcontainer */}
+                  {websitePreviewTab === "webcontainer" && websiteResult && (
                     <span style={{ padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 600, flexShrink: 0, background: websiteLivePreviewUrl ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${websiteLivePreviewUrl ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`, color: websiteLivePreviewUrl ? COLORS.success : COLORS.warning }}>
                       {websiteLivePreviewUrl ? "🟢 Live" : "🟡 Snapshot"}
                     </span>
                   )}
+                  {/* Remote status badge */}
+                  {websitePreviewTab === "remote" && remotePreviewStatus && (
+                    <span style={{ padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 600, flexShrink: 0, background: remotePreviewStatus === "running" ? "rgba(16,185,129,0.15)" : remotePreviewStatus === "failed" ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${remotePreviewStatus === "running" ? "rgba(16,185,129,0.3)" : remotePreviewStatus === "failed" ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)"}`, color: remotePreviewStatus === "running" ? COLORS.success : remotePreviewStatus === "failed" ? COLORS.error : COLORS.warning }}>
+                      {remotePreviewStatus === "running" ? "🟢 Running" : remotePreviewStatus === "failed" ? "🔴 Failed" : remotePreviewStatus === "stopped" ? "⚫ Stopped" : remotePreviewStatus === "building" ? "🟡 Building" : "🟡 Queued"}
+                    </span>
+                  )}
                   <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                    {/* Status with spinner */}
-                    {websiteLivePreviewStatus && websiteLivePreviewRunning && (
+                    {/* Webcontainer: status with spinner */}
+                    {websitePreviewTab === "webcontainer" && websiteLivePreviewStatus && websiteLivePreviewRunning && (
                       <span style={{ fontSize: "0.72rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}>
                         <span style={{ display: "inline-block", width: "8px", height: "8px", border: "1.5px solid rgba(99,102,241,0.3)", borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
                         {websiteLivePreviewStatus}
                       </span>
                     )}
-                    {websiteResult?.files && websiteResult.files.length > 0 && (
+                    {websitePreviewTab === "webcontainer" && websiteResult?.files && websiteResult.files.length > 0 && (
                       <button
                         onClick={() => void startWebsiteLivePreview(websiteResult.files)}
                         disabled={websiteLivePreviewRunning && !websiteLivePreviewError}
@@ -4461,70 +4630,196 @@ function AIPageInner() {
                         {websiteLivePreviewRunning ? "Starting…" : websiteLivePreviewUrl ? "Restart Live" : "Start Live"}
                       </button>
                     )}
-                  </div>
-                </div>
-                {/* Error banner with snapshot fallback message */}
-                {websiteLivePreviewError && (
-                  <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", color: COLORS.warning, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
-                    <span>{websiteLivePreviewError}</span>
-                    {websiteResult && (
-                      <button
-                        className="zivo-btn"
-                        onClick={() => void startWebsiteLivePreview(websiteResult.files)}
-                        style={{ padding: "0.2rem 0.6rem", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "6px", color: COLORS.warning, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
-                      >
-                        Try Again
-                      </button>
+                    {/* Remote preview: start / stop button */}
+                    {websitePreviewTab === "remote" && websiteProjectId && (
+                      <>
+                        {(remotePreviewStatus === "queued" || remotePreviewStatus === "building" || remotePreviewLoading) && (
+                          <span style={{ fontSize: "0.72rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                            <span style={{ display: "inline-block", width: "8px", height: "8px", border: "1.5px solid rgba(99,102,241,0.3)", borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                            {remotePreviewStatus === "building" ? "Building…" : "Queued…"}
+                          </span>
+                        )}
+                        {remotePreviewStatus === "running" ? (
+                          <button
+                            onClick={() => void handleStopRemotePreview()}
+                            style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: COLORS.error, cursor: "pointer" }}
+                          >
+                            Stop
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => void handleStartRemotePreview()}
+                            disabled={remotePreviewLoading}
+                            style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: remotePreviewLoading ? "not-allowed" : "pointer", opacity: remotePreviewLoading ? 0.6 : 1 }}
+                          >
+                            {remotePreviewLoading ? "Starting…" : "Start Preview"}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
+                </div>
+
+                {/* ── WebContainer tab content ── */}
+                {websitePreviewTab === "webcontainer" && (
+                  <>
+                    {/* Error banner with snapshot fallback message */}
+                    {websiteLivePreviewError && (
+                      <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", color: COLORS.warning, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                        <span>{websiteLivePreviewError}</span>
+                        {websiteResult && (
+                          <button
+                            className="zivo-btn"
+                            onClick={() => void startWebsiteLivePreview(websiteResult.files)}
+                            style={{ padding: "0.2rem 0.6rem", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "6px", color: COLORS.warning, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
+                          >
+                            Try Again
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!websiteResult && !websiteLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Your generated website will appear here</p>
+                      </div>
+                    )}
+                    {/* Loading shimmer */}
+                    {websiteLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
+                        <div style={{ width: "100%", maxWidth: "480px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                          {[75, 55, 85].map((w, i) => (
+                            <div key={i} style={{ height: "14px", borderRadius: "8px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* WebContainer booting status */}
+                    {websiteResult && websiteLivePreviewRunning && !websiteLivePreviewUrl && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{websiteLivePreviewStatus ?? "Starting live preview…"}</p>
+                        <div style={{ width: "100%", maxWidth: "380px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                          {[70, 50, 80].map((w, i) => (
+                            <div key={i} style={{ height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {websiteResult && websiteLivePreviewUrl && (
+                      <iframe
+                        title="Website Live Runtime Preview"
+                        src={websiteLivePreviewUrl}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      />
+                    )}
+                    {websiteResult?.preview_html && !websiteLivePreviewUrl && !websiteLivePreviewRunning && (
+                      <iframe
+                        title="Website Preview"
+                        srcDoc={websiteResult.preview_html}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin"
+                      />
+                    )}
+                  </>
                 )}
-                {!websiteResult && !websiteLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
-                    <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                    </div>
-                    <p style={{ fontSize: "0.875rem" }}>Your generated website will appear here</p>
+
+                {/* ── Remote Preview tab content ── */}
+                {websitePreviewTab === "remote" && (
+                  <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                    {/* No project saved yet */}
+                    {!websiteProjectId && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Generate a website first to enable remote preview</p>
+                        <p style={{ fontSize: "0.78rem", color: COLORS.textMuted, maxWidth: "320px" }}>The remote preview runner builds your site in an isolated Docker container and serves it at a stable URL.</p>
+                      </div>
+                    )}
+
+                    {/* Error banner */}
+                    {remotePreviewError && (
+                      <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexShrink: 0 }}>
+                        <span>{remotePreviewError}</span>
+                        <button
+                          className="zivo-btn"
+                          onClick={() => void handleStartRemotePreview()}
+                          style={{ padding: "0.2rem 0.6rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "6px", color: COLORS.error, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Waiting / building state */}
+                    {websiteProjectId && (remotePreviewStatus === "queued" || remotePreviewStatus === "building") && !remotePreviewUrl && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{remotePreviewStatus === "building" ? "Building your site in a Docker container…" : "Preview queued — waiting for a runner slot…"}</p>
+                        {/* Logs */}
+                        {remotePreviewLogs.length > 0 && (
+                          <div style={{ width: "100%", maxWidth: "600px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.75rem", maxHeight: "180px", overflowY: "auto", fontFamily: "monospace", fontSize: "0.72rem", color: COLORS.textSecondary, whiteSpace: "pre-wrap" }}>
+                            {remotePreviewLogs.slice(-40).join("\n")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Idle state (no preview started yet) */}
+                    {websiteProjectId && !remotePreviewStatus && !remotePreviewLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "64px", height: "64px", borderRadius: "16px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Click <strong>Start Preview</strong> to build and run your site in an isolated Docker container</p>
+                        <button
+                          onClick={() => void handleStartRemotePreview()}
+                          style={{ marginTop: "0.5rem", padding: "0.5rem 1.25rem", background: COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600 }}
+                        >
+                          Start Preview
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Running: iframe */}
+                    {remotePreviewStatus === "running" && remotePreviewUrl && (
+                      <iframe
+                        key={remotePreviewUrl}
+                        title="Remote Preview"
+                        src={remotePreviewUrl}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      />
+                    )}
+
+                    {/* Logs panel (visible when running and logs exist) */}
+                    {remotePreviewStatus === "running" && remotePreviewLogs.length > 0 && (
+                      <div style={{ borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "0.5rem 0.75rem", maxHeight: "120px", overflowY: "auto", fontFamily: "monospace", fontSize: "0.7rem", color: COLORS.textMuted, whiteSpace: "pre-wrap", flexShrink: 0 }}>
+                        {remotePreviewLogs.slice(-20).join("\n")}
+                      </div>
+                    )}
+
+                    {/* Stopped state */}
+                    {remotePreviewStatus === "stopped" && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <p style={{ fontSize: "0.875rem" }}>Preview stopped.</p>
+                        {websiteProjectId && (
+                          <button
+                            onClick={() => void handleStartRemotePreview()}
+                            style={{ padding: "0.4rem 1rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem" }}
+                          >
+                            Restart Preview
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-                {/* Loading shimmer */}
-                {websiteLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
-                    <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
-                    <div style={{ width: "100%", maxWidth: "480px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {[75, 55, 85].map((w, i) => (
-                        <div key={i} style={{ height: "14px", borderRadius: "8px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {/* WebContainer booting status */}
-                {websiteResult && websiteLivePreviewRunning && !websiteLivePreviewUrl && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
-                    <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{websiteLivePreviewStatus ?? "Starting live preview…"}</p>
-                    <div style={{ width: "100%", maxWidth: "380px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {[70, 50, 80].map((w, i) => (
-                        <div key={i} style={{ height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {websiteResult && websiteLivePreviewUrl && (
-                  <iframe
-                    title="Website Live Runtime Preview"
-                    src={websiteLivePreviewUrl}
-                    style={{ flex: 1, width: "100%", border: "none" }}
-                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                  />
-                )}
-                {websiteResult?.preview_html && !websiteLivePreviewUrl && !websiteLivePreviewRunning && (
-                  <iframe
-                    title="Website Preview"
-                    srcDoc={websiteResult.preview_html}
-                    style={{ flex: 1, width: "100%", border: "none" }}
-                    sandbox="allow-scripts allow-same-origin"
-                  />
                 )}
               </div>
             )}
