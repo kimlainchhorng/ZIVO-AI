@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, Image, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from "react-native";
+import { View, Text, FlatList, Image as RNImage, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput } from "react-native";
 import { colors, spacing, borderRadius, typography } from "../../theme/tokens";
 import { featuredItems, type ListItem } from "../../lib/mock-data";
 
@@ -58,7 +58,7 @@ export default function ExploreScreen() {
           contentContainerStyle={styles.list}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.card} activeOpacity={0.8}>
-              <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
+              <RNImage source={{ uri: item.imageUrl }} style={styles.cardImage} />
               <Text style={styles.cardTitle}>{item.title}</Text>
               <Text style={styles.cardSubtitle}>{item.subtitle}</Text>
               {item.price && <Text style={styles.cardPrice}>{item.price}</Text>}
@@ -96,3 +96,6 @@ const styles = StyleSheet.create({
   errorText: { color: colors.error, fontSize: typography.fontSize.base },
   emptyText: { color: colors.textSecondary, fontSize: typography.fontSize.base },
 });
+
+
+
