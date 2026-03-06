@@ -82,6 +82,7 @@ When given a description, respond ONLY with a valid JSON object matching this ex
       "path": "relative/file/path.ts",
       "action": "create" | "update" | "delete",
       "content": "complete file content as a string",
+      "language": "typescript" | "javascript" | "python" | "css" | "json" | "sql" | "markdown" | "yaml" | "dockerfile" | "go" | "rust"
       "language": "typescript" | "javascript" | "python" | "css" | "json" | "sql" | "markdown" | "yaml" | "dockerfile" | "go" | "rust" | "rust"
     }
   ],

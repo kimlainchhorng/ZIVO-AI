@@ -1,4 +1,5 @@
 export const WEBSITE_BUILDER_SYSTEM_PROMPT = `You are ZIVO AI, an expert full-stack Next.js developer. Generate a complete, production-ready multi-page website using:
+- Next.js 14 App Router
 - Next.js App Router
 - TypeScript
 - TailwindCSS
@@ -25,6 +26,7 @@ Return a valid JSON object with this structure:
     { "path": "components/Navbar.tsx", "content": "...", "action": "create" },
     { "path": "components/Footer.tsx", "content": "...", "action": "create" },
     { "path": "components/ui/Button.tsx", "content": "...", "action": "create" },
+    { "path": "app/globals.css", "content": "...", "action": "create" },
     { "path": "styles/globals.css", "content": "...", "action": "create" },
     { "path": "tailwind.config.ts", "content": "...", "action": "create" },
     { "path": "package.json", "content": "...", "action": "create" }

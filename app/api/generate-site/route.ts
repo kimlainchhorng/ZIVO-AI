@@ -79,6 +79,11 @@ Rules:
   "files": [
     { "path": "app/page.tsx", "content": "..." }
   ],
+  "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
+  "summary": "Brief description of what was built",
+  "notes": "Any additional notes"
+}
+${BASE_RULES}`;
   "description": "..."
 }`;
 
@@ -309,6 +314,10 @@ function parseJSON(text: string): GenerateSiteResponse {
     .replace(/^```(?:json)?\s*\n?/i, "")
     .replace(/\n?```\s*$/i, "")
     .trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
   try {
     return JSON.parse(cleaned);
   } catch {

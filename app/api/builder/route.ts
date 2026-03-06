@@ -46,6 +46,18 @@ function parseBuilderJSON(text: string): BuilderResponse {
   }
 }
 
+function parseBuilderJSON(text: string): BuilderResponse {
+  const cleaned = stripMarkdownFences(text);
+  try {
+    return JSON.parse(cleaned);
+  } catch (parseErr) {
+    console.error("[builder] Initial JSON parse failed:", parseErr);
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) return JSON.parse(match[0]);
+    throw new Error("AI did not return valid JSON");
+  }
+}
+
 const SYSTEM_PROMPT = `You are ZIVO AI, an expert software engineer and architect. You can build:
 - Full-stack web applications (Next.js, React, Vue, Express, FastAPI)
 - Mobile app backends (REST APIs, GraphQL, WebSocket)
@@ -124,6 +136,7 @@ export async function POST(req: Request) {
         model: selectedModel,
         messages: [
           { role: "system", content: CODE_BUILDER_PLAN_PROMPT },
+          { role: "user", content: prompt.trim() },
           { role: "user", content: userMessage },
         ],
         temperature: 0.3,
@@ -149,6 +162,7 @@ export async function POST(req: Request) {
       const r = await getClient().chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
+          { role: "system", content: CODE_BUILDER_SYSTEM_PROMPT },
           { role: "system", content: SYSTEM_PROMPT },
           { role: "user", content: prompt.trim() },
         ],

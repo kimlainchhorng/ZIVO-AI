@@ -107,6 +107,8 @@ export default function MobileBuilder() {
       if (typed.files?.length > 0) {
         setSelectedFile(typed.files[0]);
       }
+    } catch {
+      setError("Failed to generate mobile app. Please try again.");
     } catch (err) {
       setError((err as Error)?.message || "Failed to generate mobile app. Please try again.");
         body: JSON.stringify({ platform, description: description.trim() }),
@@ -156,6 +158,7 @@ export default function MobileBuilder() {
       a.href = url;
       a.download = `zivo-${platform}-app.zip`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       URL.revokeObjectURL(url);
     } catch (err) {
       setDownloadError((err as Error)?.message || "Download failed. Please try again.");
@@ -288,6 +291,7 @@ export default function MobileBuilder() {
 
           {result.commands && result.commands.length > 0 && (
             <div className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono">
+              <p className="text-gray-400 mb-1">// Run these commands to get started:</p>
               <p className="text-gray-400 mb-1">{`// Run these commands to get started:`}</p>
               {result.commands.map((cmd, i) => (
                 <p key={i}>$ {cmd}</p>

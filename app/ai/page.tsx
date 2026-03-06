@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import Image from "next/image";
 import { Suspense } from "react";
+import { addHistoryEntry } from "../history/page";
+import WebsiteUpdater from "../../components/WebsiteUpdater";
+import MobileBuilder from "../../components/MobileBuilder";
 import { addHistoryEntry } from "@/lib/history-store";
 import PlanViewer from "@/components/PlanViewer";
 import BuildOutputPanel from "@/components/BuildOutputPanel";
@@ -4821,6 +4824,28 @@ function AIPageInner() {
                     )}
                   </div>
                 )}
+                {websiteResult?.preview_html && (
+                  <>
+                    <iframe
+                      title="Website Preview"
+                      srcDoc={websiteResult.preview_html}
+                      style={{ flex: 1, width: "100%", border: "none" }}
+                      sandbox="allow-scripts allow-same-origin"
+                    />
+                    <div style={{ padding: "0.75rem 1rem", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+                      <WebsiteUpdater
+                        currentFiles={websiteResult.files}
+                        onUpdate={(updatedFiles, previewHtml) => {
+                          setWebsiteResult((prev) =>
+                            prev
+                              ? { ...prev, files: updatedFiles, preview_html: previewHtml ?? prev.preview_html }
+                              : null
+                          );
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -4830,34 +4855,9 @@ function AIPageInner() {
                 {/* Toolbar */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.accent }}><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                  <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary }}>Mobile Preview</span>
+                  <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary }}>Mobile App Builder</span>
                 </div>
-                {!mobileResult && !mobileLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
-                    <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                    </div>
-                    <p style={{ fontSize: "0.875rem" }}>Your generated mobile app will appear here</p>
-                  </div>
-                )}
-                {mobileLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem" }}>
-                    <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building mobile app…</p>
-                  </div>
-                )}
-                {mobileResult?.preview_html && (
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem", flex: 1 }}>
-                    <div style={{ width: `${MOBILE_FRAME_WIDTH}px`, height: `${MOBILE_FRAME_HEIGHT}px`, borderRadius: "40px", border: "8px solid #111", boxShadow: "0 0 0 2px #333, 0 20px 60px rgba(0,0,0,0.5)", overflow: "hidden", flexShrink: 0, background: "#000", position: "relative" }}>
-                      <iframe
-                        title="Mobile App Preview"
-                        srcDoc={mobileResult.preview_html}
-                        style={{ width: "100%", height: "100%", border: "none" }}
-                        sandbox="allow-scripts allow-same-origin"
-                      />
-                    </div>
-                  </div>
-                )}
+                <MobileBuilder />
               </div>
             )}
 
