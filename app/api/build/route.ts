@@ -82,6 +82,140 @@ const PROGRESS_STAGE_MAP: Partial<Record<ProgressStage, SSEStageType>> = {
 const MAX_POLISH_PASSES = 3;
 const MIN_QUALITY_SCORE = 80;
 
+const WEBSITE_BASE_DEPENDENCIES: Record<string, string> = {
+  next: "15.2.9",
+  react: "^19.1.0",
+  "react-dom": "^19.1.0",
+};
+
+const WEBSITE_KNOWN_DEP_VERSIONS: Record<string, string> = {
+  axios: "^1.8.4",
+  clsx: "^2.1.1",
+  "tailwind-merge": "^2.6.1",
+  "lucide-react": "^0.475.0",
+  "framer-motion": "^12.6.3",
+  zod: "^3.24.2",
+  "@radix-ui/react-dialog": "^1.1.15",
+  "@radix-ui/react-dropdown-menu": "^2.1.16",
+  "@radix-ui/react-select": "^2.1.6",
+  "@radix-ui/react-scroll-area": "^1.2.4",
+  "@radix-ui/react-tabs": "^1.1.12",
+  "@radix-ui/react-tooltip": "^1.1.8",
+  "class-variance-authority": "^0.7.1",
+};
+
+const NODE_BUILTIN_MODULES = new Set([
+  "assert", "buffer", "child_process", "cluster", "crypto", "dgram", "dns", "events", "fs", "http", "https",
+  "module", "net", "os", "path", "perf_hooks", "process", "querystring", "readline", "stream", "string_decoder",
+  "timers", "tty", "url", "util", "vm", "worker_threads", "zlib",
+]);
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeImportPackage(specifier: string): string | null {
+  if (!specifier || specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("@/") || specifier.startsWith("#")) {
+    return null;
+  }
+  if (specifier.startsWith("node:")) return null;
+  if (specifier.startsWith("next/")) return "next";
+  if (specifier.startsWith("react/")) return "react";
+
+  const name = specifier.startsWith("@")
+    ? specifier.split("/").slice(0, 2).join("/")
+    : specifier.split("/")[0];
+
+  if (!name || NODE_BUILTIN_MODULES.has(name)) return null;
+  return name;
+}
+
+function inferWebsiteDependencies(files: GeneratedFile[]): Record<string, string> {
+  const deps: Record<string, string> = { ...WEBSITE_BASE_DEPENDENCIES };
+  const importPattern = /(?:import|export)\s[^\n;]*?from\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
+
+  for (const file of files) {
+    if (!/\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file.path)) continue;
+    const content = file.content ?? "";
+    let match: RegExpExecArray | null;
+    while ((match = importPattern.exec(content)) !== null) {
+      const raw = match[1] ?? match[2];
+      if (!raw) continue;
+      const pkg = normalizeImportPackage(raw.trim());
+      if (!pkg) continue;
+      if (!deps[pkg]) {
+        deps[pkg] = WEBSITE_KNOWN_DEP_VERSIONS[pkg] ?? "latest";
+      }
+    }
+  }
+
+  return deps;
+}
+
+function ensureWebsitePackageJson(files: GeneratedFile[]): GeneratedFile[] {
+  const idx = files.findIndex((f) => f.path === "package.json");
+  const inferredDeps = inferWebsiteDependencies(files);
+
+  const defaultPkg = {
+    name: "zivo-website",
+    version: "0.1.0",
+    private: true,
+    scripts: {
+      dev: "next dev",
+      build: "next build",
+      start: "next start",
+      lint: "next lint",
+    },
+    dependencies: inferredDeps,
+  };
+
+  let pkg: Record<string, unknown> = defaultPkg;
+  if (idx >= 0) {
+    try {
+      const parsed = JSON.parse(files[idx].content);
+      if (isObjectRecord(parsed)) {
+        pkg = parsed;
+      }
+    } catch {
+      pkg = defaultPkg;
+    }
+  }
+
+  const scripts = isObjectRecord(pkg.scripts) ? pkg.scripts : {};
+  const deps = isObjectRecord(pkg.dependencies) ? pkg.dependencies : {};
+
+  const mergedDeps: Record<string, string> = { ...inferredDeps };
+  for (const [k, v] of Object.entries(deps)) {
+    if (typeof v === "string" && v.trim()) mergedDeps[k] = v;
+  }
+
+  const normalizedPkg: Record<string, unknown> = {
+    ...pkg,
+    name: typeof pkg.name === "string" && pkg.name.trim() ? pkg.name : defaultPkg.name,
+    version: typeof pkg.version === "string" && pkg.version.trim() ? pkg.version : defaultPkg.version,
+    private: typeof pkg.private === "boolean" ? pkg.private : true,
+    scripts: {
+      dev: "next dev",
+      build: "next build",
+      start: "next start",
+      lint: "next lint",
+      ...scripts,
+    },
+    dependencies: mergedDeps,
+  };
+
+  const packageFile: GeneratedFile = {
+    path: "package.json",
+    content: JSON.stringify(normalizedPkg, null, 2),
+    action: idx >= 0 ? "update" : "create",
+  };
+
+  if (idx >= 0) {
+    return files.map((f, i) => (i === idx ? packageFile : f));
+  }
+  return [packageFile, ...files];
+}
+
 function encodeSSE(event: SSEEvent): Uint8Array {
   return new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`);
 }
@@ -436,6 +570,9 @@ async function runWebsiteV2Pipeline(
       files = [...files, { path: asset.path, content: asset.content, action: "create" }];
     }
   }
+
+  send({ type: "stage", stage: "VALIDATING", message: "Reconciling package.json dependencies…", progress: 69 });
+  files = ensureWebsitePackageJson(files);
 
   send({ type: "files", files });
 
@@ -1069,3 +1206,4 @@ async function runMobileV2Pipeline(
   const summary = `Mobile app "${plan.appName}" built: ${files.length} files, quality score ${evalResult.score}/100`;
   send({ type: "stage", stage: "DONE", message: summary, progress: 100 });
 }
+
