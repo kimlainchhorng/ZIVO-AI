@@ -70,3 +70,36 @@ Use these design tokens: primary color ${p.primaryColor}, background ${p.backgro
 Apply Tailwind CSS classes: ${p.classes}. 
 Ensure all components follow this aesthetic consistently.`;
 }
+
+export const theme = {
+  colors: {
+    primary: '#6366f1',
+    secondary: '#8b5cf6',
+    accent: '#06b6d4',
+    background: '#0a0b14',
+    surface: '#0f1120',
+    border: 'rgba(255,255,255,0.08)',
+    text: '#f1f5f9',
+    muted: '#475569',
+  },
+  spacing: {
+    xs: '0.25rem',
+    sm: '0.5rem',
+    md: '1rem',
+    lg: '1.5rem',
+    xl: '2rem',
+    '2xl': '3rem',
+  },
+  radius: { sm: '4px', md: '8px', lg: '12px', full: '9999px' },
+  fonts: {
+    sans: 'Inter, system-ui, sans-serif',
+    mono: 'JetBrains Mono, Fira Code, monospace',
+  },
+  shadows: {
+    sm: '0 1px 3px rgba(0,0,0,0.3)',
+    md: '0 4px 12px rgba(0,0,0,0.4)',
+    lg: '0 10px 30px rgba(0,0,0,0.5)',
+  },
+} as const;
+
+export type Theme = typeof theme;
