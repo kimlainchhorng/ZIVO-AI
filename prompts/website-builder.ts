@@ -84,7 +84,11 @@ Design: Creative, personal aesthetic that reflects developer/designer personalit
 
 ### Color & Typography
 - Choose a UNIQUE, beautiful color palette that fits the website purpose
-- Use CSS custom properties: --color-primary, --color-secondary, --color-accent, --color-background, --color-foreground, --color-muted
+- Use CSS custom properties: --color-primary, --color-secondary, --color-accent, --color-background, --color-foreground, --color-muted, --color-muted-foreground, --color-destructive, --color-border, --color-surface
+- Use spacing tokens: --space-xs, --space-sm, --space-md, --space-lg, --space-xl, --space-2xl, --space-3xl
+- Use radius tokens: --radius-sm, --radius-md, --radius-lg, --radius-xl, --radius-full
+- Use shadow tokens: --shadow-sm, --shadow-md, --shadow-lg, --shadow-xl
+- NEVER hardcode raw color hex values, font names, or spacing values in component code — always reference the CSS variable tokens
 - Typography: Large, bold headings (font-size: clamp(2.5rem, 5vw, 4rem)), comfortable body text
 - Use Google Fonts for beautiful typography (Inter, Plus Jakarta Sans, Outfit, etc.)
 

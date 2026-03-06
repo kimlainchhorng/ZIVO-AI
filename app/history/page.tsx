@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import NavBar from '../components/NavBar';
 import { type BuildHistoryEntry, loadHistory, saveHistory } from '@/lib/history-store';
@@ -23,8 +23,12 @@ const COLORS = {
 
 export default function HistoryPage() {
   const router = useRouter();
-  const [entries, setEntries] = useState<BuildHistoryEntry[]>(() => loadHistory());
+  const [entries, setEntries] = useState<BuildHistoryEntry[]>([]);
   const [selected, setSelected] = useState<BuildHistoryEntry | null>(null);
+
+  useEffect(() => {
+    setEntries(loadHistory());
+  }, []);
 
   function clearHistory() {
     if (confirm("Clear all build history?")) {
@@ -146,3 +150,5 @@ export default function HistoryPage() {
     </>
   );
 }
+
+

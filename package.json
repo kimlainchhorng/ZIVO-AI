@@ -35,7 +35,6 @@
     "@webcontainer/api": "^1.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "core-util-is": "^1.0.3",
     "date-fns": "^4.1.0",
     "framer-motion": "^11.18.2",
     "immer": "^11.1.4",

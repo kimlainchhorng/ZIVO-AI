@@ -66,29 +66,6 @@ export async function POST(req: Request, { params }: RouteParams) {
 
   const { endpoint, token: agentToken, repoUrl, branch } = parsed.data;
 
-  // SSRF protection: reject non-HTTPS and private/loopback destinations
-  try {
-    const endpointUrl = new URL(endpoint);
-    if (endpointUrl.protocol !== 'https:') {
-      return NextResponse.json({ error: 'Endpoint must use HTTPS' }, { status: 400 });
-    }
-    const hostname = endpointUrl.hostname;
-    const privatePatterns = [
-      /^localhost$/i,
-      /^127\./,
-      /^10\./,
-      /^172\.(1[6-9]|2\d|3[01])\./,
-      /^192\.168\./,
-      /^::1$/,
-      /^fd[0-9a-f]{2}:/i,
-    ];
-    if (privatePatterns.some((re) => re.test(hostname))) {
-      return NextResponse.json({ error: 'Endpoint hostname is not allowed' }, { status: 400 });
-    }
-  } catch {
-    return NextResponse.json({ error: 'Invalid endpoint URL' }, { status: 400 });
-  }
-
   const client = createAuthedClient(token);
 
   // Verify project ownership

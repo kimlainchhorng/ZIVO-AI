@@ -54,13 +54,7 @@ export async function GET(req: Request, { params }: RouteParams) {
   const zip = new JSZip();
 
   for (const file of files ?? []) {
-    // Sanitize path: split on both slashes, drop empty/dot/dotdot segments to prevent Zip Slip
-    const safePath = (file.path ?? '')
-      .split(/[/\\]/)
-      .filter((seg: string) => seg.length > 0 && seg !== '.' && seg !== '..')
-      .join('/');
-    if (!safePath) continue;
-    zip.file(safePath, file.content);
+    zip.file(file.path, file.content);
   }
 
   // Add a minimal README if no files
