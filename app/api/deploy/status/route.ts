@@ -13,6 +13,8 @@ function mapRow(row: Record<string, unknown>) {
     deployUrl: row.deploy_url,
     githubRepo: row.github_repo,
     githubBranch: row.github_branch,
+    dockerEndpoint: row.docker_endpoint,
+    commitSha: row.commit_sha,
     status: row.status,
     errorMessage: row.error_message,
     deployedAt: row.deployed_at,

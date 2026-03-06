@@ -82,7 +82,8 @@ Rules:
   "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
   "summary": "Brief description of what was built",
   "notes": "Any additional notes"
-}`;
+}
+`;
 
 const SYSTEM_PROMPT_STANDARD = `You are ZIVO AI — the world's most advanced AI builder, generating code that rivals Lovable, v0.dev, and Bolt.new.
 

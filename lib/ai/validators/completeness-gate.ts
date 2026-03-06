@@ -21,9 +21,38 @@ export interface CompletenessGateResult {
   passedRules: string[];
   /** Flat list of paths / descriptions missing — sent in SSE payload */
   missingItems: string[];
+  /** SaaS-standard routes that are missing (subset of missingItems) */
+  missingSaasRoutes: string[];
 }
 
 // ─── Required file lists ─────────────────────────────────────────────────────
+
+/**
+ * SaaS-standard route entries for AppPreview completeness checking.
+ * Exported so AppPreview (and tests) can share the same definition.
+ */
+export const SAAS_STANDARD_ROUTES: ReadonlyArray<{
+  route: string;
+  file: string;
+  label: string;
+}> = [
+  { route: "/app",      file: "app/app/page.tsx",            label: "/app (primary entry)" },
+  { route: "/pricing",  file: "app/pricing/page.tsx",         label: "/pricing" },
+  { route: "/features", file: "app/features/page.tsx",        label: "/features" },
+  { route: "/about",    file: "app/about/page.tsx",           label: "/about" },
+  { route: "/contact",  file: "app/contact/page.tsx",         label: "/contact" },
+  { route: "/faq",      file: "app/faq/page.tsx",             label: "/faq" },
+  { route: "/privacy",  file: "app/(legal)/privacy/page.tsx", label: "/privacy" },
+  { route: "/terms",    file: "app/(legal)/terms/page.tsx",   label: "/terms" },
+];
+
+/**
+ * SaaS-standard app entry route.
+ * The /app route is the primary entry point for authenticated SaaS users.
+ */
+const REQUIRED_SAAS_APP_ROUTES = [
+  "app/app/page.tsx",
+] as const;
 
 /** Core marketing pages that must always exist */
 const REQUIRED_CORE_PAGES = [
@@ -214,6 +243,7 @@ export function runCompletenessGate(files: GeneratedFile[]): CompletenessGateRes
 
   // ── 1. Required file presence checks ──────────────────────────────────────
   const fileChecks: Array<[readonly string[], string]> = [
+    [REQUIRED_SAAS_APP_ROUTES, "SaaS /app route"],
     [REQUIRED_CORE_PAGES, "core marketing page"],
     [REQUIRED_BLOG_PAGES, "blog"],
     [REQUIRED_LEGAL_PAGES, "legal"],
@@ -262,7 +292,13 @@ export function runCompletenessGate(files: GeneratedFile[]): CompletenessGateRes
 
   const missingItems = issues.map((iss) => iss.message);
 
-  return { passed, issues, passedRules, missingItems };
+  // Identify which SaaS-standard routes are missing — derived from the
+  // exported SAAS_STANDARD_ROUTES constant so AppPreview shares the same list.
+  const missingSaasRoutes = SAAS_STANDARD_ROUTES
+    .filter(({ file }) => !paths.has(file))
+    .map(({ route }) => route);
+
+  return { passed, issues, passedRules, missingItems, missingSaasRoutes };
 }
 
 /**

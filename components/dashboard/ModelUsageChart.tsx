@@ -62,7 +62,7 @@ export default function ModelUsageChart({ data, title = "Model Usage" }: ModelUs
           </Pie>
           <Tooltip
             contentStyle={TOOLTIP_STYLE}
-            formatter={(value: number, name: string) => [`${value} requests`, name]}
+            formatter={(value: number | undefined, name: string | undefined) => [`${value ?? 0} requests`, name ?? '']}
           />
           <Legend
             wrapperStyle={{ fontSize: "0.75rem", color: "#64748b" }}

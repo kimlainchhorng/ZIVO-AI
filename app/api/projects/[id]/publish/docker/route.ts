@@ -1,174 +1,199 @@
 /**
  * POST /api/projects/[id]/publish/docker
  *
- * Triggers a Docker-server webhook so the server can pull the latest commit
- * from GitHub and run `docker compose up -d`.
+ * Triggers a deploy on a self-hosted Docker server via a webhook.
+ * The Docker server should be running the ZIVO-AI Docker Deploy Agent
+ * (see docs/docker-deploy-agent.md).
  *
- * Auth: Bearer token required. Caller must own the project.
+ * Body:
+ *   endpoint    — Docker deploy webhook URL (e.g. https://my-server:4242/deploy)
+ *   token       — Secret token verified by the Docker agent
+ *   repoUrl     — (optional) GitHub repo URL to pass to the agent
+ *   branch      — (optional, default "main") branch to deploy
  *
- * Body (JSON):
- *   {
- *     dockerDeployToken: string;  // bearer token for the Docker webhook endpoint
- *     // Optional overrides – defaults come from project_deploy_settings
- *     endpoint?: string;
- *     repoUrl?: string;
- *     branch?: string;
- *     commitSha?: string;
- *   }
- *
- * Returns: { status, log, deployedAt, commitSha }
+ * The agent receives a POST with:
+ *   { repoUrl, branch, commitSha, projectId, zipUrl }
+ * and should pull the repo / extract the zip, build, and start the container.
  */
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { extractBearerToken, getUserFromToken, createAuthedClient } from '@/lib/db/projects-db';
 
-import { NextResponse } from "next/server";
-import {
-  extractBearerToken,
-  getUserFromToken,
-  getProjectById,
-  getDeploySettings,
-  upsertDeploySettings,
-} from "@/lib/db/projects-db";
-
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-interface DockerDeployBody {
-  dockerDeployToken: string;
-  endpoint?: string;
-  repoUrl?: string;
-  branch?: string;
+const BodySchema = z.object({
+  endpoint: z.string().url('Must be a valid URL'),
+  token: z.string().min(1),
+  repoUrl: z.string().url().optional(),
+  branch: z.string().optional().default('main'),
+});
+
+interface AgentResponse {
+  status?: string;
+  message?: string;
+  logs?: string;
   commitSha?: string;
+  error?: string;
 }
 
 export async function POST(req: Request, { params }: RouteParams) {
   const { id: projectId } = await params;
 
-  // ── Auth ───────────────────────────────────────────────────────────────────
-  const token = extractBearerToken(req.headers.get("Authorization"));
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const token = extractBearerToken(req.headers.get('Authorization'));
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const user = await getUserFromToken(token);
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // ── Ownership check ────────────────────────────────────────────────────────
-  const project = await getProjectById(token, projectId);
-  if (!project) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
-  if (project.owner_user_id !== user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // ── Parse body ─────────────────────────────────────────────────────────────
-  let body: DockerDeployBody;
+  let rawBody: unknown;
   try {
-    body = (await req.json()) as DockerDeployBody;
+    rawBody = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { dockerDeployToken } = body;
-  if (!dockerDeployToken || typeof dockerDeployToken !== "string") {
+  const parsed = BodySchema.safeParse(rawBody);
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "Missing required field: dockerDeployToken" },
-      { status: 422 }
+      { error: 'Invalid request', details: parsed.error.flatten() },
+      { status: 400 }
     );
   }
 
-  // ── Resolve settings (body overrides saved settings) ──────────────────────
-  const saved = await getDeploySettings(token, projectId);
+  const { endpoint, token: agentToken, repoUrl, branch } = parsed.data;
 
-  const endpoint = body.endpoint ?? saved?.docker_deploy_endpoint ?? null;
-  const repoUrl = body.repoUrl ?? saved?.deploy_repo_url ?? null;
-  const branch = body.branch ?? saved?.deploy_branch ?? "main";
-  const commitSha = body.commitSha ?? saved?.last_pushed_commit_sha ?? null;
-
-  if (!endpoint) {
-    return NextResponse.json(
-      { error: "Missing docker_deploy_endpoint (provide in body or save in settings)" },
-      { status: 422 }
-    );
-  }
-  if (!repoUrl) {
-    return NextResponse.json(
-      { error: "Missing repoUrl — push to GitHub first or provide repoUrl in body" },
-      { status: 422 }
-    );
-  }
-  if (!commitSha) {
-    return NextResponse.json(
-      { error: "Missing commitSha — push to GitHub first or provide commitSha in body" },
-      { status: 422 }
-    );
+  // SSRF protection: reject non-HTTPS and private/loopback destinations
+  try {
+    const endpointUrl = new URL(endpoint);
+    if (endpointUrl.protocol !== 'https:') {
+      return NextResponse.json({ error: 'Endpoint must use HTTPS' }, { status: 400 });
+    }
+    const hostname = endpointUrl.hostname;
+    const privatePatterns = [
+      /^localhost$/i,
+      /^127\./,
+      /^10\./,
+      /^172\.(1[6-9]|2\d|3[01])\./,
+      /^192\.168\./,
+      /^::1$/,
+      /^fd[0-9a-f]{2}:/i,
+    ];
+    if (privatePatterns.some((re) => re.test(hostname))) {
+      return NextResponse.json({ error: 'Endpoint hostname is not allowed' }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: 'Invalid endpoint URL' }, { status: 400 });
   }
 
-  // ── Send webhook ───────────────────────────────────────────────────────────
-  const requestedAt = new Date().toISOString();
-  const webhookPayload = {
-    projectId,
-    repoUrl,
-    branch,
-    commitSha,
-    requestedAt,
-  };
+  const client = createAuthedClient(token);
 
-  let deployStatus = "failed";
-  let log = "";
+  // Verify project ownership
+  const { data: project, error: projectError } = await client
+    .from('projects')
+    .select('id, title, github_repo')
+    .eq('id', projectId)
+    .eq('owner_user_id', user.id)
+    .single();
+
+  if (projectError || !project) {
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+  }
+
+  const typedProject = project as { id: string; title: string; github_repo: string | null };
+
+  // Resolve repo URL: prefer explicit param, fall back to stored github_repo
+  const resolvedRepoUrl =
+    repoUrl ??
+    (typedProject.github_repo
+      ? `https://github.com/${typedProject.github_repo}`
+      : undefined);
+
+  // Build zip download URL for the export (so the agent can pull a fresh copy)
+  const host = req.headers.get('host') ?? 'localhost';
+  const protocol = req.headers.get('x-forwarded-proto') ?? 'https';
+  const zipUrl = `${protocol}://${host}/api/projects/${projectId}/export.zip`;
+
+  // Create a pending deployment record first
+  const { data: deploymentRow } = await client
+    .from('project_deployments')
+    .insert({
+      project_id: projectId,
+      provider: 'docker',
+      docker_endpoint: endpoint,
+      github_repo: typedProject.github_repo ?? null,
+      github_branch: branch,
+      status: 'building',
+    })
+    .select('id')
+    .single();
+
+  const deploymentId = (deploymentRow as { id: string } | null)?.id;
+
+  // Call the Docker deploy agent
+  let agentRes: AgentResponse = {};
+  let deployStatus: 'success' | 'error' = 'success';
+  let errorMessage: string | undefined;
+  let commitSha: string | undefined;
 
   try {
-    const webhookRes = await fetch(endpoint, {
-      method: "POST",
+    const agentFetch = await fetch(endpoint, {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${dockerDeployToken}`,
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${agentToken}`,
       },
-      body: JSON.stringify(webhookPayload),
-      // 30 second timeout
-      signal: AbortSignal.timeout(300_000), // 5-minute timeout for docker ops
+      body: JSON.stringify({
+        projectId,
+        repoUrl: resolvedRepoUrl,
+        branch,
+        zipUrl,
+      }),
+      signal: AbortSignal.timeout(30_000), // 30 s gives the agent time to pull and start containers without hanging forever
     });
 
-    const bodyText = await webhookRes.text().catch(() => "");
+    agentRes = (await agentFetch.json()) as AgentResponse;
 
-    if (webhookRes.ok) {
-      deployStatus = "success";
-      try {
-        const parsed = JSON.parse(bodyText) as { log?: string; status?: string };
-        log = parsed.log ?? bodyText;
-      } catch {
-        log = bodyText;
-      }
+    if (!agentFetch.ok || agentRes.error) {
+      deployStatus = 'error';
+      errorMessage = agentRes.error ?? `Agent returned ${agentFetch.status}`;
     } else {
-      deployStatus = "failed";
-      log = `Webhook returned ${webhookRes.status}: ${bodyText}`;
+      commitSha = agentRes.commitSha;
     }
-  } catch (err: unknown) {
-    const msg = (err as Error).message ?? String(err);
-    deployStatus = "failed";
-    log = `Webhook request failed: ${msg}`;
+  } catch (err) {
+    deployStatus = 'error';
+    errorMessage = err instanceof Error ? err.message : 'Docker agent unreachable';
   }
 
-  // ── Persist deploy status ─────────────────────────────────────────────────
-  const deployedAt = new Date().toISOString();
-  await upsertDeploySettings(token, projectId, {
-    ...(endpoint ? { docker_deploy_endpoint: endpoint } : {}),
-    ...(repoUrl ? { deploy_repo_url: repoUrl } : {}),
-    deploy_branch: branch,
-    last_deployed_commit_sha: commitSha,
-    last_deployed_at: deployedAt,
-    last_deploy_status: deployStatus,
-  });
+  // Update deployment record
+  if (deploymentId) {
+    await client
+      .from('project_deployments')
+      .update({
+        status: deployStatus,
+        error_message: errorMessage ?? null,
+        commit_sha: commitSha ?? null,
+        deployed_at: deployStatus === 'success' ? new Date().toISOString() : null,
+      })
+      .eq('id', deploymentId);
+  }
 
-  if (deployStatus === "failed") {
+  if (deployStatus === 'error') {
     return NextResponse.json(
-      { status: deployStatus, log, deployedAt, commitSha },
+      { error: errorMessage ?? 'Deploy failed', deploymentId },
       { status: 502 }
     );
   }
 
-  return NextResponse.json({ status: deployStatus, log, deployedAt, commitSha });
+  return NextResponse.json({
+    success: true,
+    deploymentId,
+    status: agentRes.status,
+    message: agentRes.message,
+    logs: agentRes.logs,
+    commitSha,
+  });
 }

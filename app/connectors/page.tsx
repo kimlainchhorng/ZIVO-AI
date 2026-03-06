@@ -53,27 +53,14 @@ function loadConnectorState(): ConnectorState {
   return DEFAULT_STATE;
 }
 
-
 function saveConnectorState(state: ConnectorState): void {
   if (typeof window === 'undefined') return;
   try {
-    // Do not persist secrets in connectorState; only store non-sensitive fields.
-    const { modalToken, supabaseAnonKey, ...nonSensitiveState } = state;
-    void supabaseAnonKey;
-    localStorage.setItem('connectorState', JSON.stringify(nonSensitiveState));
-    // Write/clear the dedicated keys that other parts of the app (e.g. app/ai/page.tsx) read.
-    if (state.githubConnected && modalToken) {
-      localStorage.setItem('zivo_github_token', modalToken);
-      localStorage.setItem('zivo_github_repo', state.modalRepo);
-    } else if (!state.githubConnected) {
-      localStorage.removeItem('zivo_github_token');
-      localStorage.removeItem('zivo_github_repo');
-    }
-  } catch (err) {
-    console.error('[connectors] Failed to save state to localStorage:', err);
+    localStorage.setItem('connectorState', JSON.stringify(state));
+  } catch {
+    // ignore storage errors
   }
 }
-
 
 interface TestApiResult {
   success: boolean;
@@ -344,15 +331,6 @@ const ConnectorComponent = () => {
     setStorageError('');
   }
 
-  function _handleMapsConnect(e: React.FormEvent) {
-    e.preventDefault();
-    // mapsError removed
-    if (!connState.mapsApiKey.trim()) {
-      // mapsError removed
-      return;
-    }
-    updateState({ mapsConnected: true });
-  }
 
 
   return (
@@ -596,6 +574,7 @@ const ConnectorComponent = () => {
           </form>
         )}
       </section>
+
     </div>
   );
 };

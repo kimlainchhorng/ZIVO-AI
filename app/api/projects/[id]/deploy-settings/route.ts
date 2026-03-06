@@ -7,6 +7,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import {
   extractBearerToken,
   getUserFromToken,
@@ -14,9 +15,15 @@ import {
   getDeploySettings,
   upsertDeploySettings,
 } from "@/lib/db/projects-db";
-import type { UpsertDeploySettingsInput } from "@/lib/db/projects-db";
 
 export const runtime = "nodejs";
+
+/** Only allow updating the user-facing settings fields; block tracking fields. */
+const PatchSchema = z.object({
+  deploy_repo_url: z.string().url().nullable().optional(),
+  deploy_branch: z.string().min(1).max(255).optional(),
+  docker_deploy_endpoint: z.string().url().nullable().optional(),
+}).strict();
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -61,7 +68,14 @@ export async function PATCH(req: Request, { params }: RouteParams) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const updates = body as UpsertDeploySettingsInput;
-  const settings = await upsertDeploySettings(token, projectId, updates);
+  const parsed = PatchSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid request", details: parsed.error.flatten() },
+      { status: 400 }
+    );
+  }
+
+  const settings = await upsertDeploySettings(token, projectId, parsed.data);
   return NextResponse.json({ settings });
 }

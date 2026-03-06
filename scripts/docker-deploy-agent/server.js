@@ -25,6 +25,7 @@
 
 const http = require("http");
 const { spawnSync } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -38,6 +39,7 @@ const ALLOWED_REPO_URLS = process.env.ALLOWED_REPO_URLS
   ? process.env.ALLOWED_REPO_URLS.split(",").map((u) => u.trim()).filter(Boolean)
   : null;
 const LOG_TAIL_LINES = parseInt(process.env.LOG_TAIL_LINES ?? "80", 10);
+const MAX_BODY_BYTES = 64 * 1024; // 64 KiB — ample for any normal webhook payload
 
 if (!DEPLOY_TOKEN) {
   console.error("[zivo-deploy-agent] FATAL: DEPLOY_TOKEN env var is required.");
@@ -156,26 +158,45 @@ const server = http.createServer(async (req, res) => {
     return sendJSON(res, 404, { status: "not_found" });
   }
 
-  // Verify bearer token
+  // Verify bearer token using timing-safe comparison to prevent side-channel attacks
   const authHeader = req.headers["authorization"] ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
-  if (!token || token !== DEPLOY_TOKEN) {
+  const tokenBuf = Buffer.from(token);
+  const expectedBuf = Buffer.from(DEPLOY_TOKEN);
+  const tokenValid =
+    token.length > 0 &&
+    tokenBuf.length === expectedBuf.length &&
+    crypto.timingSafeEqual(tokenBuf, expectedBuf);
+  if (!tokenValid) {
     console.warn("[zivo-deploy-agent] Unauthorized request");
     return sendJSON(res, 401, { status: "unauthorized" });
   }
 
-  // Parse body
+  // Parse body (with max-size guard to prevent memory-DoS)
   let body;
   try {
     const raw = await new Promise((resolve, reject) => {
       let data = "";
-      req.on("data", (chunk) => (data += chunk));
+      let bytes = 0;
+      req.on("data", (chunk) => {
+        bytes += chunk.length;
+        if (bytes > MAX_BODY_BYTES) {
+          req.destroy();
+          reject(new Error("Payload too large"));
+          return;
+        }
+        data += chunk;
+      });
       req.on("end", () => resolve(data));
       req.on("error", reject);
     });
     body = JSON.parse(raw);
-  } catch {
-    return sendJSON(res, 400, { status: "bad_request", log: "Invalid JSON body" });
+  } catch (e) {
+    const isTooBig = e instanceof Error && e.message === "Payload too large";
+    return sendJSON(res, isTooBig ? 413 : 400, {
+      status: "bad_request",
+      log: isTooBig ? "Request body too large" : "Invalid JSON body",
+    });
   }
 
   const { repoUrl, branch = "main", commitSha } = body;

@@ -1,291 +1,258 @@
 /**
  * POST /api/projects/[id]/publish/github
  *
- * Pushes all current project_files to a GitHub repository using a PAT.
+ * Pushes all project files to a GitHub repository using a GitHub PAT.
+ * Creates the repo if it does not exist. Stores the repo URL on the project.
  *
- * Auth: Bearer token required. Caller must own the project.
- *
- * Body (JSON):
- *   {
- *     pat: string;            // GitHub Personal Access Token — never logged
- *     repoFullName?: string;  // "owner/repo" — required unless createRepo=true
- *     createRepo?: boolean;   // create a new repo first
- *     private?: boolean;      // repo visibility when creating (default false)
- *     branch?: string;        // target branch (default "main")
- *   }
- *
- * Returns: { repoUrl, branch, commitSha }
+ * Body:
+ *   repoName      — target repo name (created under the authenticated GitHub user)
+ *   githubToken   — GitHub Personal Access Token (classic or fine-grained with repo scope)
+ *   isPrivate     — (optional, default true)
+ *   commitMessage — (optional)
  */
+import { NextResponse } from 'next/server';
+import { z } from 'zod';
+import { extractBearerToken, getUserFromToken, createAuthedClient } from '@/lib/db/projects-db';
 
-import { NextResponse } from "next/server";
-import {
-  extractBearerToken,
-  getUserFromToken,
-  getProjectById,
-  getProjectFiles,
-  upsertDeploySettings,
-} from "@/lib/db/projects-db";
-
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-interface GithubPublishBody {
-  pat: string;
-  repoFullName?: string;
-  createRepo?: boolean;
-  private?: boolean;
-  branch?: string;
+/** GitHub repository name: must start/end with alphanumeric; may contain dots, hyphens, underscores internally; or a single alphanumeric char. */
+const GITHUB_REPO_NAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$/;
+
+const BodySchema = z.object({
+  repoName: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(GITHUB_REPO_NAME_REGEX, 'Invalid repo name'),
+  githubToken: z.string().min(1),
+  isPrivate: z.boolean().optional().default(true),
+  commitMessage: z.string().optional().default('feat: publish from ZIVO-AI'),
+});
+
+const GITHUB_API = 'https://api.github.com';
+
+interface GithubRepoResponse {
+  full_name: string;
+  html_url: string;
+  default_branch: string;
 }
 
-// ─── GitHub REST helpers ────────────────────────────────────────────────────
-
-const GH_API = "https://api.github.com";
-
-async function ghFetch(
-  pat: string,
+async function ghRequest<T>(
   path: string,
-  options: RequestInit = {}
-): Promise<Response> {
-  const res = await fetch(`${GH_API}${path}`, {
+  options: RequestInit,
+  pat: string
+): Promise<T> {
+  const res = await fetch(`${GITHUB_API}${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${pat}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Content-Type": "application/json",
+      Accept: 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
       ...(options.headers ?? {}),
     },
   });
-  return res;
-}
-
-async function ghJson<T>(
-  pat: string,
-  path: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const res = await ghFetch(pat, path, options);
-  const json = await res.json() as T & { message?: string };
   if (!res.ok) {
-    throw new Error(
-      `GitHub API ${options.method ?? "GET"} ${path} → ${res.status}: ${
-        (json as { message?: string }).message ?? JSON.stringify(json)
-      }`
-    );
+    const body = await res.text();
+    throw new Error(`GitHub API ${path} → ${res.status}: ${body}`);
   }
-  return json as T;
+  return res.json() as Promise<T>;
 }
-
-// ─── Route handler ──────────────────────────────────────────────────────────
 
 export async function POST(req: Request, { params }: RouteParams) {
   const { id: projectId } = await params;
 
-  // ── Auth ───────────────────────────────────────────────────────────────────
-  const token = extractBearerToken(req.headers.get("Authorization"));
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const token = extractBearerToken(req.headers.get('Authorization'));
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const user = await getUserFromToken(token);
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  // ── Ownership check ────────────────────────────────────────────────────────
-  const project = await getProjectById(token, projectId);
-  if (!project) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
-  if (project.owner_user_id !== user.id) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
-
-  // ── Parse body ─────────────────────────────────────────────────────────────
-  let body: GithubPublishBody;
+  let rawBody: unknown;
   try {
-    body = (await req.json()) as GithubPublishBody;
+    rawBody = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { pat, createRepo = false, branch = "main" } = body;
-  if (!pat || typeof pat !== "string") {
-    return NextResponse.json({ error: "Missing required field: pat" }, { status: 422 });
+  const parsed = BodySchema.safeParse(rawBody);
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid request', details: parsed.error.flatten() }, { status: 400 });
   }
 
-  let repoFullName = body.repoFullName ?? "";
+  const { repoName, githubToken, isPrivate, commitMessage } = parsed.data;
 
-  // ── Optionally create repo ─────────────────────────────────────────────────
-  if (createRepo) {
-    const repoName = project.title
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "") || "zivo-project";
+  const client = createAuthedClient(token);
 
-    try {
-      const created = await ghJson<{ full_name: string }>(pat, "/user/repos", {
-        method: "POST",
-        body: JSON.stringify({
-          name: repoName,
-          private: body.private ?? false,
-          auto_init: false,
-          description: `Generated by ZIVO-AI – ${project.title}`,
-        }),
-      });
-      repoFullName = created.full_name;
-    } catch (err: unknown) {
-      const msg = (err as Error).message ?? String(err);
-      // 422 = repo already exists; reuse it
-      if (!msg.includes("422") && !msg.includes("name already exists")) {
-        return NextResponse.json({ error: `Failed to create repo: ${msg}` }, { status: 502 });
-      }
-      // Derive the expected full_name from the authenticated user
-      const me = await ghJson<{ login: string }>(pat, "/user");
-      repoFullName = `${me.login}/${repoName}`;
-    }
+  // Verify ownership
+  const { data: project, error: projectError } = await client
+    .from('projects')
+    .select('id, title')
+    .eq('id', projectId)
+    .eq('owner_user_id', user.id)
+    .single();
+
+  if (projectError || !project) {
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 });
   }
 
-  if (!repoFullName) {
-    return NextResponse.json(
-      { error: "Missing required field: repoFullName (or set createRepo=true)" },
-      { status: 422 }
-    );
-  }
-
-  // ── Load project files ─────────────────────────────────────────────────────
-  const files = await getProjectFiles(token, projectId);
-  if (files.length === 0) {
-    return NextResponse.json({ error: "No files to push" }, { status: 422 });
-  }
-
-  // ── Push to GitHub via Trees API ───────────────────────────────────────────
-  // We use the low-level blobs → tree → commit → update-ref flow which works
-  // regardless of whether the repo is empty or already has commits.
+  // Fetch project files
+  const { data: files } = await client
+    .from('project_files')
+    .select('path, content')
+    .eq('project_id', projectId);
 
   try {
-    // 1. Get or create base commit SHA (needed for the parent commit)
-    let baseSha: string | null = null;
-    let baseTreeSha: string | null = null;
+    // Get GitHub user
+    const ghUser = await ghRequest<{ login: string }>('/user', { method: 'GET' }, githubToken);
+    const owner = ghUser.login;
 
+    // Create repo if not existing
+    let repo: GithubRepoResponse;
     try {
-      const ref = await ghJson<{ object: { sha: string } }>(
-        pat,
-        `/repos/${repoFullName}/git/refs/heads/${branch}`
+      repo = await ghRequest<GithubRepoResponse>(
+        `/repos/${owner}/${repoName}`,
+        { method: 'GET' },
+        githubToken
       );
-      baseSha = ref.object.sha;
-
-      const commit = await ghJson<{ tree: { sha: string } }>(
-        pat,
-        `/repos/${repoFullName}/git/commits/${baseSha}`
-      );
-      baseTreeSha = commit.tree.sha;
     } catch {
-      // Branch / repo doesn't exist yet — we'll create the first commit below
-    }
-
-    // 2. Create blobs for each file
-    const treeItems: Array<{
-      path: string;
-      mode: string;
-      type: string;
-      sha: string;
-    }> = [];
-
-    for (const file of files) {
-      const normalised = file.path.replace(/^\/+/, "");
-      const blob = await ghJson<{ sha: string }>(
-        pat,
-        `/repos/${repoFullName}/git/blobs`,
+      repo = await ghRequest<GithubRepoResponse>(
+        '/user/repos',
         {
-          method: "POST",
+          method: 'POST',
           body: JSON.stringify({
-            content: Buffer.from(file.content).toString("base64"),
-            encoding: "base64",
+            name: repoName,
+            description: `Generated by ZIVO-AI: ${(project as { title: string }).title}`,
+            private: isPrivate,
+            auto_init: true,
           }),
-        }
+        },
+        githubToken
       );
-      treeItems.push({
-        path: normalised,
-        mode: "100644",
-        type: "blob",
-        sha: blob.sha,
-      });
     }
 
-    // 3. Create a new tree
-    const treePayload: Record<string, unknown> = { tree: treeItems };
-    if (baseTreeSha) treePayload.base_tree = baseTreeSha;
+    const branch = repo.default_branch || 'main';
 
-    const newTree = await ghJson<{ sha: string }>(
-      pat,
-      `/repos/${repoFullName}/git/trees`,
-      {
-        method: "POST",
-        body: JSON.stringify(treePayload),
-      }
+    // Get latest commit + tree SHA
+    const refData = await ghRequest<{ object: { sha: string } }>(
+      `/repos/${owner}/${repoName}/git/ref/heads/${branch}`,
+      { method: 'GET' },
+      githubToken
+    );
+    const latestCommitSha = refData.object.sha;
+
+    const commitData = await ghRequest<{ tree: { sha: string } }>(
+      `/repos/${owner}/${repoName}/git/commits/${latestCommitSha}`,
+      { method: 'GET' },
+      githubToken
+    );
+    const baseTreeSha = commitData.tree.sha;
+
+    // Build tree items
+    const filesToPush = (files ?? []) as Array<{ path: string; content: string }>;
+    const treeItems = await Promise.all(
+      filesToPush.map(async (f) => {
+        const blob = await ghRequest<{ sha: string }>(
+          `/repos/${owner}/${repoName}/git/blobs`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              content: Buffer.from(f.content).toString('base64'),
+              encoding: 'base64',
+            }),
+          },
+          githubToken
+        );
+        return { path: f.path, mode: '100644', type: 'blob', sha: blob.sha };
+      })
     );
 
-    // 4. Create commit
-    const commitPayload: Record<string, unknown> = {
-      message: `Deploy via ZIVO-AI – ${new Date().toISOString()}`,
-      tree: newTree.sha,
-    };
-    if (baseSha) commitPayload.parents = [baseSha];
+    if (treeItems.length === 0) {
+      const readme = `# ${(project as { title: string }).title}\n\nGenerated by [ZIVO-AI](https://zivo.ai).\n`;
+      const blob = await ghRequest<{ sha: string }>(
+        `/repos/${owner}/${repoName}/git/blobs`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            content: Buffer.from(readme).toString('base64'),
+            encoding: 'base64',
+          }),
+        },
+        githubToken
+      );
+      treeItems.push({ path: 'README.md', mode: '100644', type: 'blob', sha: blob.sha });
+    }
 
-    const newCommit = await ghJson<{ sha: string; html_url: string }>(
-      pat,
-      `/repos/${repoFullName}/git/commits`,
+    // Create tree → commit → update ref
+    const newTree = await ghRequest<{ sha: string }>(
+      `/repos/${owner}/${repoName}/git/trees`,
       {
-        method: "POST",
-        body: JSON.stringify(commitPayload),
-      }
+        method: 'POST',
+        body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
+      },
+      githubToken
     );
 
-    // 5. Update (or create) the branch ref
-    const refPath = `/repos/${repoFullName}/git/refs/heads/${branch}`;
-    const updateRes = await ghFetch(pat, refPath, {
-      method: "PATCH",
-      body: JSON.stringify({ sha: newCommit.sha, force: true }),
+    const newCommit = await ghRequest<{ sha: string; html_url: string }>(
+      `/repos/${owner}/${repoName}/git/commits`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          message: commitMessage,
+          tree: newTree.sha,
+          parents: [latestCommitSha],
+        }),
+      },
+      githubToken
+    );
+
+    await ghRequest<unknown>(
+      `/repos/${owner}/${repoName}/git/refs/heads/${branch}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ sha: newCommit.sha, force: false }),
+      },
+      githubToken
+    );
+
+    const repoUrl = repo.html_url;
+
+    // Persist repo URL on project
+    await client
+      .from('projects')
+      .update({ github_repo: `${owner}/${repoName}` })
+      .eq('id', projectId);
+
+    // Record deployment
+    const { data: deploymentRow } = await client
+      .from('project_deployments')
+      .insert({
+        project_id: projectId,
+        provider: 'github',
+        github_repo: `${owner}/${repoName}`,
+        github_branch: branch,
+        commit_sha: newCommit.sha,
+        status: 'success',
+        deployed_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
+
+    return NextResponse.json({
+      success: true,
+      repoUrl,
+      commitSha: newCommit.sha,
+      commitUrl: newCommit.html_url,
+      deploymentId: (deploymentRow as { id: string } | null)?.id,
     });
-
-    if (!updateRes.ok && updateRes.status === 422) {
-      // Ref doesn't exist yet — create it
-      await ghJson(pat, `/repos/${repoFullName}/git/refs`, {
-        method: "POST",
-        body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: newCommit.sha }),
-      });
-    } else if (!updateRes.ok) {
-      const errBody = await updateRes.json() as { message?: string };
-      throw new Error(`Failed to update ref: ${errBody.message ?? updateRes.status}`);
-    }
-
-    const repoUrl = `https://github.com/${repoFullName}`;
-    const commitSha = newCommit.sha;
-
-    // 6. Persist deploy settings
-    await upsertDeploySettings(token, projectId, {
-      deploy_repo_url: repoUrl,
-      deploy_branch: branch,
-      last_pushed_commit_sha: commitSha,
-      last_pushed_at: new Date().toISOString(),
-    });
-
-    return NextResponse.json({ repoUrl, branch, commitSha });
-  } catch (err: unknown) {
-    const msg = (err as Error).message ?? String(err);
-    // Classify common errors
-    if (msg.includes("401") || msg.includes("Bad credentials")) {
-      return NextResponse.json({ error: "Invalid or expired PAT" }, { status: 401 });
-    }
-    if (msg.includes("403") || msg.includes("forbidden")) {
-      return NextResponse.json({ error: "PAT lacks required permissions" }, { status: 403 });
-    }
-    if (msg.includes("404") || msg.includes("Not Found")) {
-      return NextResponse.json({ error: "Repository not found" }, { status: 404 });
-    }
-    return NextResponse.json({ error: `GitHub push failed: ${msg}` }, { status: 502 });
+  } catch (err) {
+    console.error('[publish/github]', err);
+    const message = err instanceof Error ? err.message : 'GitHub publish failed';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1,23 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { MOBILE_PLATFORMS, MOBILE_PLATFORM_LABELS } from "@/prompts/mobile-builder";
+import JSZip from "jszip";
+import {
+  MOBILE_PLATFORMS,
+  MOBILE_PLATFORM_LABELS,
+  type MobilePlatform,
+} from "@/prompts/mobile-builder";
 
-type MobilePlatform = "flutter" | "react-native" | "kotlin" | "swift";
-
-interface GeneratedFile {
+interface MobileFile {
   path: string;
   content: string;
-  action: "create" | "update" | "delete";
 }
 
 interface GenerateMobileResponse {
-  files: GeneratedFile[];
-  commands?: string[];
-  summary: string;
   platform: MobilePlatform;
-  setup_instructions?: string;
+  files: MobileFile[];
+  summary: string;
+  setup_instructions: string;
 }
+
 
 export default function MobileBuilder() {
   const [platform, setPlatform] = useState<MobilePlatform>("flutter");
@@ -26,6 +28,11 @@ export default function MobileBuilder() {
   const [error, setError] = useState<string>("");
   const [result, setResult] = useState<GenerateMobileResponse | null>(null);
   const [_downloadError, setDownloadError] = useState<string | null>(null);
+  // Route download errors through the main error state so they're visible to the user
+  const reportDownloadError = (message: string | null) => {
+    setDownloadError(message);
+    setError(message ?? "");
+  };
 
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
@@ -42,56 +49,49 @@ export default function MobileBuilder() {
       const res = await fetch("/api/generate-mobile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, description: description.trim() }),
+        body: JSON.stringify({ platform, description }),
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
+      const data: unknown = await res.json();
+
+      if (!res.ok || (data && typeof data === "object" && "error" in data)) {
+        setError(
+          (data as { error?: string })?.error ||
+            `Server error (${res.status})`
+        );
+        return;
       }
 
-      const data = (await res.json()) as GenerateMobileResponse;
-      setResult(data);
-      if (data.files?.length > 0) {
-        }
+      const typed = data as GenerateMobileResponse;
+      setResult(typed);
     } catch (err: unknown) {
-      setError((err as Error).message || "An unexpected error occurred.");
+      setError((err as Error)?.message || "Failed to generate mobile app. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function _handleCopy(content: string) {
-    try {
-      await navigator.clipboard.writeText(content);
-    } catch {
-      setError("Copy failed. Please select and copy the code manually.");
-    }
-  }
+
+
+
 
   async function handleDownload() {
-    if (!result?.files?.length) return;
-    setDownloadError(null);
+    if (!result) return;
     try {
-      const res = await fetch("/api/download", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ files: result.files }),
-      });
-      if (!res.ok) {
-        setDownloadError(`Download failed (${res.status})`);
-        return;
+      reportDownloadError(null);
+      const zip = new JSZip();
+      for (const file of result.files) {
+        zip.file(file.path, file.content);
       }
-      const blob = await res.blob();
+      const blob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `zivo-${platform}-app.zip`;
+      a.download = `${result.platform}-app.zip`;
       a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
       URL.revokeObjectURL(url);
-    } catch (err) {
-      setDownloadError((err as Error)?.message || "Download failed. Please try again.");
+    } catch (err: unknown) {
+      reportDownloadError((err as Error)?.message || "Download failed. Please try again.");
     }
   }
 

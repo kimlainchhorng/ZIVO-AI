@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import SidebarLayout from '@/components/layout/SidebarLayout';
+import PlanChecklist from '@/components/builder/PlanChecklist';
 import {
   ArrowLeft,
   Play,
@@ -21,10 +22,20 @@ import {
   ChevronUp,
   AlertTriangle,
   ShieldCheck,
+  Globe,
+  Users,
+  Server,
+  Copy,
+  CheckCheck,
+  Trash2,
+  UserPlus,
+  Shield,
   Rocket,
   Download,
   Github,
-  Server,
+  Container,
+  ExternalLink,
+  ClipboardList,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -91,23 +102,63 @@ interface DeploySettings {
 // ─── Quality Pass types ────────────────────────────────────────────────────────
 
 interface CheckResult {
-  check: 'build' | 'lint' | 'typecheck';
+  check: 'install' | 'build' | 'lint' | 'typecheck';
   passed: boolean;
   output: string;
   durationMs: number;
 }
 
-type QualityRunStatus = 'queued' | 'running' | 'passed' | 'failed';
+type QualityRunStatus = 'queued' | 'running' | 'passed' | 'failed' | 'stopped';
 
 interface QualityRun {
   id: string;
+  project_id: string;
   status: QualityRunStatus;
-  logs: string;
-  checks: CheckResult[] | null;
-  fix_attempts: number;
-  max_retries: number;
+  type: string;
+  attempt: number;
+  max_attempts: number;
+  result_json: { passed: boolean; checks: CheckResult[] } | null;
+  logs_storage_path: string | null;
+  /** Signed URL returned by the status API for log download */
+  logsUrl: string | null;
   started_at: string | null;
   finished_at: string | null;
+  created_at: string;
+}
+
+interface ProjectDomain {
+  id: string;
+  project_id: string;
+  domain: string;
+  status: 'pending_dns' | 'pending_tls' | 'active' | 'error';
+  verification_token: string;
+  cname_target: string;
+  error_message: string | null;
+  created_at: string;
+}
+
+interface ProjectDeployment {
+  id: string;
+  project_id: string;
+  provider: string;
+  deploy_url: string | null;
+  status: string;
+  commit_sha: string | null;
+  rollback_of: string | null;
+  error_message: string | null;
+  deployed_at: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+interface ProjectMember {
+  id: string;
+  project_id: string;
+  user_id: string | null;
+  role: 'owner' | 'editor' | 'viewer';
+  invited_by: string;
+  invited_email: string;
+  status: 'pending' | 'active' | 'declined';
   created_at: string;
 }
 
@@ -187,6 +238,27 @@ function CheckBadge({ result }: { result: CheckResult }) {
 
 function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean }) {
   const [showLogs, setShowLogs] = useState(false);
+  const [fetchedLogs, setFetchedLogs] = useState<string | null>(null);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const checks = run.result_json?.checks ?? [];
+  const attemptLabel = run.max_attempts > 1 ? ` (attempt ${run.attempt}/${run.max_attempts})` : '';
+
+  async function handleToggleLogs() {
+    if (showLogs) { setShowLogs(false); return; }
+    setShowLogs(true);
+    if (!fetchedLogs && run.logsUrl) {
+      setLoadingLogs(true);
+      try {
+        const res = await fetch(run.logsUrl);
+        setFetchedLogs(res.ok ? await res.text() : 'Failed to load logs.');
+      } catch {
+        setFetchedLogs('Failed to load logs.');
+      } finally {
+        setLoadingLogs(false);
+      }
+    }
+  }
+
   return (
     <div
       style={{
@@ -206,27 +278,24 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
           ? <CheckCircle2 size={16} color="#10b981" />
           : <XCircle size={16} color="#ef4444" />}
         <span style={{ fontWeight: 600, color: qualityStatusColor(run.status) }}>
-          {qualityStatusLabel(run.status)}
+          {qualityStatusLabel(run.status)}{attemptLabel}
         </span>
-        {run.fix_attempts > 0 && (
-          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>(auto-fixed {run.fix_attempts}×)</span>
-        )}
         <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#475569' }}>
           {new Date(run.created_at).toLocaleString()}
         </span>
       </div>
 
-      {run.checks && run.checks.length > 0 && (
+      {checks.length > 0 && (
         <div style={{ marginBottom: '0.5rem' }}>
-          {run.checks.map((c) => (
+          {checks.map((c) => (
             <CheckBadge key={c.check} result={c} />
           ))}
         </div>
       )}
 
-      {run.logs && (
+      {(run.logsUrl || run.logs_storage_path) && (
         <button
-          onClick={() => setShowLogs((v) => !v)}
+          onClick={handleToggleLogs}
           style={{
             background: 'transparent', border: 'none', color: '#6366f1',
             cursor: 'pointer', fontSize: '0.8rem', padding: '0.25rem 0',
@@ -237,7 +306,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
           {showLogs ? 'Hide logs' : 'Show full logs'}
         </button>
       )}
-      {showLogs && run.logs && (
+      {showLogs && (
         <pre
           style={{
             marginTop: '0.5rem', fontSize: '0.72rem', color: '#64748b',
@@ -246,7 +315,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
             maxHeight: '400px', overflow: 'auto',
           }}
         >
-          {run.logs}
+          {loadingLogs ? 'Loading logs…' : (fetchedLogs ?? 'No logs available.')}
         </pre>
       )}
     </div>
@@ -255,7 +324,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'publish';
+type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'domains' | 'deployments' | 'team' | 'publish';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -286,28 +355,41 @@ export default function ProjectWorkspacePage() {
   const [qualityStarting, setQualityStarting] = useState(false);
   const qualityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Publish / Deploy state
-  const [deploySettings, setDeploySettings] = useState<DeploySettings | null>(null);
-  // GitHub push form
+  // Domains state
+  const [domains, setDomains] = useState<ProjectDomain[]>([]);
+  const [newDomain, setNewDomain] = useState('');
+  const [addingDomain, setAddingDomain] = useState(false);
+  const [domainError, setDomainError] = useState<string | null>(null);
+  const [verifyingDomainId, setVerifyingDomainId] = useState<string | null>(null);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
+
+  // Deployments (deploy history) state
+  const [deployments, setDeployments] = useState<ProjectDeployment[]>([]);
+  const [rollingBackId, setRollingBackId] = useState<string | null>(null);
+  const [rollbackMessage, setRollbackMessage] = useState<string | null>(null);
+
+  // Team members state
+  const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<'editor' | 'viewer'>('viewer');
+  const [inviting, setInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  // Publish state
+  const [ghRepoName, setGhRepoName] = useState('');
   const [ghPat, setGhPat] = useState('');
-  const [ghRepo, setGhRepo] = useState('');
-  const [ghBranch, setGhBranch] = useState('main');
-  const [ghCreateRepo, setGhCreateRepo] = useState(false);
-  const [ghPrivate, setGhPrivate] = useState(false);
-  const [ghPushing, setGhPushing] = useState(false);
-  const [ghError, setGhError] = useState<string | null>(null);
-  const [ghSuccess, setGhSuccess] = useState<{ repoUrl: string; branch: string; commitSha: string } | null>(null);
-  // Docker deploy form
+  const [ghPublishing, setGhPublishing] = useState(false);
+  const [ghResult, setGhResult] = useState<{ repoUrl?: string; commitSha?: string; error?: string } | null>(null);
   const [dockerEndpoint, setDockerEndpoint] = useState('');
   const [dockerToken, setDockerToken] = useState('');
   const [dockerDeploying, setDockerDeploying] = useState(false);
-  const [dockerError, setDockerError] = useState<string | null>(null);
-  const [dockerSuccess, setDockerSuccess] = useState<{ status: string; log: string; deployedAt: string } | null>(null);
+  const [dockerResult, setDockerResult] = useState<{ success?: boolean; status?: string; message?: string; error?: string } | null>(null);
+  const [zipDownloading, setZipDownloading] = useState(false);
 
   // UI
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
   const streamEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [planDrawerOpen, setPlanDrawerOpen] = useState(false);
 
   // Restore state
   const [restoringBuildId, setRestoringBuildId] = useState<string | null>(null);
@@ -365,26 +447,40 @@ export default function ProjectWorkspacePage() {
     setQualityRuns(data.runs ?? []);
   }, [token, projectId]);
 
-  const fetchDeploySettings = useCallback(async () => {
+  const fetchDomains = useCallback(async () => {
     if (!token || !projectId) return;
-    const res = await fetch(`/api/projects/${projectId}/deploy-settings`, {
+    const res = await fetch(`/api/projects/${projectId}/domains`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return;
     const data = await res.json();
-    const s = data.settings as DeploySettings | null;
-    if (s) {
-      setDeploySettings(s);
-      setGhBranch(s.deploy_branch ?? 'main');
-      if (s.deploy_repo_url) setGhRepo(s.deploy_repo_url.replace('https://github.com/', ''));
-      if (s.docker_deploy_endpoint) setDockerEndpoint(s.docker_deploy_endpoint);
-    }
+    setDomains(data.domains ?? []);
+  }, [token, projectId]);
+
+  const fetchDeployments = useCallback(async () => {
+    if (!token || !projectId) return;
+    const res = await fetch(`/api/projects/${projectId}/deployments`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setDeployments(data.deployments ?? []);
+  }, [token, projectId]);
+
+  const fetchMembers = useCallback(async () => {
+    if (!token || !projectId) return;
+    const res = await fetch(`/api/projects/${projectId}/members`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setMembers(data.members ?? []);
   }, [token, projectId]);
 
   useEffect(() => {
     if (!token) { setLoading(false); return; }
     setLoading(true);
-    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns(), fetchDeploySettings()])
+    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns(), fetchDomains(), fetchDeployments(), fetchMembers()])
       .catch((err: unknown) => setError((err as Error).message ?? 'Failed to load workspace'))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -431,25 +527,30 @@ export default function ProjectWorkspacePage() {
     };
   }, [activeQualityRunId, pollQualityRun]);
 
-  async function handleStartQuality(maxRetries: number) {
+  async function handleStartQuality(previousRunId?: string) {
     if (!token || qualityStarting) return;
     setQualityStarting(true);
     try {
+      const body: Record<string, string> = {};
+      if (previousRunId) body.previousRunId = previousRunId;
       const res = await fetch(`/api/projects/${projectId}/quality/start`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxRetries }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.ok && data.runId) {
         setActiveQualityRunId(data.runId as string);
         setQualityRuns((prev) => [{
           id: data.runId as string,
+          project_id: projectId,
           status: 'queued',
-          logs: '',
-          checks: null,
-          fix_attempts: 0,
-          max_retries: maxRetries,
+          type: 'quality',
+          attempt: 1,
+          max_attempts: 4,
+          result_json: null,
+          logs_storage_path: null,
+          logsUrl: null,
           started_at: null,
           finished_at: null,
           created_at: new Date().toISOString(),
@@ -592,103 +693,183 @@ export default function ProjectWorkspacePage() {
     setTimeout(() => setRestoreMessage(null), 4000);
   }
 
-  function handleExportZip() {
-    if (!token || !projectId) return;
-    const url = `/api/projects/${projectId}/export.zip`;
-    const a = document.createElement('a');
-    a.href = url;
-    // Pass token via a temporary fetch to get the blob
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((res) => {
-        if (!res.ok) throw new Error('Export failed');
-        return res.blob();
-      })
-      .then((blob) => {
-        const blobUrl = URL.createObjectURL(blob);
-        a.href = blobUrl;
-        a.download = `${(project?.title ?? 'project').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.zip`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
-      })
-      .catch((err: unknown) => alert((err as Error).message ?? 'Export failed'));
-  }
+  // ─── Domain handlers ───────────────────────────────────────────────────────
 
-  async function handleGithubPush() {
-    if (!token || !projectId || ghPushing) return;
-    if (!ghPat.trim()) { setGhError('Personal Access Token is required.'); return; }
-    if (!ghCreateRepo && !ghRepo.trim()) { setGhError('Repository name (owner/repo) is required.'); return; }
-    setGhPushing(true);
-    setGhError(null);
-    setGhSuccess(null);
+  async function handleAddDomain() {
+    if (!token || !newDomain.trim() || addingDomain) return;
+    setAddingDomain(true);
+    setDomainError(null);
     try {
-      const body: Record<string, unknown> = {
-        pat: ghPat.trim(),
-        branch: ghBranch.trim() || 'main',
-        createRepo: ghCreateRepo,
-        private: ghPrivate,
-      };
-      if (!ghCreateRepo) body.repoFullName = ghRepo.trim();
-      const res = await fetch(`/api/projects/${projectId}/publish/github`, {
+      const res = await fetch(`/api/projects/${projectId}/domains`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ domain: newDomain.trim().toLowerCase() }),
       });
       const data = await res.json();
-      if (!res.ok) { setGhError(data.error ?? 'GitHub push failed'); return; }
-      const result = data as { repoUrl: string; branch: string; commitSha: string };
-      setGhSuccess(result);
-      setDeploySettings((prev) => ({
-        ...(prev ?? { deploy_branch: 'main', docker_deploy_endpoint: null, last_deployed_commit_sha: null, last_deployed_at: null, last_deploy_status: null }),
-        deploy_repo_url: result.repoUrl,
-        deploy_branch: result.branch,
-        last_pushed_commit_sha: result.commitSha,
-        last_pushed_at: new Date().toISOString(),
-      } as DeploySettings));
-      if (!ghCreateRepo) {
-        // Save endpoint/repo settings
-        await fetch(`/api/projects/${projectId}/deploy-settings`, {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deploy_repo_url: result.repoUrl, deploy_branch: result.branch }),
-        });
+      if (res.ok) {
+        setNewDomain('');
+        await fetchDomains();
+      } else {
+        setDomainError(data.error ?? 'Failed to add domain');
       }
+    } catch {
+      setDomainError('Network error');
+    }
+    setAddingDomain(false);
+  }
+
+  async function handleDeleteDomain(domainId: string) {
+    if (!token) return;
+    const res = await fetch(`/api/projects/${projectId}/domains/${domainId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) await fetchDomains();
+  }
+
+  async function handleVerifyDomain(domainId: string) {
+    if (!token || verifyingDomainId) return;
+    setVerifyingDomainId(domainId);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/domains/${domainId}/verify`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) await fetchDomains();
     } finally {
-      setGhPushing(false);
+      setVerifyingDomainId(null);
+    }
+  }
+
+  function handleCopyToken(token: string, domainId: string) {
+    navigator.clipboard.writeText(token).then(() => {
+      setCopiedToken(domainId);
+      setTimeout(() => setCopiedToken(null), 2000);
+    }).catch(() => {});
+  }
+
+  // ─── Deployment rollback handlers ──────────────────────────────────────────
+
+  async function handleRollback(deploymentId: string) {
+    if (!token || rollingBackId) return;
+    setRollingBackId(deploymentId);
+    setRollbackMessage(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/deployments/${deploymentId}/rollback`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRollbackMessage('Rollback initiated ✓');
+        await fetchDeployments();
+      } else {
+        setRollbackMessage(data.error ?? 'Rollback failed');
+      }
+    } catch {
+      setRollbackMessage('Network error');
+    }
+    setRollingBackId(null);
+    setTimeout(() => setRollbackMessage(null), 4000);
+  }
+
+  // ─── Member handlers ───────────────────────────────────────────────────────
+
+  async function handleInviteMember() {
+    if (!token || !inviteEmail.trim() || inviting) return;
+    setInviting(true);
+    setInviteError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setInviteEmail('');
+        await fetchMembers();
+      } else {
+        setInviteError(data.error ?? 'Failed to invite member');
+      }
+    } catch {
+      setInviteError('Network error');
+    }
+    setInviting(false);
+  }
+
+  async function handleRemoveMember(memberId: string) {
+    if (!token) return;
+    const res = await fetch(`/api/projects/${projectId}/members/${memberId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) await fetchMembers();
+  }
+
+  // ─── Publish handlers ──────────────────────────────────────────────────────
+
+  async function handleExportZip() {
+    if (!token || !projectId) return;
+    setZipDownloading(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/export.zip`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ error: 'Download failed' }))).error);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${project?.title ?? 'project'}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setZipDownloading(false);
+    }
+  }
+
+  async function handleGithubPublish() {
+    if (!token || !projectId) return;
+    if (!ghRepoName.trim()) { alert('Enter a repository name'); return; }
+    if (!ghPat.trim()) { alert('Enter your GitHub PAT'); return; }
+    setGhPublishing(true);
+    setGhResult(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/publish/github`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ repoName: ghRepoName.trim(), githubToken: ghPat.trim() }),
+      });
+      const data = await res.json() as { repoUrl?: string; commitSha?: string; error?: string };
+      setGhResult(data);
+    } catch (err) {
+      setGhResult({ error: err instanceof Error ? err.message : 'Unknown error' });
+    } finally {
+      setGhPublishing(false);
     }
   }
 
   async function handleDockerDeploy() {
-    if (!token || !projectId || dockerDeploying) return;
-    if (!dockerToken.trim()) { setDockerError('Docker deploy token is required.'); return; }
+    if (!token || !projectId) return;
+    if (!dockerEndpoint.trim()) { alert('Enter a Docker deploy endpoint URL'); return; }
+    if (!dockerToken.trim()) { alert('Enter the Docker deploy token'); return; }
     setDockerDeploying(true);
-    setDockerError(null);
-    setDockerSuccess(null);
+    setDockerResult(null);
     try {
-      const body: Record<string, unknown> = { dockerDeployToken: dockerToken.trim() };
-      if (dockerEndpoint.trim()) body.endpoint = dockerEndpoint.trim();
       const res = await fetch(`/api/projects/${projectId}/publish/docker`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ endpoint: dockerEndpoint.trim(), token: dockerToken.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) { setDockerError(data.error ?? 'Docker deploy failed'); return; }
-      const result = data as { status: string; log: string; deployedAt: string };
-      setDockerSuccess(result);
-      setDeploySettings((prev) => prev ? {
-        ...prev,
-        docker_deploy_endpoint: dockerEndpoint.trim() || prev.docker_deploy_endpoint,
-        last_deployed_commit_sha: prev.last_pushed_commit_sha,
-        last_deployed_at: result.deployedAt,
-        last_deploy_status: result.status,
-      } : null);
-      if (dockerEndpoint.trim()) {
-        await fetch(`/api/projects/${projectId}/deploy-settings`, {
-          method: 'PATCH',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ docker_deploy_endpoint: dockerEndpoint.trim() }),
-        });
-      }
+      const data = await res.json() as { success?: boolean; status?: string; message?: string; error?: string };
+      setDockerResult(data);
+    } catch (err) {
+      setDockerResult({ error: err instanceof Error ? err.message : 'Unknown error' });
     } finally {
       setDockerDeploying(false);
     }
@@ -745,10 +926,13 @@ export default function ProjectWorkspacePage() {
   const isQualityRunning = activeQualityRun?.status === 'running' || activeQualityRun?.status === 'queued';
   const latestQualityRun = qualityRuns[0];
   const canAutoFix = latestQualityRun?.status === 'failed' && !isQualityRunning;
+  const activeDomain = domains.find((d) => d.status === 'active');
 
   return (
     <SidebarLayout>
-      <div style={s.page}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1.5rem', minHeight: '100vh', background: '#0a0a0f' }}>
+        {/* ── Main content column ── */}
+        <div style={{ ...s.page, flex: 1, minWidth: 0, marginBottom: 0 }}>
         {/* ── Header ── */}
         <div style={s.header}>
           <Link href="/projects" style={s.backBtn}>
@@ -761,8 +945,34 @@ export default function ProjectWorkspacePage() {
               <span style={{ ...s.badge, background: project?.visibility === 'public' ? 'rgba(16,185,129,0.15)' : 'rgba(99,102,241,0.15)', color: project?.visibility === 'public' ? '#10b981' : '#818cf8' }}>
                 {project?.visibility}
               </span>
+              {activeDomain && (
+                <a
+                  href={`https://${activeDomain.domain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ ...s.badge, background: 'rgba(16,185,129,0.15)', color: '#10b981', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                >
+                  <Globe size={11} /> {activeDomain.domain}
+                </a>
+              )}
             </div>
           </div>
+          {/* Plan & Checklist toggle button */}
+          <button
+            onClick={() => setPlanDrawerOpen((v) => !v)}
+            title="Plan & Checklist"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.45rem 0.875rem', borderRadius: '8px',
+              background: planDrawerOpen ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.08)',
+              color: planDrawerOpen ? '#818cf8' : '#64748b',
+              border: `1px solid ${planDrawerOpen ? 'rgba(99,102,241,0.4)' : 'rgba(99,102,241,0.15)'}`,
+              cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, whiteSpace: 'nowrap',
+            }}
+          >
+            <ClipboardList size={15} />
+            Plan &amp; Checklist
+          </button>
         </div>
 
         {/* ── Continue Build Panel ── */}
@@ -875,7 +1085,7 @@ export default function ProjectWorkspacePage() {
 
         {/* ── Tabs ── */}
         <div style={s.tabs}>
-          {(['conversation', 'files', 'builds', 'quality', 'publish'] as Tab[]).map((tab) => (
+          {(['conversation', 'files', 'builds', 'quality', 'domains', 'deployments', 'team', 'publish'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -885,6 +1095,9 @@ export default function ProjectWorkspacePage() {
               {tab === 'files' && <FileCode2 size={14} />}
               {tab === 'builds' && <History size={14} />}
               {tab === 'quality' && <ShieldCheck size={14} />}
+              {tab === 'domains' && <Globe size={14} />}
+              {tab === 'deployments' && <Server size={14} />}
+              {tab === 'team' && <Users size={14} />}
               {tab === 'publish' && <Rocket size={14} />}
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'files' && files.length > 0 && (
@@ -902,19 +1115,16 @@ export default function ProjectWorkspacePage() {
                   {latestQualityRun.status}
                 </span>
               )}
-              {tab === 'publish' && deploySettings?.last_deploy_status && (
-                <span style={{
-                  ...s.badge,
-                  background: deploySettings.last_deploy_status === 'success' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
-                  color: deploySettings.last_deploy_status === 'success' ? '#10b981' : '#ef4444',
-                }}>
-                  {deploySettings.last_deploy_status}
-                </span>
+              {tab === 'domains' && domains.length > 0 && (
+                <span style={s.badge}>{domains.length}</span>
+              )}
+              {tab === 'team' && members.length > 0 && (
+                <span style={s.badge}>{members.length}</span>
               )}
             </button>
           ))}
           <button
-            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); fetchDeploySettings(); }}
+            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); fetchDomains(); fetchDeployments(); fetchMembers(); }}
             title="Refresh"
             style={{ ...s.outlineBtn, marginLeft: 'auto' }}
           >
@@ -1066,13 +1276,13 @@ export default function ProjectWorkspacePage() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
                 <div>
                   <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>
-                    build · lint · typecheck — strict gate, up to 3 auto-fix retries
+                    build · lint · typecheck — runs in remote runner, app applies AI fixes
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.75rem' }}>
                   {canAutoFix && (
                     <button
-                      onClick={() => handleStartQuality(3)}
+                      onClick={() => handleStartQuality(latestQualityRun?.id)}
                       disabled={qualityStarting}
                       style={{
                         display: 'flex', alignItems: 'center', gap: '0.4rem',
@@ -1087,7 +1297,7 @@ export default function ProjectWorkspacePage() {
                     </button>
                   )}
                   <button
-                    onClick={() => handleStartQuality(0)}
+                    onClick={() => handleStartQuality()}
                     disabled={qualityStarting || isQualityRunning}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '0.4rem',
@@ -1116,8 +1326,8 @@ export default function ProjectWorkspacePage() {
               >
                 <AlertTriangle size={14} style={{ marginTop: '1px', flexShrink: 0 }} />
                 <span>
-                  <strong>Security note:</strong> Checks run inside the app container by executing
-                  project files as child processes. Only use with trusted code.
+                  <strong>Security note:</strong> Checks run in an isolated remote runner container,
+                  not in the app. Logs are stored in Supabase Storage.
                 </span>
               </div>
 
@@ -1134,245 +1344,535 @@ export default function ProjectWorkspacePage() {
               )}
             </div>
           )}
-          {/* Publish */}
+
+          {/* ── Publish ── */}
           {activeTab === 'publish' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-              {/* ── Export ZIP ── */}
-              <section style={{ background: 'rgba(15,15,26,0.6)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '12px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <Download size={16} color="#818cf8" />
-                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#e2e8f0' }}>Export ZIP</h3>
+              {/* Export ZIP */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Download size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Export ZIP</p>
                 </div>
-                <p style={{ margin: '0 0 0.875rem', fontSize: '0.82rem', color: '#64748b' }}>
-                  Download all current project files as a ZIP archive.
-                </p>
+                <p style={s.panelDesc}>Download all project files as a ZIP archive.</p>
                 <button
                   onClick={handleExportZip}
-                  disabled={files.length === 0}
+                  disabled={zipDownloading}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: '0.4rem',
-                    padding: '0.5rem 1.1rem', borderRadius: '8px',
-                    background: files.length === 0 ? 'rgba(51,65,85,0.4)' : 'rgba(99,102,241,0.15)',
-                    color: files.length === 0 ? '#475569' : '#818cf8',
-                    border: '1px solid rgba(99,102,241,0.25)',
-                    cursor: files.length === 0 ? 'not-allowed' : 'pointer',
-                    fontSize: '0.85rem', fontWeight: 600,
+                    ...s.primaryBtn,
+                    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                    color: '#fff',
+                    cursor: zipDownloading ? 'not-allowed' : 'pointer',
+                    opacity: zipDownloading ? 0.6 : 1,
+                    alignSelf: 'flex-start',
                   }}
                 >
-                  <Download size={14} /> Download ZIP
+                  {zipDownloading
+                    ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Preparing…</>
+                    : <><Download size={14} /> Download ZIP</>}
                 </button>
-                {files.length === 0 && (
-                  <p style={{ margin: '0.5rem 0 0', fontSize: '0.78rem', color: '#ef4444' }}>No files to export. Run Continue Build first.</p>
-                )}
-              </section>
+              </div>
 
-              {/* ── Push to GitHub ── */}
-              <section style={{ background: 'rgba(15,15,26,0.6)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '12px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <Github size={16} color="#818cf8" />
-                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#e2e8f0' }}>Push to GitHub</h3>
+              {/* Push to GitHub */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Github size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Push to GitHub</p>
                 </div>
-                <p style={{ margin: '0 0 0.875rem', fontSize: '0.82rem', color: '#64748b' }}>
-                  Commit all project files to a GitHub repository using a Personal Access Token (PAT).
+                <p style={s.panelDesc}>
+                  Push project files to a GitHub repository using a Personal Access Token.
+                  The repo will be created if it does not exist.
                 </p>
-
-                {/* Last push status */}
-                {deploySettings?.last_pushed_commit_sha && (
-                  <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.875rem', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem', fontSize: '0.78rem', color: '#10b981' }}>
-                    <CheckCircle2 size={13} />
-                    <span>Last push: <code style={{ fontFamily: 'monospace' }}>{deploySettings.last_pushed_commit_sha.slice(0, 8)}</code>
-                      {deploySettings.deploy_repo_url && <> → <a href={deploySettings.deploy_repo_url} target="_blank" rel="noreferrer" style={{ color: '#818cf8' }}>{deploySettings.deploy_repo_url.replace('https://github.com/', '')}</a></>}
-                      {deploySettings.last_pushed_at && <> · {new Date(deploySettings.last_pushed_at).toLocaleString()}</>}
-                    </span>
-                  </div>
-                )}
-
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                  <label style={s.formLabel}>
-                    GitHub PAT <span style={{ color: '#ef4444' }}>*</span>
-                    <input
-                      type="password"
-                      value={ghPat}
-                      onChange={(e) => setGhPat(e.target.value)}
-                      placeholder="ghp_…"
-                      style={s.formInput}
-                      autoComplete="off"
-                    />
-                  </label>
-
-                  <div style={{ display: 'flex', gap: '0.625rem' }}>
-                    <label style={{ ...s.formLabel, flex: 1 }}>
-                      Repository <span style={{ color: '#475569', fontSize: '0.72rem' }}>{ghCreateRepo ? '(auto-created)' : 'owner/repo'}</span>
-                      <input
-                        type="text"
-                        value={ghRepo}
-                        onChange={(e) => setGhRepo(e.target.value)}
-                        placeholder="owner/my-repo"
-                        disabled={ghCreateRepo}
-                        style={{ ...s.formInput, opacity: ghCreateRepo ? 0.5 : 1 }}
-                      />
-                    </label>
-                    <label style={{ ...s.formLabel, width: '120px' }}>
-                      Branch
-                      <input
-                        type="text"
-                        value={ghBranch}
-                        onChange={(e) => setGhBranch(e.target.value)}
-                        placeholder="main"
-                        style={s.formInput}
-                      />
-                    </label>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', fontSize: '0.82rem', color: '#94a3b8' }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={ghCreateRepo} onChange={(e) => setGhCreateRepo(e.target.checked)} />
-                      Auto-create repo
-                    </label>
-                    {ghCreateRepo && (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
-                        <input type="checkbox" checked={ghPrivate} onChange={(e) => setGhPrivate(e.target.checked)} />
-                        Private repo
-                      </label>
-                    )}
-                  </div>
-
-                  {ghError && (
-                    <div style={{ ...s.errorBox, marginTop: 0 }}>
-                      <AlertCircle size={14} /> {ghError}
-                    </div>
-                  )}
-
-                  {ghSuccess && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '0.625rem 0.875rem', fontSize: '0.8rem', color: '#10b981' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <CheckCircle2 size={14} /> Pushed successfully!
-                      </div>
-                      <div>Commit: <code style={{ fontFamily: 'monospace' }}>{ghSuccess.commitSha.slice(0, 12)}</code></div>
-                      <div>Repo: <a href={ghSuccess.repoUrl} target="_blank" rel="noreferrer" style={{ color: '#818cf8' }}>{ghSuccess.repoUrl}</a></div>
-                    </div>
-                  )}
-
+                  <input
+                    type="text"
+                    placeholder="Repository name (e.g. my-awesome-app)"
+                    value={ghRepoName}
+                    onChange={(e) => setGhRepoName(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <input
+                    type="password"
+                    placeholder="GitHub PAT (repo scope required)"
+                    value={ghPat}
+                    onChange={(e) => setGhPat(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
                   <button
-                    onClick={handleGithubPush}
-                    disabled={ghPushing || files.length === 0}
+                    onClick={handleGithubPublish}
+                    disabled={ghPublishing}
+                    style={{
+                      ...s.primaryBtn,
+                      background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                      color: '#fff',
+                      cursor: ghPublishing ? 'not-allowed' : 'pointer',
+                      opacity: ghPublishing ? 0.6 : 1,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    {ghPublishing
+                      ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Pushing…</>
+                      : <><Github size={14} /> Push to GitHub</>}
+                  </button>
+                  {ghResult && (
+                    ghResult.error
+                      ? <div style={s.errorBox}><XCircle size={14} /> {ghResult.error}</div>
+                      : <div style={{
+                          display: 'flex', alignItems: 'center', gap: '0.5rem',
+                          padding: '0.625rem 0.75rem', borderRadius: '8px',
+                          background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)',
+                          color: '#10b981', fontSize: '0.85rem',
+                        }}>
+                          <CheckCircle2 size={14} />
+                          <span>Published! </span>
+                          {ghResult.repoUrl && (
+                            <a href={ghResult.repoUrl} target="_blank" rel="noopener noreferrer"
+                              style={{ color: '#34d399', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              {ghResult.repoUrl} <ExternalLink size={12} />
+                            </a>
+                          )}
+                        </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Deploy to Docker */}
+              <div style={s.buildPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                  <Container size={16} style={{ color: '#818cf8' }} />
+                  <p style={s.panelTitle}>Deploy to Docker Server</p>
+                </div>
+                <p style={s.panelDesc}>
+                  Trigger a deploy on your self-hosted Docker server.
+                  See <a href="https://github.com/kimlainchhorng/ZIVO-AI/blob/main/docs/docker-deploy-agent.md"
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ color: '#818cf8' }}>Docker Deploy Agent docs</a> to set up your server.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
+                  <input
+                    type="url"
+                    placeholder="Docker deploy endpoint URL (e.g. https://my-server:4242/deploy)"
+                    value={dockerEndpoint}
+                    onChange={(e) => setDockerEndpoint(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <input
+                    type="password"
+                    placeholder="Deploy token (shared secret with your Docker server)"
+                    value={dockerToken}
+                    onChange={(e) => setDockerToken(e.target.value)}
+                    style={{ ...s.textarea, minHeight: 'unset', padding: '0.5rem 0.75rem', resize: 'none' }}
+                  />
+                  <button
+                    onClick={handleDockerDeploy}
+                    disabled={dockerDeploying}
+                    style={{
+                      ...s.primaryBtn,
+                      background: 'linear-gradient(135deg,#0ea5e9,#0284c7)',
+                      color: '#fff',
+                      cursor: dockerDeploying ? 'not-allowed' : 'pointer',
+                      opacity: dockerDeploying ? 0.6 : 1,
+                      alignSelf: 'flex-start',
+                    }}
+                  >
+                    {dockerDeploying
+                      ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Deploying…</>
+                      : <><Rocket size={14} /> Deploy</>}
+                  </button>
+                  {dockerResult && (
+                    dockerResult.error
+                      ? <div style={s.errorBox}><XCircle size={14} /> {dockerResult.error}</div>
+                      : <div style={{
+                          padding: '0.625rem 0.75rem', borderRadius: '8px',
+                          background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)',
+                          color: '#10b981', fontSize: '0.85rem',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <CheckCircle2 size={14} />
+                            <strong>Deploy triggered</strong>
+                            {dockerResult.status && <span style={{ color: '#64748b' }}>· {dockerResult.status}</span>}
+                          </div>
+                          {dockerResult.message && (
+                            <p style={{ margin: '0.25rem 0 0', color: '#94a3b8', fontSize: '0.8rem' }}>{dockerResult.message}</p>
+                          )}
+                        </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          {/* ── Domains ── */}
+          {activeTab === 'domains' && (
+            <div>
+              <div style={{ marginBottom: '1.25rem' }}>
+                <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 1rem' }}>
+                  Add custom domains for your Docker deployment. Point a CNAME at <code style={{ color: '#818cf8' }}>proxy.zivo-ai.app</code> and verify ownership via DNS TXT record.
+                </p>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <input
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    placeholder="e.g. app.example.com"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleAddDomain(); }}
+                    style={{
+                      flex: 1, minWidth: '200px',
+                      padding: '0.5rem 0.75rem', borderRadius: '8px',
+                      background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(51,65,85,0.5)',
+                      color: '#f1f5f9', fontSize: '0.875rem', outline: 'none',
+                    }}
+                  />
+                  <button
+                    onClick={handleAddDomain}
+                    disabled={addingDomain || !newDomain.trim()}
                     style={{
                       display: 'flex', alignItems: 'center', gap: '0.4rem',
-                      padding: '0.55rem 1.25rem', borderRadius: '8px',
+                      padding: '0.5rem 1rem', borderRadius: '8px',
                       background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
                       color: '#fff', border: 'none', cursor: 'pointer',
                       fontWeight: 600, fontSize: '0.85rem',
-                      opacity: (ghPushing || files.length === 0) ? 0.6 : 1,
-                      alignSelf: 'flex-start',
+                      opacity: addingDomain || !newDomain.trim() ? 0.6 : 1,
                     }}
                   >
-                    {ghPushing ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Pushing…</> : <><Github size={14} /> Push to GitHub</>}
+                    {addingDomain ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Globe size={14} />}
+                    Add Domain
                   </button>
-                  {files.length === 0 && <p style={{ margin: 0, fontSize: '0.78rem', color: '#ef4444' }}>No files to push. Run Continue Build first.</p>}
                 </div>
-              </section>
-
-              {/* ── Deploy to Docker ── */}
-              <section style={{ background: 'rgba(15,15,26,0.6)', border: '1px solid rgba(99,102,241,0.12)', borderRadius: '12px', padding: '1.25rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <Server size={16} color="#818cf8" />
-                  <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#e2e8f0' }}>Deploy to Docker</h3>
-                </div>
-                <p style={{ margin: '0 0 0.875rem', fontSize: '0.82rem', color: '#64748b' }}>
-                  Trigger your Docker server to pull the latest commit from GitHub and run{' '}
-                  <code style={{ fontFamily: 'monospace', color: '#94a3b8' }}>docker compose up -d</code>.
-                  Push to GitHub first to get a commit SHA.
-                </p>
-
-                {/* Last deploy status */}
-                {deploySettings?.last_deploy_status && (
-                  <div style={{
-                    display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.875rem',
-                    background: deploySettings.last_deploy_status === 'success' ? 'rgba(16,185,129,0.07)' : 'rgba(239,68,68,0.07)',
-                    border: `1px solid ${deploySettings.last_deploy_status === 'success' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
-                    borderRadius: '8px', padding: '0.5rem 0.75rem', fontSize: '0.78rem',
-                    color: deploySettings.last_deploy_status === 'success' ? '#10b981' : '#ef4444',
-                  }}>
-                    {deploySettings.last_deploy_status === 'success' ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-                    <span>Last deploy: <strong>{deploySettings.last_deploy_status}</strong>
-                      {deploySettings.last_deployed_commit_sha && <> · commit <code style={{ fontFamily: 'monospace' }}>{deploySettings.last_deployed_commit_sha.slice(0, 8)}</code></>}
-                      {deploySettings.last_deployed_at && <> · {new Date(deploySettings.last_deployed_at).toLocaleString()}</>}
-                    </span>
+                {domainError && (
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <AlertCircle size={13} /> {domainError}
                   </div>
                 )}
+              </div>
 
-                {!deploySettings?.last_pushed_commit_sha && (
-                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '8px', padding: '0.5rem 0.75rem', marginBottom: '0.875rem', fontSize: '0.78rem', color: '#f59e0b' }}>
-                    <AlertTriangle size={13} style={{ marginTop: '1px', flexShrink: 0 }} />
-                    No commit SHA found. Push to GitHub first.
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.625rem' }}>
-                  <label style={s.formLabel}>
-                    Webhook Endpoint <span style={{ color: '#ef4444' }}>*</span>
-                    <input
-                      type="url"
-                      value={dockerEndpoint}
-                      onChange={(e) => setDockerEndpoint(e.target.value)}
-                      placeholder="https://my-server.example.com/deploy"
-                      style={s.formInput}
-                    />
-                  </label>
-                  <label style={s.formLabel}>
-                    Deploy Token <span style={{ color: '#ef4444' }}>*</span>
-                    <span style={{ fontWeight: 400, color: '#475569', fontSize: '0.72rem', marginLeft: '0.25rem' }}>(not stored — paste each time)</span>
-                    <input
-                      type="password"
-                      value={dockerToken}
-                      onChange={(e) => setDockerToken(e.target.value)}
-                      placeholder="your-deploy-secret"
-                      style={s.formInput}
-                      autoComplete="off"
-                    />
-                  </label>
-
-                  {dockerError && (
-                    <div style={{ ...s.errorBox, marginTop: 0 }}>
-                      <AlertCircle size={14} /> {dockerError}
-                    </div>
-                  )}
-
-                  {dockerSuccess && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '8px', padding: '0.625rem 0.875rem', fontSize: '0.8rem', color: '#10b981' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                        <CheckCircle2 size={14} /> Deploy triggered — status: <strong>{dockerSuccess.status}</strong>
+              {domains.length === 0 ? (
+                <div style={s.emptyTab}>
+                  <Globe size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
+                  <p>No custom domains yet. Add one above.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {domains.map((d) => (
+                    <div
+                      key={d.id}
+                      style={{
+                        borderRadius: '10px',
+                        border: `1px solid ${d.status === 'active' ? 'rgba(16,185,129,0.3)' : d.status === 'error' ? 'rgba(239,68,68,0.25)' : 'rgba(99,102,241,0.15)'}`,
+                        background: d.status === 'active' ? 'rgba(16,185,129,0.05)' : 'rgba(15,15,26,0.6)',
+                        padding: '0.875rem 1rem',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <Globe size={15} style={{ color: d.status === 'active' ? '#10b981' : '#6366f1', flexShrink: 0 }} />
+                        <span style={{ fontWeight: 600, color: '#f1f5f9', flex: 1 }}>{d.domain}</span>
+                        <span style={{
+                          ...s.badge,
+                          background: d.status === 'active' ? 'rgba(16,185,129,0.2)' : d.status === 'error' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
+                          color: d.status === 'active' ? '#10b981' : d.status === 'error' ? '#ef4444' : '#f59e0b',
+                          fontSize: '0.72rem',
+                        }}>
+                          {d.status.replace('_', ' ')}
+                        </span>
+                        {d.status !== 'active' && (
+                          <button
+                            onClick={() => handleVerifyDomain(d.id)}
+                            disabled={verifyingDomainId === d.id}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '0.3rem',
+                              padding: '0.3rem 0.625rem', borderRadius: '6px',
+                              background: 'rgba(99,102,241,0.15)', color: '#818cf8',
+                              border: '1px solid rgba(99,102,241,0.25)', cursor: 'pointer',
+                              fontSize: '0.78rem', fontWeight: 600,
+                              opacity: verifyingDomainId === d.id ? 0.6 : 1,
+                            }}
+                          >
+                            {verifyingDomainId === d.id
+                              ? <Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} />
+                              : <Shield size={11} />}
+                            Verify
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDeleteDomain(d.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.3rem',
+                            padding: '0.3rem 0.625rem', borderRadius: '6px',
+                            background: 'rgba(239,68,68,0.08)', color: '#ef4444',
+                            border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer',
+                            fontSize: '0.78rem',
+                          }}
+                        >
+                          <Trash2 size={11} /> Remove
+                        </button>
                       </div>
-                      {dockerSuccess.log && (
-                        <pre style={{ margin: '0.35rem 0 0', fontSize: '0.72rem', whiteSpace: 'pre-wrap', color: '#94a3b8', background: '#07070f', borderRadius: '6px', padding: '0.5rem', maxHeight: '200px', overflow: 'auto' }}>
-                          {dockerSuccess.log}
-                        </pre>
+
+                      {d.status !== 'active' && (
+                        <div style={{ marginTop: '0.75rem', fontSize: '0.78rem', color: '#64748b' }}>
+                          <div style={{ marginBottom: '0.3rem' }}>
+                            Add a <strong style={{ color: '#94a3b8' }}>CNAME</strong> record: <code style={{ color: '#818cf8' }}>{d.domain}</code> → <code style={{ color: '#10b981' }}>{d.cname_target}</code>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span>TXT record: <code style={{ color: '#f59e0b', userSelect: 'all' }}>_zivo-verify.{d.domain}</code> = <code style={{ color: '#f59e0b' }}>{d.verification_token}</code></span>
+                            <button
+                              onClick={() => handleCopyToken(d.verification_token, d.id)}
+                              style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#6366f1', padding: '0 0.2rem', display: 'flex', alignItems: 'center' }}
+                              title="Copy token"
+                            >
+                              {copiedToken === d.id ? <CheckCheck size={12} color="#10b981" /> : <Copy size={12} />}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {d.error_message && (
+                        <div style={{ marginTop: '0.5rem', fontSize: '0.78rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <AlertCircle size={12} /> {d.error_message}
+                        </div>
                       )}
                     </div>
-                  )}
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-                  <button
-                    onClick={handleDockerDeploy}
-                    disabled={dockerDeploying || !deploySettings?.last_pushed_commit_sha}
+          {/* ── Deployments (deploy history + rollback) ── */}
+          {activeTab === 'deployments' && (
+            <div>
+              <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 1rem' }}>
+                Deployment history for this project. Click <strong style={{ color: '#818cf8' }}>Rollback</strong> to re-deploy a prior successful deployment.
+              </p>
+
+              {rollbackMessage && (
+                <div style={{
+                  padding: '0.625rem 0.875rem', borderRadius: '8px', marginBottom: '0.75rem',
+                  background: rollbackMessage.includes('✓') ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                  border: `1px solid ${rollbackMessage.includes('✓') ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+                  color: rollbackMessage.includes('✓') ? '#10b981' : '#ef4444',
+                  fontSize: '0.875rem',
+                }}>
+                  {rollbackMessage}
+                </div>
+              )}
+
+              {deployments.length === 0 ? (
+                <div style={s.emptyTab}>
+                  <Server size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
+                  <p>No deployments yet.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {deployments.map((dep) => (
+                    <div
+                      key={dep.id}
+                      style={{
+                        borderRadius: '10px',
+                        border: dep.rollback_of ? '1px solid rgba(245,158,11,0.2)' : '1px solid rgba(99,102,241,0.1)',
+                        background: 'rgba(15,15,26,0.6)',
+                        padding: '0.875rem 1rem',
+                        display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem',
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.25rem' }}>
+                          <span style={{
+                            ...s.badge,
+                            background: dep.status === 'success' ? 'rgba(16,185,129,0.2)' : dep.status === 'error' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
+                            color: dep.status === 'success' ? '#10b981' : dep.status === 'error' ? '#ef4444' : '#f59e0b',
+                          }}>
+                            {dep.status}
+                          </span>
+                          <span style={{ ...s.badge, background: 'rgba(99,102,241,0.15)', color: '#818cf8' }}>{dep.provider}</span>
+                          {dep.rollback_of && (
+                            <span style={{ ...s.badge, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontSize: '0.7rem' }}>
+                              <RotateCcw size={10} /> rollback
+                            </span>
+                          )}
+                          <span style={{ fontSize: '0.75rem', color: '#475569', marginLeft: 'auto' }}>
+                            {new Date(dep.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        {dep.commit_sha && (
+                          <div style={{ fontSize: '0.78rem', color: '#64748b', fontFamily: 'monospace' }}>
+                            SHA: {dep.commit_sha.slice(0, 12)}
+                          </div>
+                        )}
+                        {dep.deploy_url && (
+                          <a href={dep.deploy_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.78rem', color: '#6366f1', wordBreak: 'break-all' }}>
+                            {dep.deploy_url}
+                          </a>
+                        )}
+                        {dep.error_message && (
+                          <div style={{ marginTop: '0.25rem', fontSize: '0.78rem', color: '#ef4444' }}>{dep.error_message}</div>
+                        )}
+                      </div>
+                      {dep.status === 'success' && !dep.rollback_of && (
+                        <button
+                          onClick={() => handleRollback(dep.id)}
+                          disabled={rollingBackId === dep.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.3rem',
+                            padding: '0.4rem 0.75rem', borderRadius: '7px',
+                            background: 'rgba(99,102,241,0.12)', color: '#818cf8',
+                            border: '1px solid rgba(99,102,241,0.25)', cursor: 'pointer',
+                            fontWeight: 600, fontSize: '0.8rem', flexShrink: 0,
+                            opacity: rollingBackId === dep.id ? 0.6 : 1,
+                          }}
+                        >
+                          {rollingBackId === dep.id
+                            ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} />
+                            : <RotateCcw size={12} />}
+                          Rollback
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Team ── */}
+          {activeTab === 'team' && (
+            <div>
+              <div style={{ marginBottom: '1.25rem' }}>
+                <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 1rem' }}>
+                  Invite collaborators to this project. Editors can trigger builds; viewers have read-only access.
+                </p>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <input
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="colleague@example.com"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleInviteMember(); }}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: '0.4rem',
-                      padding: '0.55rem 1.25rem', borderRadius: '8px',
-                      background: 'linear-gradient(135deg,#0ea5e9,#0284c7)',
-                      color: '#fff', border: 'none', cursor: 'pointer',
-                      fontWeight: 600, fontSize: '0.85rem',
-                      opacity: (dockerDeploying || !deploySettings?.last_pushed_commit_sha) ? 0.6 : 1,
-                      alignSelf: 'flex-start',
+                      flex: 1, minWidth: '200px',
+                      padding: '0.5rem 0.75rem', borderRadius: '8px',
+                      background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(51,65,85,0.5)',
+                      color: '#f1f5f9', fontSize: '0.875rem', outline: 'none',
+                    }}
+                  />
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value as 'editor' | 'viewer')}
+                    style={{
+                      padding: '0.5rem 0.75rem', borderRadius: '8px',
+                      background: 'rgba(15,23,42,0.8)', border: '1px solid rgba(51,65,85,0.5)',
+                      color: '#f1f5f9', fontSize: '0.875rem', cursor: 'pointer',
                     }}
                   >
-                    {dockerDeploying ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Deploying…</> : <><Rocket size={14} /> Deploy</>}
+                    <option value="viewer">Viewer</option>
+                    <option value="editor">Editor</option>
+                  </select>
+                  <button
+                    onClick={handleInviteMember}
+                    disabled={inviting || !inviteEmail.trim()}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.4rem',
+                      padding: '0.5rem 1rem', borderRadius: '8px',
+                      background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                      color: '#fff', border: 'none', cursor: 'pointer',
+                      fontWeight: 600, fontSize: '0.85rem',
+                      opacity: inviting || !inviteEmail.trim() ? 0.6 : 1,
+                    }}
+                  >
+                    {inviting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <UserPlus size={14} />}
+                    Invite
                   </button>
                 </div>
-              </section>
+                {inviteError && (
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.82rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <AlertCircle size={13} /> {inviteError}
+                  </div>
+                )}
+              </div>
+
+              {members.length === 0 ? (
+                <div style={s.emptyTab}>
+                  <Users size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
+                  <p>No team members yet. Invite collaborators above.</p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {members.map((m) => (
+                    <div
+                      key={m.id}
+                      style={{
+                        borderRadius: '10px',
+                        border: '1px solid rgba(99,102,241,0.12)',
+                        background: 'rgba(15,15,26,0.6)',
+                        padding: '0.75rem 1rem',
+                        display: 'flex', alignItems: 'center', gap: '0.75rem',
+                      }}
+                    >
+                      <div style={{
+                        width: '32px', height: '32px', borderRadius: '50%',
+                        background: 'rgba(99,102,241,0.2)', display: 'flex',
+                        alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                      }}>
+                        <Users size={14} color="#818cf8" />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, color: '#f1f5f9', fontSize: '0.875rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {m.invited_email}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#475569' }}>
+                          Invited {new Date(m.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <span style={{
+                        ...s.badge,
+                        background: m.role === 'editor' ? 'rgba(99,102,241,0.2)' : 'rgba(51,65,85,0.4)',
+                        color: m.role === 'editor' ? '#818cf8' : '#94a3b8',
+                        fontSize: '0.72rem',
+                      }}>
+                        {m.role}
+                      </span>
+                      <span style={{
+                        ...s.badge,
+                        background: m.status === 'active' ? 'rgba(16,185,129,0.15)' : m.status === 'declined' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
+                        color: m.status === 'active' ? '#10b981' : m.status === 'declined' ? '#ef4444' : '#f59e0b',
+                        fontSize: '0.72rem',
+                      }}>
+                        {m.status}
+                      </span>
+                      <button
+                        onClick={() => handleRemoveMember(m.id)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.3rem',
+                          padding: '0.3rem 0.5rem', borderRadius: '6px',
+                          background: 'rgba(239,68,68,0.08)', color: '#ef4444',
+                          border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer',
+                          fontSize: '0.78rem',
+                        }}
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
         <iframe key={iframeKey} src="about:blank" style={{ display: 'none' }} title="preview-cache-bust" />
+        </div>{/* end main content column */}
+
+        {/* ── Plan & Checklist right-side drawer ── */}
+        {planDrawerOpen && token && (
+          <div style={{
+            width: '340px', flexShrink: 0, paddingTop: '2rem', paddingRight: '1.5rem',
+            position: 'sticky', top: 0, maxHeight: '100vh', overflowY: 'auto',
+          }}>
+            <PlanChecklist
+              projectId={projectId}
+              token={token}
+              onApplied={() => { fetchFiles(); fetchBuilds(); fetchMessages(); }}
+            />
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -1390,7 +1890,6 @@ const styles = {
     minHeight: '100vh',
     background: '#0a0a0f',
     color: '#f1f5f9',
-    maxWidth: '900px',
   } as React.CSSProperties,
 
   header: {
@@ -1398,6 +1897,7 @@ const styles = {
     alignItems: 'flex-start',
     gap: '1rem',
     marginBottom: '1.5rem',
+    flexWrap: 'wrap',
   } as React.CSSProperties,
 
   backBtn: {
