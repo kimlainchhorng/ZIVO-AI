@@ -54,7 +54,7 @@ export default function DeployPage() {
   }
 
   // Auto-refresh for pending/building deployments
-  useEffect(() => {
+    useEffect(() => {
     const hasPending = deployments.some((d) => d.status === 'pending' || d.status === 'building');
     if (hasPending) {
       intervalRef.current = setInterval(() => {
@@ -64,6 +64,7 @@ export default function DeployPage() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deployments, projectId]);
 
   function handleSearch() {

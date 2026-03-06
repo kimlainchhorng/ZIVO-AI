@@ -1,27 +1,77 @@
 /**
- * Simple diff engine for comparing two UIOutput snapshots.
- * Returns a human-readable diff string.
+ * Diff engine — string-level diff (for version-history.ts) and
+ * UIOutput snapshot diff (for builder versions compare).
  */
 import type { UIOutput, Page, Section } from '@/types/builder';
+
+// ─── String diff (backward-compatible) ───────────────────────────────────────
+
+export interface DiffHunk {
+  type: 'equal' | 'insert' | 'delete';
+  lines: string[];
+  startA: number;
+  startB: number;
+}
+
+/**
+ * Computes a line-level diff between two string contents.
+ * Returns an array of DiffHunk objects.
+ */
+export function computeDiff(contentA: string, contentB: string): DiffHunk[] {
+  const linesA = contentA.split('\n');
+  const linesB = contentB.split('\n');
+  const hunks: DiffHunk[] = [];
+
+  // Simple line-by-line LCS approach
+  let ia = 0;
+  let ib = 0;
+
+  while (ia < linesA.length || ib < linesB.length) {
+    if (ia < linesA.length && ib < linesB.length && linesA[ia] === linesB[ib]) {
+      hunks.push({ type: 'equal', lines: [linesA[ia]], startA: ia, startB: ib });
+      ia++;
+      ib++;
+    } else if (ib < linesB.length && (ia >= linesA.length || linesA[ia] !== linesB[ib])) {
+      const insertLines: string[] = [];
+      const startB = ib;
+      while (ib < linesB.length && (ia >= linesA.length || linesA[ia] !== linesB[ib])) {
+        insertLines.push(linesB[ib]);
+        ib++;
+        if (ia < linesA.length && ia + 1 < linesA.length && linesA[ia + 1] === linesB[ib]) break;
+      }
+      hunks.push({ type: 'insert', lines: insertLines, startA: ia, startB: startB });
+    } else {
+      const deleteLines: string[] = [];
+      const startA = ia;
+      while (ia < linesA.length && (ib >= linesB.length || linesA[ia] !== linesB[ib])) {
+        deleteLines.push(linesA[ia]);
+        ia++;
+        if (ib < linesB.length && ib + 1 < linesB.length && linesA[ia] === linesB[ib + 1]) break;
+      }
+      hunks.push({ type: 'delete', lines: deleteLines, startA: startA, startB: ib });
+    }
+  }
+
+  return hunks;
+}
+
+// ─── UIOutput snapshot diff ───────────────────────────────────────────────────
 
 function diffSections(a: Section[], b: Section[]): string[] {
   const lines: string[] = [];
   const aMap = new Map(a.map((s) => [s.id, s]));
   const bMap = new Map(b.map((s) => [s.id, s]));
 
-  // Removed sections
   for (const [id, sec] of aMap) {
     if (!bMap.has(id)) {
       lines.push(`  - REMOVED section: "${sec.title}" (type: ${sec.type})`);
     }
   }
-  // Added sections
   for (const [id, sec] of bMap) {
     if (!aMap.has(id)) {
       lines.push(`  + ADDED section: "${sec.title}" (type: ${sec.type})`);
     }
   }
-  // Changed sections
   for (const [id, secA] of aMap) {
     const secB = bMap.get(id);
     if (!secB) continue;
@@ -65,7 +115,7 @@ function diffPages(a: Page[], b: Page[]): string[] {
   return lines;
 }
 
-export function computeDiff(snapshotA: UIOutput, snapshotB: UIOutput): string {
+export function computeUIOutputDiff(snapshotA: UIOutput, snapshotB: UIOutput): string {
   const lines: string[] = [];
 
   if (snapshotA.title !== snapshotB.title) {

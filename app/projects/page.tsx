@@ -15,7 +15,6 @@ interface Project {
   updated_at: string;
 }
 
-const STYLE_PRESETS = ['premium', 'minimal', 'luxury_dark', 'startup', 'corporate', 'modern_glassmorphism'];
 const MODE_OPTIONS = ['code', 'website_v2', 'mobile_v2'];
 
 function getStoredToken() {
@@ -49,6 +48,7 @@ export default function ProjectsPage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchProjects(); }, []);
 
   async function handleCreate() {

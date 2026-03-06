@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DndContext,
@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   Wand2, Download, Github, Rocket, RefreshCw, Trash2, GripVertical,
-  Copy, ChevronDown, ChevronUp, Plus, X, CheckCircle2, AlertCircle,
+  Copy, ChevronDown, ChevronUp, X, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import SidebarLayout from '@/components/layout/SidebarLayout';
 import { useBuilderStore } from '@/lib/builder-store';
@@ -56,7 +56,7 @@ interface SortableSectionProps {
   onUpdate: (sectionId: string, updates: Partial<Section>) => void;
 }
 
-function SortableSection({ section, pageId, onRegenerate, onDelete, onUpdate }: SortableSectionProps) {
+function SortableSection({ section, pageId: _pageId, onRegenerate, onDelete, onUpdate }: SortableSectionProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: section.id });
   const [editing, setEditing] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -227,7 +227,7 @@ export default function AIUIBuilderPage() {
   const [vercelToken, setVercelToken] = useState('');
   const [projectName, setProjectName] = useState('');
   const [deployStatus, setDeployStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [_regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [compareMode, setCompareMode] = useState(false);
   const [compareIds, setCompareIds] = useState<[string | null, string | null]>([null, null]);
   const [diffText, setDiffText] = useState<string | null>(null);
@@ -254,6 +254,7 @@ export default function AIUIBuilderPage() {
           .catch(() => {});
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const activePage = pages.find((p) => p.id === activePageId) ?? pages[0];
@@ -474,7 +475,7 @@ export default function AIUIBuilderPage() {
     gap: '1rem',
   };
 
-  const sectionBtnStyle = (type: string) => ({
+  const sectionBtnStyle = (_type: string) => ({
     padding: '0.375rem 0.75rem', borderRadius: '6px', fontSize: '0.8rem',
     background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)',
     color: '#818cf8', cursor: 'pointer',

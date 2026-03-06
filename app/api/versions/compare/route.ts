@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { UIOutputSchema } from '@/types/builder';
-import { computeDiff } from '@/lib/diff-engine';
+import { computeUIOutputDiff as computeDiff } from '@/lib/diff-engine';
 import { extractBearerToken, getUserFromToken, createAuthedClient } from '@/lib/db/projects-db';
 
 export const runtime = 'nodejs';

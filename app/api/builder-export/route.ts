@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import { extractBearerToken, getUserFromToken, createAuthedClient } from '@/lib/db/projects-db';
 import { UIOutputSchema } from '@/types/builder';
 import { stylePresets } from '@/lib/theme';
-import type { UIOutput, Page, Section } from '@/types/builder';
+import type { UIOutput, Section } from '@/types/builder';
 
 export const runtime = 'nodejs';
 
