@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import SidebarLayout from '@/components/layout/SidebarLayout';
 import PlanChecklist from '@/components/builder/PlanChecklist';
+import DesignTokensPanel from '@/components/builder/DesignTokensPanel';
+import type { ProjectDesignTokens } from '@/lib/design-tokens-schema';
 import {
   ArrowLeft,
   Play,
@@ -36,6 +38,7 @@ import {
   Container,
   ExternalLink,
   ClipboardList,
+  Palette,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -311,8 +314,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'domains' | 'deployments' | 'team';
-type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'publish';
+type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'domains' | 'deployments' | 'team' | 'publish' | 'design';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -372,6 +374,9 @@ export default function ProjectWorkspacePage() {
   const [dockerDeploying, setDockerDeploying] = useState(false);
   const [dockerResult, setDockerResult] = useState<{ success?: boolean; status?: string; message?: string; error?: string } | null>(null);
   const [zipDownloading, setZipDownloading] = useState(false);
+
+  // Design tokens state
+  const [designTokens, setDesignTokens] = useState<ProjectDesignTokens | null>(null);
 
   // UI
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
@@ -465,10 +470,20 @@ export default function ProjectWorkspacePage() {
     setMembers(data.members ?? []);
   }, [token, projectId]);
 
+  const fetchDesignTokens = useCallback(async () => {
+    if (!token || !projectId) return;
+    const res = await fetch(`/api/projects/${projectId}/design-tokens`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json() as { tokens?: ProjectDesignTokens };
+    if (data.tokens) setDesignTokens(data.tokens);
+  }, [token, projectId]);
+
   useEffect(() => {
     if (!token) { setLoading(false); return; }
     setLoading(true);
-    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns(), fetchDomains(), fetchDeployments(), fetchMembers()])
+    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns(), fetchDomains(), fetchDeployments(), fetchMembers(), fetchDesignTokens()])
       .catch((err: unknown) => setError((err as Error).message ?? 'Failed to load workspace'))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -793,6 +808,8 @@ export default function ProjectWorkspacePage() {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) await fetchMembers();
+  }
+
   // ─── Publish handlers ──────────────────────────────────────────────────────
 
   async function handleExportZip() {
@@ -1071,8 +1088,7 @@ export default function ProjectWorkspacePage() {
 
         {/* ── Tabs ── */}
         <div style={s.tabs}>
-          {(['conversation', 'files', 'builds', 'quality', 'domains', 'deployments', 'team'] as Tab[]).map((tab) => (
-          {(['conversation', 'files', 'builds', 'quality', 'publish'] as Tab[]).map((tab) => (
+          {(['conversation', 'files', 'builds', 'quality', 'domains', 'deployments', 'team', 'publish', 'design'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1086,6 +1102,7 @@ export default function ProjectWorkspacePage() {
               {tab === 'deployments' && <Server size={14} />}
               {tab === 'team' && <Users size={14} />}
               {tab === 'publish' && <Rocket size={14} />}
+              {tab === 'design' && <Palette size={14} />}
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'files' && files.length > 0 && (
                 <span style={s.badge}>{files.length}</span>
@@ -1111,7 +1128,7 @@ export default function ProjectWorkspacePage() {
             </button>
           ))}
           <button
-            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); fetchDomains(); fetchDeployments(); fetchMembers(); }}
+            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); fetchDomains(); fetchDeployments(); fetchMembers(); fetchDesignTokens(); }}
             title="Refresh"
             style={{ ...s.outlineBtn, marginLeft: 'auto' }}
           >
@@ -1490,7 +1507,6 @@ export default function ProjectWorkspacePage() {
 
             </div>
           )}
-        </div>
 
           {/* ── Domains ── */}
           {activeTab === 'domains' && (
@@ -1844,8 +1860,27 @@ export default function ProjectWorkspacePage() {
               )}
             </div>
           )}
+
+          {/* ── Design Tokens ── */}
+          {activeTab === 'design' && token && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 0.25rem' }}>
+                  Configure your project&apos;s design system tokens. The AI will use these tokens consistently in all generated pages.
+                </p>
+                <p style={{ fontSize: '0.75rem', color: '#475569', margin: 0 }}>
+                  Use <code style={{ color: '#818cf8' }}>?format=css</code> on the API endpoint to download the generated <code style={{ color: '#818cf8' }}>tokens.css</code>.
+                </p>
+              </div>
+              <DesignTokensPanel
+                projectId={projectId}
+                authToken={token}
+                initialTokens={designTokens ?? undefined}
+                onSaved={(updated) => setDesignTokens(updated)}
+              />
+            </div>
+          )}
         </div>
-        <iframe key={iframeKey} src="about:blank" style={{ display: 'none' }} title="preview-cache-bust" />
         </div>{/* end main content column */}
 
         {/* ── Plan & Checklist right-side drawer ── */}
@@ -1863,9 +1898,6 @@ export default function ProjectWorkspacePage() {
         )}
       </div>
 
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
     </SidebarLayout>
   );
 }
