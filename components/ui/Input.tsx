@@ -1,58 +1,90 @@
-"use client";
+// components/ui/Input.tsx — Accessible text input using design tokens
+'use client';
 
-import * as React from "react";
-import { clsx } from "clsx";
+import * as React from 'react';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
-  error?: string;
-  leftIcon?: React.ReactNode;
-  rightIcon?: React.ReactNode;
   helperText?: string;
+  errorText?: string;
+  leftAddon?: React.ReactNode;
+  rightAddon?: React.ReactNode;
+  containerStyle?: React.CSSProperties;
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, leftIcon, rightIcon, helperText, className, id, ...props }, ref) => {
-    const inputId = id ?? label?.toLowerCase().replace(/\s+/g, "-");
+  (
+    {
+      label,
+      helperText,
+      errorText,
+      leftAddon,
+      rightAddon,
+      containerStyle,
+      id,
+      style,
+      ...props
+    },
+    ref
+  ) => {
+    const generatedId = React.useId();
+    const inputId = id ?? generatedId;
+    const hasError = Boolean(errorText);
+
+    const wrapperStyle: React.CSSProperties = {
+      display: 'flex',
+      alignItems: 'center',
+      background: 'rgba(255,255,255,0.04)',
+      border: `1px solid ${hasError ? '#ef4444' : 'rgba(255,255,255,0.12)'}`,
+      borderRadius: '8px',
+      overflow: 'hidden',
+      transition: 'border-color 0.2s',
+    };
+
+    const inputStyle: React.CSSProperties = {
+      flex: 1,
+      background: 'transparent',
+      border: 'none',
+      outline: 'none',
+      padding: '0.625rem 0.875rem',
+      fontSize: '0.9375rem',
+      color: '#f1f5f9',
+      fontFamily: 'inherit',
+      ...style,
+    };
+
     return (
-      <div className="flex flex-col gap-1">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.375rem', ...containerStyle }}>
         {label && (
-          <label htmlFor={inputId} className="text-xs font-medium text-slate-400">
+          <label
+            htmlFor={inputId}
+            style={{ fontSize: '0.875rem', fontWeight: 500, color: '#f1f5f9' }}
+          >
             {label}
           </label>
         )}
-        <div className="relative flex items-center">
-          {leftIcon && (
-            <span className="absolute left-3 flex items-center text-slate-500 pointer-events-none">
-              {leftIcon}
+        <div style={wrapperStyle}>
+          {leftAddon && (
+            <span style={{ padding: '0 0.75rem', color: '#94a3b8', flexShrink: 0 }}>
+              {leftAddon}
             </span>
           )}
-          <input
-            ref={ref}
-            id={inputId}
-            className={clsx(
-              "w-full bg-white/[0.04] border rounded-lg text-sm text-slate-100 placeholder-slate-500 transition-colors",
-              "focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-0 focus:border-transparent",
-              "disabled:opacity-50 disabled:cursor-not-allowed",
-              error ? "border-red-500/60 focus:ring-red-500" : "border-white/[0.08] hover:border-white/[0.16]",
-              leftIcon ? "pl-9" : "pl-3",
-              rightIcon ? "pr-9" : "pr-3",
-              "py-2",
-              className
-            )}
-            {...props}
-          />
-          {rightIcon && (
-            <span className="absolute right-3 flex items-center text-slate-500 pointer-events-none">
-              {rightIcon}
+          <input ref={ref} id={inputId} style={inputStyle} {...props} />
+          {rightAddon && (
+            <span style={{ padding: '0 0.75rem', color: '#94a3b8', flexShrink: 0 }}>
+              {rightAddon}
             </span>
           )}
         </div>
-        {error && <p className="text-xs text-red-400">{error}</p>}
-        {!error && helperText && <p className="text-xs text-slate-500">{helperText}</p>}
+        {errorText && (
+          <span style={{ fontSize: '0.8125rem', color: '#ef4444' }}>{errorText}</span>
+        )}
+        {helperText && !errorText && (
+          <span style={{ fontSize: '0.8125rem', color: '#94a3b8' }}>{helperText}</span>
+        )}
       </div>
     );
   }
 );
 
-Input.displayName = "Input";
+Input.displayName = 'Input';

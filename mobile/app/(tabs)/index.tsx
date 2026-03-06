@@ -9,8 +9,8 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
-import { colors, spacing, borderRadius, typography } from "@/mobile/theme/tokens";
-import { dashboardStats, featuredItems, recentActivity, type Stat, type ListItem } from "@/mobile/lib/mock-data";
+import { colors, spacing, borderRadius, typography } from "../../theme/tokens";
+import { dashboardStats, featuredItems, recentActivity, type Stat, type ListItem } from "../../lib/mock-data";
 
 type LoadState = "loading" | "success" | "error" | "empty";
 

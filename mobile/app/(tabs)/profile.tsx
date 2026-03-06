@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, Image, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from "react-native";
-import { colors, spacing, borderRadius, typography } from "@/mobile/theme/tokens";
-import { currentUser, type User } from "@/mobile/lib/mock-data";
+import { colors, spacing, borderRadius, typography } from "../../theme/tokens";
+import { currentUser, type User } from "../../lib/mock-data";
 
 type LoadState = "loading" | "success" | "error";
 

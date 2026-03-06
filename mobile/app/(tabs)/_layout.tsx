@@ -1,7 +1,7 @@
 import React from "react";
 import { Tabs } from "expo-router";
 import { Home, Search, Bell, User } from "lucide-react-native";
-import { colors } from "@/mobile/theme/tokens";
+import { colors } from "../../theme/tokens";
 
 export default function TabLayout() {
   return (

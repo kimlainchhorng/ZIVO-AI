@@ -1,61 +1,140 @@
-// lib/assets.ts — Stable stock image URLs for generated projects
-// Uses picsum.photos with stable numeric IDs for reproducible outputs.
+// lib/assets.ts — Stable image asset URLs using picsum.photos
 
-export interface StockImage {
+export interface HeroAsset {
   url: string;
-  alt: string;
   width: number;
   height: number;
+  alt: string;
 }
 
-/** 16:9 hero banner image */
-export const heroImage: StockImage = {
-  url: "https://picsum.photos/id/1/1280/720",
-  alt: "Hero banner",
-  width: 1280,
-  height: 720,
-};
+export interface FeatureAsset {
+  url: string;
+  width: number;
+  height: number;
+  alt: string;
+  id: number;
+}
 
-/** 4:3 feature section images */
-export const featureImages: StockImage[] = [
-  { url: "https://picsum.photos/id/20/800/600", alt: "Feature 1", width: 800, height: 600 },
-  { url: "https://picsum.photos/id/30/800/600", alt: "Feature 2", width: 800, height: 600 },
-  { url: "https://picsum.photos/id/40/800/600", alt: "Feature 3", width: 800, height: 600 },
-  { url: "https://picsum.photos/id/50/800/600", alt: "Feature 4", width: 800, height: 600 },
-  { url: "https://picsum.photos/id/60/800/600", alt: "Feature 5", width: 800, height: 600 },
-  { url: "https://picsum.photos/id/70/800/600", alt: "Feature 6", width: 800, height: 600 },
-];
+export interface AvatarAsset {
+  url: string;
+  size: number;
+  alt: string;
+  id: number;
+}
 
-/** 1:1 avatar images for testimonials / team */
-export const avatarImages: StockImage[] = [
-  { url: "https://picsum.photos/id/91/200/200", alt: "Avatar 1", width: 200, height: 200 },
-  { url: "https://picsum.photos/id/92/200/200", alt: "Avatar 2", width: 200, height: 200 },
-  { url: "https://picsum.photos/id/93/200/200", alt: "Avatar 3", width: 200, height: 200 },
-  { url: "https://picsum.photos/id/94/200/200", alt: "Avatar 4", width: 200, height: 200 },
-  { url: "https://picsum.photos/id/95/200/200", alt: "Avatar 5", width: 200, height: 200 },
-  { url: "https://picsum.photos/id/96/200/200", alt: "Avatar 6", width: 200, height: 200 },
-];
+export interface SiteAssets {
+  hero: HeroAsset;
+  features: FeatureAsset[];
+  avatars: AvatarAsset[];
+  og: HeroAsset;
+}
 
-/** Landscape blog/card images */
-export const cardImages: StockImage[] = [
-  { url: "https://picsum.photos/id/100/600/400", alt: "Card image 1", width: 600, height: 400 },
-  { url: "https://picsum.photos/id/110/600/400", alt: "Card image 2", width: 600, height: 400 },
-  { url: "https://picsum.photos/id/120/600/400", alt: "Card image 3", width: 600, height: 400 },
-];
+/** Stable picsum.photos image IDs that reliably return high-quality images */
+const HERO_IDS = [1040, 1041, 1043, 1044, 1046] as const;
+const FEATURE_IDS = [20, 21, 22, 24, 25, 26] as const;
+const AVATAR_IDS = [64, 65, 91] as const;
+
+// ─── Single source-of-truth constants ────────────────────────────────────────
 
 /**
- * Get a feature image by zero-based index (wraps around if index exceeds length).
+ * Brand identity constants.
+ * The build pipeline (`runWebsiteV2Pipeline`) overwrites `lib/assets.ts` with
+ * the actual brand name/tagline extracted from the WebsitePlan, so this default
+ * object is only used when importing the module directly outside of a build.
+ * Treat this as read-only at runtime; mutations will not persist across builds.
  */
-export function getFeatureImage(index: number): StockImage {
-  return featureImages[index % featureImages.length];
-}
+export const brand: { name?: string; tagline?: string } = {};
 
 /**
- * Get an avatar image by zero-based index (wraps around if index exceeds length).
+ * Inline SVG logo string.  The build pipeline replaces this with an
+ * AI-generated logo via generateSvgLogo().  The fallback renders a
+ * minimal geometric mark that is safe to embed directly in HTML.
  */
-export function getAvatarImage(index: number): StockImage {
-  return avatarImages[index % avatarImages.length];
+export const brandLogoSvg: string =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none" aria-label="Logo">' +
+  '<rect width="40" height="40" rx="8" fill="#6366f1"/>' +
+  '<path d="M10 30 L20 10 L30 30 Z" fill="white" opacity="0.9"/>' +
+  '</svg>';
+
+/**
+ * Stable, deterministic image URL constants.
+ * All URLs use picsum.photos/id/N for reproducible results.
+ * - hero:     1600 x 900  (16:9 landscape)
+ * - features: 800  x 600  (4:3)
+ * - avatars:  200  x 200  (1:1 square)
+ */
+export const images = {
+  hero: `https://picsum.photos/id/${HERO_IDS[0]}/1600/900`,
+  features: [
+    `https://picsum.photos/id/${FEATURE_IDS[0]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[1]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[2]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[3]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[4]}/800/600`,
+    `https://picsum.photos/id/${FEATURE_IDS[5]}/800/600`,
+  ],
+  avatars: [
+    `https://picsum.photos/id/${AVATAR_IDS[0]}/200/200`,
+    `https://picsum.photos/id/${AVATAR_IDS[1]}/200/200`,
+    `https://picsum.photos/id/${AVATAR_IDS[2]}/200/200`,
+  ],
+} as const;
+
+/**
+ * Returns stable, deterministic image URLs for a given seed index.
+ * Using picsum.photos/id/N allows stable, reproducible URLs.
+ */
+export function getSiteAssets(seed = 0): SiteAssets {
+  const heroId = HERO_IDS[seed % HERO_IDS.length];
+  const featureIds = FEATURE_IDS.slice(0, 6);
+  const avatarIds = AVATAR_IDS.slice(0, 3);
+
+  return {
+    hero: {
+      url: `https://picsum.photos/id/${heroId}/1920/1080`,
+      width: 1920,
+      height: 1080,
+      alt: "Hero image",
+    },
+    og: {
+      url: `https://picsum.photos/id/${heroId}/1200/630`,
+      width: 1200,
+      height: 630,
+      alt: "Open Graph image",
+    },
+    features: featureIds.map((id, i) => ({
+      url: `https://picsum.photos/id/${id}/800/600`,
+      width: 800,
+      height: 600,
+      alt: `Feature ${i + 1} illustration`,
+      id,
+    })),
+    avatars: avatarIds.map((id, i) => ({
+      url: `https://picsum.photos/id/${id}/128/128`,
+      size: 128,
+      alt: `Testimonial avatar ${i + 1}`,
+      id,
+    })),
+  };
 }
 
-export const assets = { heroImage, featureImages, avatarImages, cardImages, getFeatureImage, getAvatarImage };
-export default assets;
+/** Get a single feature image URL by index */
+export function getFeatureImageUrl(index: number, width = 800, height = 600): string {
+  const len = FEATURE_IDS.length;
+  const id = FEATURE_IDS[((index % len) + len) % len];
+  return `https://picsum.photos/id/${id}/${width}/${height}`;
+}
+
+/** Get a single avatar URL by index */
+export function getAvatarUrl(index: number, size = 128): string {
+  const len = AVATAR_IDS.length;
+  const id = AVATAR_IDS[((index % len) + len) % len];
+  return `https://picsum.photos/id/${id}/${size}/${size}`;
+}
+
+/** Get hero image URL */
+export function getHeroImageUrl(seed = 0, width = 1920, height = 1080): string {
+  const len = HERO_IDS.length;
+  const id = HERO_IDS[((seed % len) + len) % len];
+  return `https://picsum.photos/id/${id}/${width}/${height}`;
+}

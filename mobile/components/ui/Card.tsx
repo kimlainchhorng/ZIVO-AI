@@ -1,6 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet, ViewStyle } from "react-native";
-import { colors, spacing, borderRadius, typography } from "@/mobile/theme/tokens";
+import { colors, spacing, borderRadius, typography } from "../../theme/tokens";
 
 interface CardProps {
   title?: string;

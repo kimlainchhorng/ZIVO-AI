@@ -1,65 +1,116 @@
-"use client";
+// components/icons/Icon.tsx — Lucide-react icon wrapper
+'use client';
 
-import * as React from "react";
-import * as LucideIcons from "lucide-react";
+import * as React from 'react';
+import {
+  Rocket,
+  ClipboardList,
+  ShoppingCart,
+  Lock,
+  BarChart2,
+  Monitor,
+  Tablet,
+  Smartphone,
+  Globe,
+  Code2,
+  Shield,
+  Image as ImageIcon,
+  Video,
+  Box,
+  Zap,
+  Star,
+  Check,
+  X,
+  ChevronDown,
+  ChevronRight,
+  ChevronLeft,
+  ChevronUp,
+  ArrowRight,
+  ArrowLeft,
+  Plus,
+  Minus,
+  Search,
+  Settings,
+  User,
+  Users,
+  Home,
+  FileText,
+  Folder,
+  Download,
+  Upload,
+  ExternalLink,
+  Copy,
+  Trash2,
+  Edit2,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Loader2,
+  Info,
+  AlertTriangle,
+  AlertCircle,
+  CheckCircle2,
+  type LucideProps,
+} from 'lucide-react';
 
-export type IconName = keyof typeof LucideIcons;
+export const ICONS = {
+  rocket: Rocket,
+  clipboard: ClipboardList,
+  cart: ShoppingCart,
+  lock: Lock,
+  barChart: BarChart2,
+  desktop: Monitor,
+  tablet: Tablet,
+  mobile: Smartphone,
+  globe: Globe,
+  code: Code2,
+  shield: Shield,
+  image: ImageIcon,
+  video: Video,
+  box3d: Box,
+  zap: Zap,
+  star: Star,
+  check: Check,
+  x: X,
+  chevronDown: ChevronDown,
+  chevronRight: ChevronRight,
+  chevronLeft: ChevronLeft,
+  chevronUp: ChevronUp,
+  arrowRight: ArrowRight,
+  arrowLeft: ArrowLeft,
+  plus: Plus,
+  minus: Minus,
+  search: Search,
+  settings: Settings,
+  user: User,
+  users: Users,
+  home: Home,
+  fileText: FileText,
+  folder: Folder,
+  download: Download,
+  upload: Upload,
+  externalLink: ExternalLink,
+  copy: Copy,
+  trash: Trash2,
+  edit: Edit2,
+  eye: Eye,
+  eyeOff: EyeOff,
+  refresh: RefreshCw,
+  loader: Loader2,
+  info: Info,
+  warning: AlertTriangle,
+  error: AlertCircle,
+  success: CheckCircle2,
+} as const;
 
-export interface IconProps {
+export type IconName = keyof typeof ICONS;
+
+export interface IconProps extends LucideProps {
   name: IconName;
-  size?: number;
-  color?: string;
-  strokeWidth?: number;
-  className?: string;
-  "aria-label"?: string;
-  "aria-hidden"?: boolean | "true" | "false";
 }
 
-/**
- * Central icon wrapper using lucide-react.
- * Always use this component instead of raw emoji or inline SVG for UI icons.
- *
- * @example
- * <Icon name="Rocket" size={16} />
- * <Icon name="ShoppingCart" className="text-indigo-400" />
- */
-export function Icon({
-  name,
-  size = 16,
-  color,
-  strokeWidth = 2,
-  className,
-  "aria-label": ariaLabel,
-  "aria-hidden": ariaHidden,
-}: IconProps) {
-  const LucideIcon = LucideIcons[name] as React.ComponentType<{
-    size?: number;
-    color?: string;
-    strokeWidth?: number;
-    className?: string;
-    "aria-label"?: string;
-    "aria-hidden"?: boolean | "true" | "false";
-  }> | undefined;
-
-  if (!LucideIcon) {
-    // Fallback: render a square placeholder so layout is not broken
-    return (
-      <span
-        className={className}
-        style={{ display: "inline-block", width: size, height: size, background: "currentColor", opacity: 0.3, borderRadius: 2 }}
-        aria-hidden="true"
-      />
-    );
-  }
-
-  return (
-    <LucideIcon
-      size={size}
-      color={color}
-      strokeWidth={strokeWidth}
-      className={className}
-      aria-label={ariaLabel}
-      aria-hidden={ariaHidden ?? (ariaLabel ? undefined : "true")}
-    />
-  );
+/** Wrapper component for lucide-react icons. Use `name` prop to select icon. */
+export function Icon({ name, size = 16, ...props }: IconProps): React.ReactElement {
+  const IconComponent = ICONS[name];
+  return <IconComponent size={size} {...props} />;
 }

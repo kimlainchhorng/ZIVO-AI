@@ -1,41 +1,77 @@
-"use client";
+// components/ui/Badge.tsx — Badge pill component using design tokens
+'use client';
 
-import * as React from "react";
-import { clsx } from "clsx";
+import * as React from 'react';
 
-type BadgeVariant = "default" | "primary" | "success" | "warning" | "error" | "info" | "outline";
-type BadgeSize = "sm" | "md";
+export type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'error' | 'outline';
+export type BadgeSize = 'sm' | 'md';
 
-export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
+export interface BadgeProps {
+  children: React.ReactNode;
   variant?: BadgeVariant;
   size?: BadgeSize;
+  style?: React.CSSProperties;
+  className?: string;
 }
 
-const variantClasses: Record<BadgeVariant, string> = {
-  default: "bg-white/[0.08] text-slate-300 border-transparent",
-  primary: "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
-  success: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  warning: "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  error: "bg-red-500/15 text-red-300 border-red-500/30",
-  info: "bg-blue-500/15 text-blue-300 border-blue-500/30",
-  outline: "bg-transparent text-slate-400 border-white/[0.16]",
+const variantStyles: Record<BadgeVariant, React.CSSProperties> = {
+  default: {
+    background: 'rgba(255,255,255,0.06)',
+    color: '#94a3b8',
+    border: '1px solid rgba(255,255,255,0.08)',
+  },
+  primary: {
+    background: 'rgba(99,102,241,0.15)',
+    color: '#818cf8',
+    border: '1px solid rgba(99,102,241,0.3)',
+  },
+  success: {
+    background: 'rgba(34,197,94,0.12)',
+    color: '#4ade80',
+    border: '1px solid rgba(34,197,94,0.3)',
+  },
+  warning: {
+    background: 'rgba(245,158,11,0.12)',
+    color: '#fbbf24',
+    border: '1px solid rgba(245,158,11,0.3)',
+  },
+  error: {
+    background: 'rgba(239,68,68,0.12)',
+    color: '#f87171',
+    border: '1px solid rgba(239,68,68,0.3)',
+  },
+  outline: {
+    background: 'transparent',
+    color: '#f1f5f9',
+    border: '1px solid rgba(255,255,255,0.2)',
+  },
 };
 
-const sizeClasses: Record<BadgeSize, string> = {
-  sm: "px-1.5 py-0.5 text-[10px] rounded",
-  md: "px-2 py-0.5 text-xs rounded-md",
+const sizeStyles: Record<BadgeSize, React.CSSProperties> = {
+  sm: { padding: '0.125rem 0.5rem', fontSize: '0.7rem', borderRadius: '20px' },
+  md: { padding: '0.25rem 0.625rem', fontSize: '0.8125rem', borderRadius: '20px' },
 };
 
-export function Badge({ variant = "default", size = "md", className, children, ...props }: BadgeProps) {
+export function Badge({
+  children,
+  variant = 'default',
+  size = 'md',
+  style,
+  className,
+}: BadgeProps): React.ReactElement {
   return (
     <span
-      className={clsx(
-        "inline-flex items-center gap-1 font-semibold border",
-        variantClasses[variant],
-        sizeClasses[size],
-        className
-      )}
-      {...props}
+      className={className}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        fontWeight: 600,
+        lineHeight: 1,
+        whiteSpace: 'nowrap',
+        ...variantStyles[variant],
+        ...sizeStyles[size],
+        ...style,
+      }}
     >
       {children}
     </span>

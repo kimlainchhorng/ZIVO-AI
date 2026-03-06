@@ -1,82 +1,103 @@
-"use client";
+// components/ui/Tabs.tsx — Accessible tabs component using design tokens
+'use client';
 
-import * as React from "react";
-import { clsx } from "clsx";
+import * as React from 'react';
 
-export interface Tab {
+export interface TabItem {
   id: string;
-  label: string;
-  icon?: React.ReactNode;
+  label: React.ReactNode;
+  content: React.ReactNode;
   disabled?: boolean;
 }
 
 export interface TabsProps {
-  tabs: Tab[];
-  activeTab: string;
-  onChange: (id: string) => void;
-  variant?: "default" | "pills" | "underline";
-  className?: string;
+  items: TabItem[];
+  defaultTab?: string;
+  activeTab?: string;
+  onChange?: (tabId: string) => void;
+  style?: React.CSSProperties;
+  tabBarStyle?: React.CSSProperties;
 }
 
-export function Tabs({ tabs, activeTab, onChange, variant = "default", className }: TabsProps) {
-  return (
-    <div
-      role="tablist"
-      className={clsx(
-        "flex items-center",
-        variant === "default" && "bg-white/[0.04] border border-white/[0.08] rounded-xl p-1 gap-1",
-        variant === "pills" && "gap-1",
-        variant === "underline" && "border-b border-white/[0.08] gap-0",
-        className
-      )}
-    >
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          role="tab"
-          aria-selected={activeTab === tab.id}
-          disabled={tab.disabled}
-          onClick={() => onChange(tab.id)}
-          className={clsx(
-            "inline-flex items-center gap-1.5 text-sm font-medium transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed",
-            variant === "default" && [
-              "px-3 py-1.5 rounded-lg",
-              activeTab === tab.id
-                ? "bg-indigo-500 text-white shadow-sm"
-                : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]",
-            ],
-            variant === "pills" && [
-              "px-3 py-1.5 rounded-full border",
-              activeTab === tab.id
-                ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
-                : "text-slate-400 border-transparent hover:text-slate-200 hover:border-white/[0.10]",
-            ],
-            variant === "underline" && [
-              "px-4 py-2.5 border-b-2 -mb-px",
-              activeTab === tab.id
-                ? "border-indigo-500 text-slate-100"
-                : "border-transparent text-slate-400 hover:text-slate-200",
-            ]
-          )}
-        >
-          {tab.icon}
-          {tab.label}
-        </button>
-      ))}
-    </div>
+export function Tabs({
+  items,
+  defaultTab,
+  activeTab: controlledTab,
+  onChange,
+  style,
+  tabBarStyle,
+}: TabsProps): React.ReactElement {
+  const [internalTab, setInternalTab] = React.useState<string>(
+    defaultTab ?? items[0]?.id ?? ''
   );
-}
 
-export interface TabPanelProps extends React.HTMLAttributes<HTMLDivElement> {
-  id: string;
-  activeTab: string;
-}
+  const activeId = controlledTab ?? internalTab;
 
-export function TabPanel({ id, activeTab, children, className, ...props }: TabPanelProps) {
-  if (id !== activeTab) return null;
+  const handleChange = (id: string): void => {
+    if (!controlledTab) setInternalTab(id);
+    onChange?.(id);
+  };
+
+  const activeItem = items.find((t) => t.id === activeId);
+
   return (
-    <div role="tabpanel" className={clsx("text-sm text-slate-300", className)} {...props}>
-      {children}
+    <div style={{ display: 'flex', flexDirection: 'column', ...style }}>
+      {/* Tab bar */}
+      <div
+        role="tablist"
+        style={{
+          display: 'flex',
+          gap: '2px',
+          background: 'rgba(255,255,255,0.04)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: '8px',
+          padding: '3px',
+          ...tabBarStyle,
+        }}
+      >
+        {items.map((item) => {
+          const isActive = item.id === activeId;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`panel-${item.id}`}
+              disabled={item.disabled}
+              onClick={() => !item.disabled && handleChange(item.id)}
+              style={{
+                flex: 1,
+                padding: '0.375rem 0.75rem',
+                borderRadius: '6px',
+                border: 'none',
+                background: isActive
+                  ? 'linear-gradient(135deg, #6366f1, #4f46e5)'
+                  : 'transparent',
+                color: isActive ? '#ffffff' : item.disabled ? '#475569' : '#94a3b8',
+                cursor: item.disabled ? 'not-allowed' : 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: isActive ? 600 : 400,
+                transition: 'all 0.2s',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab content */}
+      {activeItem && (
+        <div
+          role="tabpanel"
+          id={`panel-${activeItem.id}`}
+          style={{ marginTop: '1rem' }}
+        >
+          {activeItem.content}
+        </div>
+      )}
     </div>
   );
 }

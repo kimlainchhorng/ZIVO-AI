@@ -5,7 +5,7 @@ This is a generated **Expo Router** project with a full tab-based navigation str
 ## Prerequisites
 
 - [Node.js](https://nodejs.org) 18+
-- [Expo CLI](https://expo.dev/tools#cli): `npm install -g expo-cli`
+- Expo CLI: `npm install -g expo-cli` or use `npx expo`
 - iOS Simulator (macOS) or Android Emulator, or the [Expo Go](https://expo.dev/go) app
 
 ## Getting Started

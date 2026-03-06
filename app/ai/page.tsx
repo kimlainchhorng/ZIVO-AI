@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
+import Image from "next/image";
 import { Suspense } from "react";
-import { addHistoryEntry } from "../history/page";
+import { addHistoryEntry } from "@/lib/history-store";
 import PlanViewer from "@/components/PlanViewer";
 import BuildOutputPanel from "@/components/BuildOutputPanel";
 import DiffViewer from "@/components/DiffViewer";
-import FileExplorer from "@/components/FileExplorer";
 import ModelSelector from "@/components/ModelSelector";
 import CommandPalette from "@/components/CommandPalette";
 import DesignSystemPanel from "@/components/DesignSystemPanel";
@@ -27,6 +27,11 @@ import AgentOrchestrator from "@/components/AgentOrchestrator";
 import TemplateSelector from "@/components/TemplateSelector";
 import type { LogEntry } from "@/lib/logger";
 import { Icon } from "@/components/icons/Icon";
+import { getWebContainer, invalidateWebContainer } from "@/lib/webcontainer";
+import type { FileSystemTree, WebContainerProcess } from "@webcontainer/api";
+import GeneratedAppAnalysis from "@/components/GeneratedAppAnalysis";
+import FileTree from "@/components/FileTree";
+import VoiceInput from "@/components/VoiceInput";
 
 interface SecurityIssue {
   id: string;
@@ -82,6 +87,14 @@ const COLORS = {
   textMuted: "#475569",
 };
 
+/** Maximum characters to display per chat bubble in the build history sidebar. */
+const MAX_CHAT_HISTORY_DISPLAY_LENGTH = 120;
+
+/** Standard localStorage key for the Supabase auth token (used across all build flows). */
+const SUPABASE_TOKEN_KEY = "zivo_supabase_token";
+/** localStorage key for persisting the Website Builder v2 project ID. */
+const WEBSITE_PROJECT_ID_KEY = "zivo_website_project_id";
+
 const RocketIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>;
 const ClipboardIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>;
 const CartIcon = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display:"inline-block",flexShrink:0 }}><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg>;
@@ -102,15 +115,29 @@ const QUICK_PROMPTS = [
   { icon: <BarChartIcon />, label: "Dashboard", prompt: "Build an analytics dashboard with charts, stats cards, and data tables" },
 ];
 
+const PROMPT_SUGGESTIONS = [
+  "Build a complete e-commerce application with product catalog, shopping cart, Stripe checkout, order management, admin panel, user authentication, and mobile-responsive design",
+  "Build an e-commerce app featuring product listings, cart, checkout, user accounts, and order history",
+  "Build a responsive e-commerce platform with product search, filters, reviews, and payment processing",
+];
+
+const TEMPLATE_SHORTCUTS = [
+  { icon: "🏠", label: "Landing Page", prompt: "Build a beautiful SaaS landing page with hero, features, pricing, FAQ, and CTA sections" },
+  { icon: "📋", label: "Todo App", prompt: "Build a full-stack todo app with auth, CRUD operations, categories, and due dates" },
+  { icon: "🛒", label: "E-commerce", prompt: "Build a complete e-commerce store with product catalog, cart, and Stripe checkout" },
+  { icon: "🔐", label: "Auth Flow", prompt: "Build a complete authentication system with login, signup, password reset, and profile pages" },
+  { icon: "📊", label: "Dashboard", prompt: "Build a modern analytics dashboard with charts, stats cards, data tables, and filters" },
+];
+
 const TEMPLATE_CARDS = [
-  { icon: <Icon name="Rocket" size={16} />, label: "Landing Page", description: "SaaS landing page with hero, features, pricing, testimonials, and CTA", prompt: "Build a SaaS landing page with hero, features, pricing, testimonials, and CTA" },
-  { icon: <Icon name="BarChart2" size={16} />, label: "Dashboard", description: "Analytics dashboard with sidebar navigation, stats cards, charts, and data tables", prompt: "Build an analytics dashboard with sidebar navigation, stats cards, charts, and data tables" },
-  { icon: <Icon name="ShoppingCart" size={16} />, label: "E-commerce", description: "E-commerce store with product listings, cart, and checkout flow", prompt: "Build an e-commerce store with product listings, cart, and checkout flow" },
-  { icon: <Icon name="Lock" size={16} />, label: "Auth System", description: "Complete auth flow with login, signup, forgot password, and profile pages", prompt: "Build a complete auth flow with login, signup, forgot password, and profile pages" },
-  { icon: <Icon name="Settings" size={16} />, label: "Admin Panel", description: "Admin panel with user management, data tables, CRUD operations, and role permissions", prompt: "Build an admin panel with user management, data tables, CRUD operations, and role permissions" },
-  { icon: <Icon name="Smartphone" size={16} />, label: "Mobile App", description: "Mobile-first React Native-style app with bottom navigation and card-based UI", prompt: "Build a mobile-first React Native-style app with bottom navigation and card-based UI" },
-  { icon: <Icon name="Layers" size={16} />, label: "SaaS App", description: "Full SaaS application with dashboard, billing, team management, and settings", prompt: "Build a full SaaS application with dashboard, billing, team management, and settings" },
-  { icon: <Icon name="Store" size={16} />, label: "Marketplace", description: "Marketplace with listings, search, filters, seller profiles, and messaging", prompt: "Build a marketplace with listings, search, filters, seller profiles, and messaging" },
+  { iconName: "rocket" as const, label: "Landing Page", description: "SaaS landing page with hero, features, pricing, testimonials, and CTA", prompt: "Build a SaaS landing page with hero, features, pricing, testimonials, and CTA" },
+  { iconName: "barChart" as const, label: "Dashboard", description: "Analytics dashboard with sidebar navigation, stats cards, charts, and data tables", prompt: "Build an analytics dashboard with sidebar navigation, stats cards, charts, and data tables" },
+  { iconName: "cart" as const, label: "E-commerce", description: "E-commerce store with product listings, cart, and checkout flow", prompt: "Build an e-commerce store with product listings, cart, and checkout flow" },
+  { iconName: "lock" as const, label: "Auth System", description: "Complete auth flow with login, signup, forgot password, and profile pages", prompt: "Build a complete auth flow with login, signup, forgot password, and profile pages" },
+  { iconName: "settings" as const, label: "Admin Panel", description: "Admin panel with user management, data tables, CRUD operations, and role permissions", prompt: "Build an admin panel with user management, data tables, CRUD operations, and role permissions" },
+  { iconName: "mobile" as const, label: "Mobile App", description: "Mobile-first React Native-style app with bottom navigation and card-based UI", prompt: "Build a mobile-first React Native-style app with bottom navigation and card-based UI" },
+  { iconName: "users" as const, label: "SaaS App", description: "Full SaaS application with dashboard, billing, team management, and settings", prompt: "Build a full SaaS application with dashboard, billing, team management, and settings" },
+  { iconName: "globe" as const, label: "Marketplace", description: "Marketplace with listings, search, filters, seller profiles, and messaging", prompt: "Build a marketplace with listings, search, filters, seller profiles, and messaging" },
 ];
 
 const MODELS = [
@@ -129,6 +156,8 @@ const MAX_ENHANCE_CONTEXT_LENGTH = 3000;
 // Mobile phone frame dimensions for preview
 const MOBILE_FRAME_WIDTH = 375;
 const MOBILE_FRAME_HEIGHT = 812;
+// Max characters shown in the quick prompt suggestion chip text
+const MAX_PROMPT_SUGGESTION_LENGTH = 72;
 
 // Map SSE stage names (from /api/build) to buildStages array indices:
 // buildStages: [prompt(0), parse(1), blueprint(2), generate(3), validate(4), fix(5), preview(6), deploy(7)]
@@ -136,9 +165,11 @@ const SSE_STAGE_TO_BUILD_INDEX: Readonly<Record<string, number>> = {
   BLUEPRINT: 2,
   MANIFEST: 3,
   GENERATE: 3,
+  GENERATING: 3,
   VALIDATE: 4,
+  VALIDATING: 4,
   FIX: 5,
-  POLISH: 5,
+  FIXING: 5,
   DONE: 6,
 };
 
@@ -169,6 +200,16 @@ function getActionStyle(action: string): React.CSSProperties {
   return { background: "rgba(99,102,241,0.15)", color: "#6366f1", border: "1px solid rgba(99,102,241,0.3)" };
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => reject(new Error(`Timeout: ${label} exceeded ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(id); resolve(v); },
+      (e) => { clearTimeout(id); reject(e); }
+    );
+  });
+}
+
 function AIPageInner() {
   const [prompt, setPrompt] = useState("");
   const [output, setOutput] = useState<GenerateSiteResponse | null>(null);
@@ -177,6 +218,12 @@ function AIPageInner() {
   const [deploying, setDeploying] = useState(false);
   const [deployResult, setDeployResult] = useState<DeployResult | null>(null);
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [vercelToken, setVercelToken] = useState("");
+  const [showVercelTokenInput, setShowVercelTokenInput] = useState(false);
+  const [supabaseToken, setSupabaseToken] = useState<string | null>(null);
+  const [supabaseUserEmail, setSupabaseUserEmail] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+  const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [popover, setPopover] = useState<{ x: number; y: number; text: string } | null>(null);
   const [popoverInput, setPopoverInput] = useState("");
   const [activeFile, setActiveFile] = useState<GeneratedFile | null>(null);
@@ -221,6 +268,12 @@ function AIPageInner() {
   const [githubPushResult, setGithubPushResult] = useState<string | null>(null);
   const [githubPushError, setGithubPushError] = useState<string | null>(null);
   const [connectedGithubRepo, setConnectedGithubRepo] = useState<string | null>(null);
+  // GitHub push modal
+  const [githubModalOpen, setGithubModalOpen] = useState(false);
+  const [githubModalOwner, setGithubModalOwner] = useState("");
+  const [githubModalRepo, setGithubModalRepo] = useState("");
+  const [githubModalBranch, setGithubModalBranch] = useState("main");
+  const [githubModalToken, setGithubModalToken] = useState("");
 
   // Mode switcher
   const [mode, setMode] = useState<"code" | "security" | "website" | "mobile" | "image" | "video" | "3d">("code");
@@ -231,17 +284,43 @@ function AIPageInner() {
   const [websiteResult, setWebsiteResult] = useState<{ files: GeneratedFile[]; preview_html: string; summary: string } | null>(null);
   const [websiteLoading, setWebsiteLoading] = useState(false);
   const [websiteError, setWebsiteError] = useState<string | null>(null);
-  const [websiteStage, setWebsiteStage] = useState<string>("");
   // Website iteration tracking
   const [websiteIteration, setWebsiteIteration] = useState(0);
-  const [websiteHistory, setWebsiteHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [, setWebsiteHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  // Website v2 pass counter for SSE progress
+  const [websitePassMessage, setWebsitePassMessage] = useState<string | null>(null);
+  const [websiteLivePreviewUrl, setWebsiteLivePreviewUrl] = useState<string | null>(null);
+  const [websiteLivePreviewRunning, setWebsiteLivePreviewRunning] = useState(false);
+  const [websiteLivePreviewStatus, setWebsiteLivePreviewStatus] = useState<string | null>(null);
+  const [websiteLivePreviewError, setWebsiteLivePreviewError] = useState<string | null>(null);
+  // Remote preview runner state (Docker-based)
+  const [remotePreviewId, setRemotePreviewId] = useState<string | null>(null);
+  const [remotePreviewStatus, setRemotePreviewStatus] = useState<"queued" | "building" | "running" | "failed" | "stopped" | null>(null);
+  const [remotePreviewUrl, setRemotePreviewUrl] = useState<string | null>(null);
+  const [remotePreviewLogs, setRemotePreviewLogs] = useState<string[]>([]);
+  const [remotePreviewError, setRemotePreviewError] = useState<string | null>(null);
+  const [remotePreviewLoading, setRemotePreviewLoading] = useState(false);
+  const [websitePreviewTab, setWebsitePreviewTab] = useState<"webcontainer" | "remote">("webcontainer");
+  const remotePreviewPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Website v2 project persistence (Supabase)
+  const [websiteProjectId, setWebsiteProjectId] = useState<string | null>(null);
+  const [websiteContinueInstruction, setWebsiteContinueInstruction] = useState("");
+  const [websiteContinueLoading, setWebsiteContinueLoading] = useState(false);
+  const [websiteContinueError, setWebsiteContinueError] = useState<string | null>(null);
+  const [websiteContinuePassMessage, setWebsiteContinuePassMessage] = useState<string | null>(null);
+  // Changed-files summary after each website build
+  const [websiteChangedFiles, setWebsiteChangedFiles] = useState<{ created: string[]; updated: string[]; deleted: string[] } | null>(null);
+  const websiteDevProcessRef = useRef<WebContainerProcess | null>(null);
+  const websiteServerUnsubscribeRef = useRef<(() => void) | null>(null);
 
   // Mobile app generation state
   const [mobilePrompt, setMobilePrompt] = useState("");
+  const [mobileFramework, setMobileFramework] = useState("react-native");
   const [mobileResult, setMobileResult] = useState<{ files: GeneratedFile[]; preview_html: string; summary: string } | null>(null);
   const [mobileLoading, setMobileLoading] = useState(false);
   const [mobileError, setMobileError] = useState<string | null>(null);
-  const [mobileStage, setMobileStage] = useState<string>("");
+  // Mobile v2 pass counter for SSE progress
+  const [mobilePassMessage, setMobilePassMessage] = useState<string | null>(null);
 
   // Image generation state
   const [imagePrompt, setImagePrompt] = useState("");
@@ -279,12 +358,17 @@ function AIPageInner() {
   const [securityActiveTab, setSecurityActiveTab] = useState<"scan" | "fixed">("scan");
   const [securityCopyLabel, setSecurityCopyLabel] = useState<"copy" | "copied">("copy");
 
-  // Read ?prompt= from URL
+  // Read ?prompt= and ?mode= from URL
   const searchParams = useSearchParams();
   const pathname = usePathname();
   useEffect(() => {
     const urlPrompt = searchParams.get("prompt");
     if (urlPrompt) setPrompt(urlPrompt);
+
+    const urlMode = searchParams.get("mode");
+    if (urlMode === "website" || urlMode === "mobile") {
+      setMode(urlMode);
+    }
   }, [searchParams]);
 
   // Read connected GitHub repo from localStorage on mount
@@ -315,6 +399,30 @@ function AIPageInner() {
         localStorage.setItem("zivo_project_id", newId);
         setProjectId(newId);
       }
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
+
+  // Load Supabase auth token and Vercel token from localStorage on mount
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem(SUPABASE_TOKEN_KEY);
+      if (token) {
+        setSupabaseToken(token);
+        // Try to decode email from JWT without a full verify (client-side only display)
+        try {
+          const payload = JSON.parse(atob(token.split(".")[1]));
+          if (payload?.email) setSupabaseUserEmail(payload.email as string);
+        } catch {
+          // Ignore JWT decode failures
+        }
+      }
+      const vt = localStorage.getItem("zivo_vercel_token");
+      if (vt) setVercelToken(vt);
+      // Load persisted website project ID
+      const wpid = localStorage.getItem(WEBSITE_PROJECT_ID_KEY);
+      if (wpid) setWebsiteProjectId(wpid);
     } catch {
       // Ignore storage errors
     }
@@ -372,7 +480,11 @@ function AIPageInner() {
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
   const [buildIteration, setBuildIteration] = useState(0);
   const [isBuildRunning, setIsBuildRunning] = useState(false);
-  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows" | "generate" | "blueprint">("prompt");
+  const [activeLeftTab, setActiveLeftTab] = useState<"prompt" | "plan" | "templates" | "workflows" | "generate" | "blueprint" | "projects">("prompt");
+  // Supabase-persisted project ID (set after a successful build when user is authenticated)
+  const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
+  // Instruction input for continuing an existing project build
+  const [continueInstruction, setContinueInstruction] = useState("");
   const [activeRightTab, setActiveRightTab] = useState<"files" | "code" | "diff">("files");
   const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
   const [showDiff, setShowDiff] = useState(false);
@@ -381,18 +493,19 @@ function AIPageInner() {
   // Command palette + design system panel
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [buildStages, setBuildStages] = useState<BuildStage[]>([
-    { id: "prompt", label: "Prompt", icon: "✏️", status: "pending" },
-    { id: "parse", label: "Parse", icon: "🔍", status: "pending" },
-    { id: "blueprint", label: "Blueprint", icon: "📐", status: "pending" },
-    { id: "generate", label: "Generate", icon: "⚡", status: "pending" },
-    { id: "validate", label: "Validate", icon: "✅", status: "pending" },
-    { id: "fix", label: "Fix", icon: "🔧", status: "pending" },
-    { id: "preview", label: "Preview", icon: "👁️", status: "pending" },
-    { id: "deploy", label: "Deploy", icon: "🚀", status: "pending" },
+    { id: "prompt", label: "Prompt", icon: "edit", status: "pending" },
+    { id: "parse", label: "Parse", icon: "search", status: "pending" },
+    { id: "blueprint", label: "Blueprint", icon: "fileText", status: "pending" },
+    { id: "generate", label: "Generate", icon: "zap", status: "pending" },
+    { id: "validate", label: "Validate", icon: "check", status: "pending" },
+    { id: "fix", label: "Fix", icon: "settings", status: "pending" },
+    { id: "preview", label: "Preview", icon: "eye", status: "pending" },
+    { id: "deploy", label: "Deploy", icon: "rocket", status: "pending" },
   ]);
   const [currentBuildStage, setCurrentBuildStage] = useState(0);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [consolePanelOpen, setConsolePanelOpen] = useState(false);
+  const [buildOutputOpen, setBuildOutputOpen] = useState(false);
   const [analysisTab, setAnalysisTab] = useState<"seo" | "a11y" | "perf" | "docs" | "agents">("seo");
   const [analysisPanelOpen, setAnalysisPanelOpen] = useState(false);
   const [designSystemOpen, setDesignSystemOpen] = useState(false);
@@ -409,7 +522,7 @@ function AIPageInner() {
   // Abort controller for streaming build
   const abortControllerRef = useRef<AbortController | null>(null);
   // File search (Upgrade 14b)
-  const [fileSearchQuery, setFileSearchQuery] = useState("");
+  const [_fileSearchQuery, setFileSearchQuery] = useState("");
   // Auto-fix state (Upgrade 9)
   const [autoFixing, setAutoFixing] = useState(false);
   const [autoFixLog, setAutoFixLog] = useState<string | null>(null);
@@ -419,6 +532,26 @@ function AIPageInner() {
   const [designPrimaryColor, setDesignPrimaryColor] = useState("#6366f1");
   const [designFontFamily, setDesignFontFamily] = useState("Inter");
   const [designSpacing, setDesignSpacing] = useState("normal");
+
+  // Click-to-Edit: in-panel code editor state
+  const [editedContent, setEditedContent] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+
+  // Resizable left panel
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return 280;
+    const stored = localStorage.getItem("zivo_left_panel_width");
+    return stored ? Math.min(480, Math.max(220, parseInt(stored, 10))) : 280;
+  });
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const isDraggingPanelRef = useRef(false);
+  const dragStartXRef = useRef(0);
+  const dragStartWidthRef = useRef(0);
+
+  // Streaming code tab: displayed content (typed character by character when loading)
+  const [streamedCodeContent, setStreamedCodeContent] = useState<string>("");
+  const streamedCodeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const iframeWidth = deviceMode === "mobile" ? "390px" : deviceMode === "tablet" ? "768px" : "100%";
 
@@ -437,9 +570,13 @@ function AIPageInner() {
     setDeployError(null);
     setDownloadError(null);
     setActiveFile(null);
+    setEditedContent(null);
+    setSaveStatus("idle");
     setFileSearchQuery("");
     setAutoFixLog(null);
+    setWebsiteLivePreviewError(null);
     setConsoleLogs([{ text: isIteration ? `> Iteration ${buildIterationCount + 1}: Updating project...` : "> Building project...", type: "info" }]);
+    setBuildOutputOpen(true); // auto-open build output when build starts
     setIsBuildRunning(true);
     setBuildErrors([]);
     setBuildWarnings([]);
@@ -479,13 +616,16 @@ function AIPageInner() {
     // Collected files from SSE stream
     let collectedFiles: GeneratedFile[] = [];
     let buildSummary = "";
+    let collectedPreviewHtml: string | undefined;
 
     try {
+      const buildHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (supabaseToken) buildHeaders["Authorization"] = `Bearer ${supabaseToken}`;
       const res = await fetch("/api/build", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: buildHeaders,
         body: JSON.stringify({
-          prompt: buildPrompt,
+          prompt: continueInstruction.trim() || buildPrompt,
           model,
           projectMemory,
           context: buildContext,
@@ -516,7 +656,7 @@ function AIPageInner() {
           const raw = line.slice(6).trim();
           if (!raw || raw === "[DONE]") continue;
 
-          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; details?: unknown };
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; preview_html?: string; details?: unknown; data?: Record<string, unknown> };
           try {
             evt = JSON.parse(raw) as typeof evt;
           } catch {
@@ -540,12 +680,18 @@ function AIPageInner() {
             }
             if (evt.stage === "DONE") {
               buildSummary = evt.message ?? buildSummary;
+              // Capture persisted projectId returned from the server when authenticated
+              if (evt.data?.projectId && typeof evt.data.projectId === "string") {
+                setSavedProjectId(evt.data.projectId);
+              }
             }
           } else if (evt.type === "files" && Array.isArray(evt.files)) {
             collectedFiles = evt.files as GeneratedFile[];
+            if (evt.preview_html) collectedPreviewHtml = evt.preview_html;
             // Show files incrementally
             if (collectedFiles.length > 0 && !activeFile) {
               setActiveFile(collectedFiles[0]);
+              setEditedContent(collectedFiles[0].content);
               setActiveRightTab("files");
             }
             setOutput((prev) => ({ ...(prev ?? {}), files: collectedFiles }));
@@ -560,18 +706,29 @@ function AIPageInner() {
       // Process collected files
       const data: GenerateSiteResponse = {
         files: collectedFiles,
+        preview_html: collectedPreviewHtml,
         summary: buildSummary || `Generated ${collectedFiles.length} files.`,
       };
       setOutput(data);
 
       if (collectedFiles.length > 0) {
         setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
         // Build a lookup map for O(1) access to existing file content
         const existingFileMap = new Map(
           (existingFilesForBuild ?? []).map((ef) => [ef.path, ef.content])
         );
         setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: existingFileMap.get(f.path) ?? "", newContent: f.content })));
         setShowDiff(true);
+
+        // If a full standalone HTML document is available, the iframe already shows it
+        // via the useEffect on output.preview_html — no WebContainer needed.
+        const isStandaloneHtmlDocument =
+          typeof data.preview_html === "string" &&
+          /^<!doctype|^<html/i.test(data.preview_html.trimStart());
+        if (!isStandaloneHtmlDocument) {
+          void startWebsiteLivePreview(collectedFiles);
+        }
         setActiveRightTab("files");
       }
 
@@ -691,9 +848,12 @@ function AIPageInner() {
       localStorage.setItem("zivo_project_id", newId);
     } catch { /* ignore */ }
     setProjectId(newId);
+    setSavedProjectId(null);
+    setContinueInstruction("");
     // Reset all build state
     setOutput(null);
     setActiveFile(null);
+    setEditedContent(null);
     setConversationHistory([]);
     setBuildIterationCount(0);
     setDiffFiles([]);
@@ -701,12 +861,416 @@ function AIPageInner() {
     setPlan(null);
     setPlanData(null);
     setConsoleLogs([{ text: "> 🆕 New project started.", type: "info" }]);
-    // Create a fresh project entry in server-side memory
-    fetch("/api/projects", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "create", projectId: newId, prompt: "" }),
-    }).catch((err) => console.error("[ZIVO] Failed to reset server-side project memory:", err));
+  }
+
+  /** Save the currently edited file content to local state (and Supabase if authenticated). */
+  async function handleFileSave() {
+    if (!activeFile || editedContent === null) return;
+    const newContent = editedContent;
+    setIsSaving(true);
+    setSaveStatus("idle");
+
+    // Update local output.files state
+    const updatedFile: GeneratedFile = { ...activeFile, content: newContent, action: "update" };
+    setActiveFile(updatedFile);
+    setOutput((prev) =>
+      prev
+        ? { ...prev, files: (prev.files ?? []).map((f) => (f.path === activeFile.path ? updatedFile : f)) }
+        : prev
+    );
+
+    // Also refresh diff tracking for the edited file
+    setDiffFiles((prev) =>
+      prev.map((d) => (d.path === activeFile.path ? { ...d, newContent } : d))
+    );
+
+    // Persist to Supabase if the user has a saved project
+    if (savedProjectId) {
+      try {
+        const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+        if (token) {
+          const res = await fetch(`/api/projects/${savedProjectId}/files`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ path: activeFile.path, content: newContent }),
+          });
+          if (!res.ok) throw new Error("Save failed");
+        }
+      } catch {
+        setIsSaving(false);
+        setSaveStatus("error");
+        return;
+      }
+    }
+
+    setIsSaving(false);
+    setSaveStatus("saved");
+    setTimeout(() => setSaveStatus("idle"), 2500);
+  }
+
+  /**
+   * Generates a static HTML snapshot from generated files for the preview pane.
+   * Used as a fallback when no preview_html is available (e.g. Next.js/TypeScript builds).
+   */
+  function buildHTMLSnapshot(files: GeneratedFile[]): string {
+    let appName = "ZIVO App";
+    const pkgFile = files.find((f) => f.path === "package.json");
+    if (pkgFile) {
+      try {
+        const pkg = JSON.parse(pkgFile.content) as { name?: string };
+        if (pkg.name) appName = pkg.name;
+      } catch { /* ignore */ }
+    }
+
+    const pageFiles = files.filter(
+      (f) =>
+        f.path.endsWith("/page.tsx") ||
+        f.path.endsWith("/page.ts") ||
+        f.path === "pages/index.tsx" ||
+        f.path === "pages/index.ts"
+    );
+
+    const routes = pageFiles.map((f) => {
+      const route =
+        f.path
+          .replace(/^(src\/app|app|pages)/, "")
+          .replace(/\/page\.(tsx|ts|jsx|js)$/, "")
+          .replace(/^$/, "/") || "/";
+      return route || "/";
+    });
+
+    const components = files
+      .filter(
+        (f) =>
+          f.path.startsWith("components/") ||
+          f.path.startsWith("src/components/")
+      )
+      .map((f) => f.path.split("/").pop()?.replace(/\.(tsx|ts|jsx|js)$/, "") ?? "")
+      .filter(Boolean)
+      .slice(0, 16);
+
+    const mainPage = files.find(
+      (f) =>
+        f.path === "app/page.tsx" ||
+        f.path === "src/app/page.tsx" ||
+        f.path === "pages/index.tsx" ||
+        f.path === "app/page.ts"
+    );
+    let mainContent = "";
+    if (mainPage) {
+      mainContent = mainPage.content
+        .replace(/^import\s.*$/gm, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\{[^}]*\}/g, "")
+        .replace(/\/\/.*$/gm, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 400);
+    }
+
+    const totalKB = Math.round(files.reduce((a, f) => a + f.content.length, 0) / 1024);
+
+    const esc = (s: string) =>
+      s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] ?? c));
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(appName)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#0a0b14;color:#f1f5f9;min-height:100vh}
+  .hdr{background:#0f1120;border-bottom:1px solid rgba(255,255,255,.08);padding:.875rem 2rem;display:flex;align-items:center;gap:.75rem}
+  .logo{width:32px;height:32px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1rem;flex-shrink:0;color:#fff}
+  .hdr h1{font-size:1.125rem;font-weight:700}
+  .badge{padding:.2rem .65rem;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:20px;font-size:.7rem;color:#f59e0b;font-weight:600;margin-left:.25rem}
+  .wrap{max-width:860px;margin:1.5rem auto;padding:0 1.5rem;display:grid;gap:1.25rem}
+  .note{padding:.65rem 1rem;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);border-radius:8px;font-size:.8125rem;color:#f59e0b}
+  .card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:1.125rem}
+  .card h2{font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;font-weight:600;margin-bottom:.75rem}
+  .stats{display:flex;gap:2rem;flex-wrap:wrap}
+  .sn{font-size:1.625rem;font-weight:800;color:#f1f5f9;line-height:1}
+  .sl{font-size:.7rem;color:#475569;text-transform:uppercase;letter-spacing:.06em;margin-top:.2rem}
+  .routes{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.4rem}
+  .route{padding:.4rem .65rem;background:rgba(99,102,241,.1);border:1px solid rgba(99,102,241,.25);border-radius:7px;font-size:.8rem;color:#a5b4fc;font-family:monospace}
+  .tags{display:flex;flex-wrap:wrap;gap:.35rem}
+  .tag{padding:.2rem .55rem;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);border-radius:6px;font-size:.75rem;color:#94a3b8}
+  .txt{font-size:.8125rem;color:#94a3b8;line-height:1.75}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <div class="logo">Z</div>
+  <h1>${esc(appName)}</h1>
+  <span class="badge">HTML Snapshot</span>
+</div>
+<div class="wrap">
+  <div class="note">&#9432; This is a static snapshot preview. Use the <strong>Code</strong> tab to view and edit files.</div>
+  <div class="card">
+    <h2>Project Overview</h2>
+    <div class="stats">
+      <div><div class="sn">${files.length}</div><div class="sl">Files</div></div>
+      <div><div class="sn">${routes.length}</div><div class="sl">Routes</div></div>
+      <div><div class="sn">${components.length}</div><div class="sl">Components</div></div>
+      <div><div class="sn">${totalKB}KB</div><div class="sl">Total Size</div></div>
+    </div>
+  </div>
+  ${routes.length > 0 ? `<div class="card"><h2>Pages &amp; Routes (${routes.length})</h2><div class="routes">${routes.map((r) => `<div class="route">${esc(r)}</div>`).join("")}</div></div>` : ""}
+  ${components.length > 0 ? `<div class="card"><h2>Components (${components.length})</h2><div class="tags">${components.map((c) => `<span class="tag">${esc(c)}</span>`).join("")}</div></div>` : ""}
+  ${mainContent ? `<div class="card"><h2>Homepage Content</h2><p class="txt">${esc(mainContent)}</p></div>` : ""}
+</div>
+</body>
+</html>`;
+  }
+
+  async function generatePreviewFromFiles(files: GeneratedFile[]): Promise<string> {
+    if (!files.length) return "";
+    try {
+      const res = await fetch("/api/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ files }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { previewHtml?: string };
+        if (typeof data.previewHtml === "string" && data.previewHtml.trim()) {
+          return data.previewHtml;
+        }
+      }
+    } catch {
+      // Ignore preview API failures and fall back to local HTML snapshot.
+    }
+
+    return buildHTMLSnapshot(files);
+  }
+  function toWebContainerTree(files: GeneratedFile[]): FileSystemTree {
+    const tree: FileSystemTree = {};
+
+    for (const file of files) {
+      if (!file.path || file.action === "delete") continue;
+      const parts = file.path.split("/").filter(Boolean);
+      if (parts.length === 0) continue;
+
+      let current = tree;
+      for (let i = 0; i < parts.length; i += 1) {
+        const part = parts[i];
+        const isLeaf = i === parts.length - 1;
+
+        if (isLeaf) {
+          current[part] = { file: { contents: file.content ?? "" } };
+          continue;
+        }
+
+        const existing = current[part];
+        if (!existing || !("directory" in existing)) {
+          current[part] = { directory: {} };
+        }
+
+        current = (current[part] as { directory: FileSystemTree }).directory;
+      }
+    }
+
+    return tree;
+  }
+
+  async function startWebsiteLivePreview(files: GeneratedFile[], retryCount = 0): Promise<void> {
+    if (!files.length) return;
+
+    if (retryCount === 0) {
+      // Check crossOriginIsolated before attempting WebContainer boot.
+      // If the browser doesn't have COOP/COEP headers, skip silently —
+      // the static HTML snapshot is already showing in the iframe.
+      const isCrossOriginIsolated =
+        typeof window !== 'undefined' &&
+        window.crossOriginIsolated === true;
+      if (!isCrossOriginIsolated) {
+        setWebsiteLivePreviewRunning(false);
+        setWebsiteLivePreviewStatus(null);
+        return;
+      }
+
+      setWebsiteLivePreviewError(null);
+      setWebsiteLivePreviewStatus("Booting live runtime…");
+      setWebsiteLivePreviewRunning(true);
+      setWebsiteLivePreviewUrl(null);
+    }
+
+    try {
+      try {
+        websiteServerUnsubscribeRef.current?.();
+      } catch {
+        // ignore
+      }
+      websiteServerUnsubscribeRef.current = null;
+
+      try {
+        websiteDevProcessRef.current?.kill();
+      } catch {
+        // ignore
+      }
+      websiteDevProcessRef.current = null;
+
+      const webcontainer = await getWebContainer();
+      await webcontainer.mount(toWebContainerTree(files));
+
+      setWebsiteLivePreviewStatus("Installing dependencies…");
+      const installProcess = await webcontainer.spawn("npm", ["install", "--no-audit", "--no-fund"]);
+      const installCode = await withTimeout(installProcess.exit, 120_000, 'npm install');
+      if (installCode !== 0) throw new Error(`npm install failed (${installCode})`);
+
+      setWebsiteLivePreviewStatus("Starting Next.js dev server…");
+      const devProcess = await webcontainer.spawn("npm", ["run", "dev", "--", "--port", "3000", "--hostname", "0.0.0.0"]);
+      websiteDevProcessRef.current = devProcess;
+
+      void devProcess.exit.then((code) => {
+        setWebsiteLivePreviewRunning(false);
+        if (code !== 0) {
+          setWebsiteLivePreviewError(`Live preview exited with code ${code}.`);
+          setWebsiteLivePreviewStatus(null);
+        }
+      });
+
+      // Wait for server-ready with a 60 s timeout.
+      let serverReadyUnsub: (() => void) | null = null;
+      const serverReadyPromise = new Promise<string>((resolve) => {
+        serverReadyUnsub = webcontainer.on("server-ready", (_port, url) => {
+          serverReadyUnsub?.();
+          serverReadyUnsub = null;
+          websiteServerUnsubscribeRef.current = null;
+          resolve(url);
+        });
+        websiteServerUnsubscribeRef.current = serverReadyUnsub;
+      });
+      const previewUrl = await withTimeout(serverReadyPromise, 60_000, 'server-ready');
+      setWebsiteLivePreviewUrl(previewUrl);
+      setWebsiteLivePreviewStatus("Live preview ready");
+    } catch (err: unknown) {
+      // Clean up any pending server-ready listener so it doesn't fire after timeout.
+      try { websiteServerUnsubscribeRef.current?.(); } catch { /* ignore */ }
+      websiteServerUnsubscribeRef.current = null;
+      // Check if this is the UNKNOWN write error (errno -4094) or a progress timeout.
+      const isWriteError =
+        err instanceof Error &&
+        (err.message.includes("-4094") ||
+          err.message.includes("UNKNOWN") ||
+          err.message.includes("syscall: 'write'") ||
+          err.message.includes("write") ||
+          err.message.startsWith("Timeout:"));
+      // Allow up to 4 retries (5 total attempts) for write errors.
+      // Delays: 2s, 4s, 8s, 16s (exponential backoff starting at 2s).
+      if (retryCount < 4 && isWriteError) {
+        const delay = 2000 * Math.pow(2, retryCount);
+        setWebsiteLivePreviewStatus(`Write error — retrying (attempt ${retryCount + 2}/5)…`);
+        await new Promise<void>((resolve) => setTimeout(resolve, delay));
+        // Invalidate the singleton so the next getWebContainer() call boots fresh.
+        invalidateWebContainer();
+        return startWebsiteLivePreview(files, retryCount + 1);
+      }
+      // All retries exhausted — graceful fallback to static snapshot
+      invalidateWebContainer();
+      setWebsiteLivePreviewRunning(false);
+      setWebsiteLivePreviewStatus(null);
+      setWebsiteLivePreviewError("Live preview unavailable — showing static snapshot");
+    }
+  }
+
+  // ── Remote preview runner helpers ──────────────────────────────────────────
+
+  function stopRemotePreviewPolling() {
+    if (remotePreviewPollRef.current) {
+      clearInterval(remotePreviewPollRef.current);
+      remotePreviewPollRef.current = null;
+    }
+  }
+
+  async function pollRemotePreviewStatus(pid: string, token: string) {
+    try {
+      const res = await fetch(`/api/preview/status?previewId=${encodeURIComponent(pid)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json() as {
+        status: "queued" | "building" | "running" | "failed" | "stopped";
+        url?: string;
+        logs?: string[];
+        error?: string;
+      };
+      setRemotePreviewStatus(data.status);
+      if (data.logs) setRemotePreviewLogs(data.logs);
+      if (data.error) setRemotePreviewError(data.error);
+      if (data.url) setRemotePreviewUrl(data.url);
+      if (data.status === "running" || data.status === "failed" || data.status === "stopped") {
+        stopRemotePreviewPolling();
+        setRemotePreviewLoading(false);
+      }
+    } catch {
+      // ignore transient fetch errors
+    }
+  }
+
+  async function handleStartRemotePreview() {
+    if (!websiteProjectId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) {
+      setRemotePreviewError("You must be signed in to start a remote preview.");
+      return;
+    }
+
+    stopRemotePreviewPolling();
+    setRemotePreviewLoading(true);
+    setRemotePreviewStatus("queued");
+    setRemotePreviewUrl(null);
+    setRemotePreviewLogs([]);
+    setRemotePreviewError(null);
+    setRemotePreviewId(null);
+
+    try {
+      const res = await fetch("/api/preview/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ projectId: websiteProjectId }),
+      });
+      const data = await res.json() as { previewId?: string; error?: string };
+      if (!res.ok || !data.previewId) {
+        setRemotePreviewError(data.error ?? "Failed to start preview");
+        setRemotePreviewLoading(false);
+        setRemotePreviewStatus("failed");
+        return;
+      }
+      const pid = data.previewId;
+      setRemotePreviewId(pid);
+      // Start polling every 3 seconds
+      remotePreviewPollRef.current = setInterval(() => {
+        void pollRemotePreviewStatus(pid, token);
+      }, 3000);
+      // Poll once immediately
+      void pollRemotePreviewStatus(pid, token);
+    } catch (err) {
+      setRemotePreviewError(err instanceof Error ? err.message : "Failed to start preview");
+      setRemotePreviewLoading(false);
+      setRemotePreviewStatus("failed");
+    }
+  }
+
+  async function handleStopRemotePreview() {
+    if (!remotePreviewId) return;
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) return;
+
+    stopRemotePreviewPolling();
+    try {
+      await fetch("/api/preview/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ previewId: remotePreviewId }),
+      });
+    } catch { /* ignore */ }
+
+    setRemotePreviewStatus("stopped");
+    setRemotePreviewUrl(null);
+    setRemotePreviewLoading(false);
   }
 
   async function handlePlan() {
@@ -781,19 +1345,33 @@ function AIPageInner() {
 
   async function handleDeploy(platform: "vercel" | "netlify") {
     if (!output?.files?.length) return;
+
+    // If deploying to Vercel and no token available, show the token input
+    if (platform === "vercel" && !vercelToken) {
+      setShowVercelTokenInput(true);
+      return;
+    }
+
     setDeploying(true);
     setDeployError(null);
     try {
+      const body: Record<string, unknown> = { platform, files: output.files };
+      if (platform === "vercel" && vercelToken) body.token = vercelToken;
       const res = await fetch("/api/deploy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, files: output.files }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.error) {
         setDeployError(data.error);
+        // If the error is about a missing token, show the token input
+        if (data.error.includes("VERCEL_TOKEN")) {
+          setShowVercelTokenInput(true);
+        }
       } else {
         setDeployResult(data as DeployResult);
+        setShowVercelTokenInput(false);
       }
     } catch {
       setDeployError("Deploy request failed");
@@ -863,6 +1441,74 @@ function AIPageInner() {
     setGithubPushing(false);
   }
 
+  async function handleGithubModalPush() {
+    if (!output?.files?.length) return;
+    const token = githubModalToken.trim() || (typeof window !== "undefined" ? localStorage.getItem("zivo_github_token") : null);
+    const repoFull = githubModalOwner.trim() && githubModalRepo.trim()
+      ? `${githubModalOwner.trim()}/${githubModalRepo.trim()}`
+      : connectedGithubRepo ?? (typeof window !== "undefined" ? localStorage.getItem("zivo_github_repo") : null);
+    if (!token || !repoFull) {
+      setGithubPushError("Enter owner/repo and a GitHub token.");
+      return;
+    }
+    setGithubPushing(true);
+    setGithubPushResult(null);
+    setGithubPushError(null);
+    setGithubModalOpen(false);
+    try {
+      const res = await fetch("/api/github", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "upsert",
+          token,
+          repo: repoFull,
+          branch: githubModalBranch.trim() || "main",
+          files: output.files.map((f) => ({
+            path: f.path,
+            content: f.content,
+            message: `ZIVO AI: ${prompt.slice(0, 60)}`,
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setGithubPushError(data.error);
+      } else {
+        setGithubPushResult(`https://github.com/${repoFull}/tree/${githubModalBranch.trim() || "main"}`);
+        // Persist token and repo for future use
+        try {
+          localStorage.setItem("zivo_github_token", token);
+          localStorage.setItem("zivo_github_repo", repoFull);
+        } catch { /* ignore */ }
+      }
+    } catch {
+      setGithubPushError("GitHub push failed. Please try again.");
+    }
+    setGithubPushing(false);
+  }
+
+  async function handleShare() {
+    if (!savedProjectId || !supabaseToken) return;
+    setSharing(true);
+    try {
+      const res = await fetch(`/api/projects/${savedProjectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseToken}` },
+        body: JSON.stringify({ visibility: "public" }),
+      });
+      if (res.ok) {
+        const url = `${window.location.origin}/p/${savedProjectId}`;
+        setShareUrl(url);
+        // Best-effort clipboard copy; the URL is also displayed in the UI as a fallback
+        navigator.clipboard.writeText(url).catch(() => {});
+      }
+    } catch {
+      // Share failed silently; shareUrl remains null so user sees no change
+    }
+    setSharing(false);
+  }
+
   async function handleImageGenerate() {
     if (!imagePrompt.trim()) return;
     setImageLoading(true);
@@ -881,58 +1527,233 @@ function AIPageInner() {
     setImageLoading(false);
   }
 
+  /** Compute a changed-files summary by comparing old vs. new file lists. */
+  function computeWebsiteChangedFiles(
+    previousFiles: GeneratedFile[],
+    newFiles: GeneratedFile[]
+  ): { created: string[]; updated: string[]; deleted: string[] } {
+    const previousFileMap = new Map(previousFiles.map((f) => [f.path, f.content]));
+    const newPaths = new Set(newFiles.map((f) => f.path));
+    const created = newFiles.filter((f) => !previousFileMap.has(f.path)).map((f) => f.path);
+    const updated = newFiles.filter((f) => previousFileMap.has(f.path) && previousFileMap.get(f.path) !== f.content).map((f) => f.path);
+    const deleted = previousFiles.filter((f) => !newPaths.has(f.path)).map((f) => f.path);
+    return { created, updated, deleted };
+  }
+
   async function handleWebsiteGenerate() {
     if (!websitePrompt.trim()) return;
+
+    const previousFiles = output?.files ?? [];
+
     setWebsiteLoading(true);
     setWebsiteError(null);
     setWebsiteResult(null);
-    setWebsiteStage("Preparing…");
+    setWebsitePassMessage(null);
+    setWebsiteLivePreviewUrl(null);
+    setWebsiteLivePreviewError(null);
+    setWebsiteLivePreviewStatus(null);
+    setWebsiteChangedFiles(null);
     try {
       const newIteration = websiteIteration + 1;
-      const existingFiles = websiteResult?.files?.length ? websiteResult.files : undefined;
+      const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       const res = await fetch("/api/build", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
-          prompt: `Build a complete multi-page website: ${websitePrompt}. Style: ${websiteStyle}.`,
+          prompt: `${websitePrompt}. Style: ${websiteStyle}.`,
           model,
-          mode: "website",
-          existingFiles,
+          mode: "website_v2",
+          projectId: websiteProjectId ?? undefined,
         }),
       });
-      if (!res.body) throw new Error("No response stream");
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
-      let resultFiles: GeneratedFile[] = [];
+      let sseBuffer = "";
+      let collectedFiles: GeneratedFile[] = [];
+      let buildSummary = "";
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line.startsWith("data:")) continue;
-          try {
-            const evt = JSON.parse(line.slice(5).trim()) as { type: string; stage?: string; message?: string; files?: GeneratedFile[]; };
-            if (evt.type === "stage" && evt.message) setWebsiteStage(evt.message);
-            if (evt.type === "files" && Array.isArray(evt.files)) resultFiles = evt.files;
-            if (evt.type === "error") throw new Error(evt.message ?? "Build error");
-          } catch (parseErr) { if (parseErr instanceof Error && parseErr.message !== "Build error") { /* skip parse errors */ } else if (parseErr instanceof Error) { throw parseErr; } }
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[]; data?: Record<string, unknown> };
+          try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
+
+          if (evt.type === "stage") {
+            if (evt.message) setWebsitePassMessage(evt.message);
+            if (evt.stage === "DONE") {
+              buildSummary = evt.message ?? buildSummary;
+              // Capture the persisted projectId from the server
+              if (evt.data?.projectId && typeof evt.data.projectId === "string") {
+                const pid = evt.data.projectId;
+                setWebsiteProjectId(pid);
+                try { localStorage.setItem(WEBSITE_PROJECT_ID_KEY, pid); } catch { /* ignore */ }
+              }
+            }
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files;
+          } else if (evt.type === "error") {
+            setWebsiteError(String(evt.message ?? "Website generation failed."));
+          }
         }
       }
-      if (resultFiles.length === 0) throw new Error("No files generated");
-      setWebsiteResult({ files: resultFiles, preview_html: "", summary: `Generated ${resultFiles.length} files` });
-      setWebsiteIteration(newIteration);
-      setWebsiteHistory((prev) => [
-        ...prev,
-        { role: "user" as const, content: websitePrompt },
-        { role: "assistant" as const, content: `Generated ${resultFiles.length} files.` },
-      ]);
-    } catch (err) { setWebsiteError(err instanceof Error ? err.message : "Website generation failed. Please try again."); }
+
+      if (collectedFiles.length > 0) {
+        setWebsitePassMessage("Preparing website preview…");
+        const previewHtml = await generatePreviewFromFiles(collectedFiles);
+        const summary = buildSummary || `Generated ${collectedFiles.length} files.`;
+
+        setWebsiteResult({ files: collectedFiles, preview_html: previewHtml, summary });
+        setWebsiteIteration(newIteration);
+        setWebsiteHistory((prev) => [
+          ...prev,
+          { role: "user" as const, content: websitePrompt },
+          { role: "assistant" as const, content: summary },
+        ]);
+
+        setOutput({ files: collectedFiles, preview_html: previewHtml, summary });
+        setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
+        setActiveRightTab("files");
+
+        const previousFileMap = new Map(previousFiles.map((f) => [f.path, f.content]));
+        setDiffFiles(
+          collectedFiles.map((f) => ({
+            path: f.path,
+            oldContent: previousFileMap.get(f.path) ?? "",
+            newContent: f.content,
+          }))
+        );
+        setShowDiff(true);
+
+        // Compute changed-files summary using shared helper
+        const changedSummary = computeWebsiteChangedFiles(previousFiles, collectedFiles);
+        if (changedSummary.created.length + changedSummary.updated.length + changedSummary.deleted.length > 0) {
+          setWebsiteChangedFiles(changedSummary);
+        }
+
+        void startWebsiteLivePreview(collectedFiles);
+      } else if (!websiteError) {
+        setWebsiteError("No files were generated. Try a more specific prompt.");
+      }
+    } catch (err: unknown) {
+      setWebsiteError(err instanceof Error ? err.message : "Website generation failed. Please try again.");
+    }
     setWebsiteLoading(false);
-    setWebsiteStage("");
+    setWebsitePassMessage(null);
+    setWebsiteLivePreviewUrl(null);
+    setWebsiteLivePreviewError(null);
+    setWebsiteLivePreviewStatus(null);
+  }
+
+  /** Continue Build: stream from /api/projects/[id]/continue with the given instruction. */
+  async function handleContinueWebsiteBuild() {
+    if (!websiteContinueInstruction.trim() || !websiteProjectId) return;
+
+    const token = typeof window !== "undefined" ? localStorage.getItem(SUPABASE_TOKEN_KEY) : null;
+    if (!token) {
+      setWebsiteContinueError("You must be signed in to continue building. Please sign in via the auth page.");
+      return;
+    }
+
+    const previousFiles = websiteResult?.files ?? output?.files ?? [];
+
+    setWebsiteContinueLoading(true);
+    setWebsiteContinueError(null);
+    setWebsiteContinuePassMessage(null);
+    setWebsiteChangedFiles(null);
+
+    try {
+      const res = await fetch(`/api/projects/${websiteProjectId}/continue`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ instruction: websiteContinueInstruction.trim(), model }),
+      });
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuffer = "";
+      let collectedFiles: GeneratedFile[] = [];
+      let buildSummary = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[] };
+          try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
+
+          if (evt.type === "stage") {
+            if (evt.message) setWebsiteContinuePassMessage(evt.message);
+            if (evt.stage === "DONE") buildSummary = evt.message ?? buildSummary;
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files;
+          } else if (evt.type === "error") {
+            setWebsiteContinueError(String(evt.message ?? "Continue build failed."));
+          }
+        }
+      }
+
+      if (collectedFiles.length > 0) {
+        setWebsiteContinuePassMessage("Preparing preview…");
+        const previewHtml = await generatePreviewFromFiles(collectedFiles);
+        const summary = buildSummary || `Updated ${collectedFiles.length} files.`;
+
+        setWebsiteResult({ files: collectedFiles, preview_html: previewHtml, summary });
+        setWebsiteIteration((prev) => prev + 1);
+        setWebsiteHistory((prev) => [
+          ...prev,
+          { role: "user" as const, content: websiteContinueInstruction },
+          { role: "assistant" as const, content: summary },
+        ]);
+
+        setOutput({ files: collectedFiles, preview_html: previewHtml, summary });
+        setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
+        setActiveRightTab("files");
+
+        const previousFileMap = new Map(previousFiles.map((f) => [f.path, f.content]));
+        setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: previousFileMap.get(f.path) ?? "", newContent: f.content })));
+        setShowDiff(true);
+
+        // Compute changed-files summary using shared helper
+        const changedSummary = computeWebsiteChangedFiles(previousFiles, collectedFiles);
+        if (changedSummary.created.length + changedSummary.updated.length + changedSummary.deleted.length > 0) {
+          setWebsiteChangedFiles(changedSummary);
+        }
+
+        setWebsiteContinueInstruction("");
+        void startWebsiteLivePreview(collectedFiles);
+      } else if (!websiteContinueError) {
+        setWebsiteContinueError("No files were returned. Try rephrasing your request.");
+      }
+    } catch (err: unknown) {
+      setWebsiteContinueError(err instanceof Error ? err.message : "Continue build failed.");
+    }
+    setWebsiteContinueLoading(false);
+    setWebsiteContinuePassMessage(null);
   }
 
   async function handleMobileGenerate() {
@@ -940,46 +1761,59 @@ function AIPageInner() {
     setMobileLoading(true);
     setMobileError(null);
     setMobileResult(null);
-    setMobileStage("Preparing…");
+    setMobilePassMessage(null);
     try {
-      const existingFiles = mobileResult?.files?.length ? mobileResult.files : undefined;
       const res = await fetch("/api/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: mobilePrompt,
+          prompt: `${mobileFramework} mobile app: ${mobilePrompt}`,
           model,
-          mode: "mobile",
-          existingFiles,
+          mode: "mobile_v2",
         }),
       });
-      if (!res.body) throw new Error("No response stream");
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
-      let resultFiles: GeneratedFile[] = [];
+      let sseBuffer = "";
+      let collectedFiles: GeneratedFile[] = [];
+      let buildSummary = "";
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line.startsWith("data:")) continue;
-          try {
-            const evt = JSON.parse(line.slice(5).trim()) as { type: string; stage?: string; message?: string; files?: GeneratedFile[]; };
-            if (evt.type === "stage" && evt.message) setMobileStage(evt.message);
-            if (evt.type === "files" && Array.isArray(evt.files)) resultFiles = evt.files;
-            if (evt.type === "error") throw new Error(evt.message ?? "Build error");
-          } catch (parseErr) { if (parseErr instanceof Error && parseErr.message !== "Build error") { /* skip parse errors */ } else if (parseErr instanceof Error) { throw parseErr; } }
+        sseBuffer += decoder.decode(value, { stream: true });
+        const lines = sseBuffer.split("\n");
+        sseBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const raw = line.slice(6).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evt: { type: string; stage?: string; message?: string; progress?: number; files?: GeneratedFile[] };
+          try { evt = JSON.parse(raw) as typeof evt; } catch { continue; }
+
+          if (evt.type === "stage") {
+            if (evt.message) setMobilePassMessage(evt.message);
+            if (evt.stage === "DONE") buildSummary = evt.message ?? buildSummary;
+          } else if (evt.type === "files" && Array.isArray(evt.files)) {
+            collectedFiles = evt.files;
+          } else if (evt.type === "error") {
+            setMobileError(String(evt.message ?? "Mobile generation failed."));
+          }
         }
       }
-      if (resultFiles.length === 0) throw new Error("No files generated");
-      setMobileResult({ files: resultFiles, preview_html: "", summary: `Generated ${resultFiles.length} files` });
-    } catch (err) { setMobileError(err instanceof Error ? err.message : "Mobile app generation failed. Please try again."); }
+
+      if (collectedFiles.length > 0) {
+        setMobileResult({ files: collectedFiles, preview_html: "", summary: buildSummary || `Generated ${collectedFiles.length} files.` });
+      }
+    } catch (err: unknown) {
+      setMobileError(err instanceof Error ? err.message : "Mobile app generation failed. Please try again.");
+    }
     setMobileLoading(false);
-    setMobileStage("");
+    setMobilePassMessage(null);
   }
 
   async function handleVideoGenerate() {
@@ -1126,8 +1960,9 @@ function AIPageInner() {
     setLoadingStep(0);
     setOutput(null);
     setActiveFile(null);
+    setEditedContent(null);
+    setSaveStatus("idle");
     setConsoleLogs([{ text: `> ⚡ Building full app: ${options.appName}…`, type: "info" }]);
-    setIsBuildRunning(true);
     setBuildErrors([]);
     setBuildWarnings([]);
     setBuildLogs([]);
@@ -1226,6 +2061,7 @@ function AIPageInner() {
             collectedFiles = evt.files as GeneratedFile[];
             if (collectedFiles.length > 0 && !activeFile) {
               setActiveFile(collectedFiles[0]);
+              setEditedContent(collectedFiles[0].content);
               setActiveRightTab("files");
             }
             setOutput((prev) => ({ ...(prev ?? {}), files: collectedFiles }));
@@ -1246,6 +2082,7 @@ function AIPageInner() {
 
       if (collectedFiles.length > 0) {
         setActiveFile(collectedFiles[0]);
+        setEditedContent(collectedFiles[0].content);
         setDiffFiles(collectedFiles.map((f) => ({ path: f.path, oldContent: "", newContent: f.content })));
         setShowDiff(true);
         setActiveRightTab("files");
@@ -1343,12 +2180,66 @@ function AIPageInner() {
     }
     setChatLoading(false);
   }
-
-  const previewSrc = output?.preview_html
-    ? `data:text/html;charset=utf-8,${encodeURIComponent(output.preview_html)}`
-    : null;
-
   const hasFiles = Boolean(output?.files?.length);
+
+  // Streaming code tab: type out active file content when loading
+  // STREAMING_CHUNKS: number of equal-sized steps to stream the file over ~2s at 16ms/tick
+  const STREAMING_CHUNKS = 120;
+  useEffect(() => {
+    if (loading && activeFile) {
+      setStreamedCodeContent("");
+      const content = activeFile.content;
+      let idx = 0;
+      const tick = () => {
+        idx += Math.max(1, Math.floor(content.length / STREAMING_CHUNKS));
+        setStreamedCodeContent(content.slice(0, idx));
+        if (idx < content.length) {
+          streamedCodeTimerRef.current = setTimeout(tick, 16);
+        } else {
+          setStreamedCodeContent(content);
+        }
+      };
+      streamedCodeTimerRef.current = setTimeout(tick, 40);
+      return () => {
+        if (streamedCodeTimerRef.current) clearTimeout(streamedCodeTimerRef.current);
+      };
+    } else if (!loading && activeFile) {
+      setStreamedCodeContent(activeFile.content);
+    }
+  }, [loading, activeFile]);
+
+  // Left panel drag-to-resize handlers
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (!isDraggingPanelRef.current) return;
+      const delta = e.clientX - dragStartXRef.current;
+      const newWidth = Math.min(480, Math.max(220, dragStartWidthRef.current + delta));
+      setLeftPanelWidth(newWidth);
+    }
+    function onMouseUp() {
+      if (!isDraggingPanelRef.current) return;
+      isDraggingPanelRef.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try {
+        localStorage.setItem("zivo_left_panel_width", String(leftPanelWidth));
+      } catch { /* ignore */ }
+    }
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [leftPanelWidth]);
+
+  // Cleanup remote preview polling on unmount
+  useEffect(() => {
+    return () => {
+      stopRemotePreviewPolling();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>
@@ -1358,7 +2249,7 @@ function AIPageInner() {
         @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes recordPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
-        @keyframes statusBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        @keyframes cursorBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .zivo-btn:hover { opacity: 0.85; transform: scale(1.02); }
         .zivo-btn { transition: opacity 0.15s, transform 0.15s; }
         .zivo-chip:hover { background: rgba(99,102,241,0.2) !important; border-color: rgba(99,102,241,0.4) !important; }
@@ -1377,7 +2268,7 @@ function AIPageInner() {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: COLORS.bg, color: COLORS.textPrimary, fontFamily: "'Inter', 'Segoe UI', system-ui, sans-serif", overflow: "hidden" }}>
 
         {/* Top Nav */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "52px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: "#0a0b14", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <div style={{ width: "28px", height: "28px", background: COLORS.accentGradient, borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 }}>Z</div>
             <span style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.01em" }}>ZIVO AI</span>
@@ -1399,8 +2290,8 @@ function AIPageInner() {
             </nav>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: COLORS.success, boxShadow: `0 0 6px ${COLORS.success}` }} />
-            <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>Ready</span>
+            <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: loading ? COLORS.warning : COLORS.success, boxShadow: `0 0 6px ${loading ? COLORS.warning : COLORS.success}`, animation: loading ? "statusBlink 1.5s ease-in-out infinite" : "none" }} aria-hidden="true" />
+            <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary }} aria-live="polite" aria-label={loading ? "Building project" : "Ready to build"}>{loading ? "Building..." : "Ready"}</span>
             <button
               className="zivo-btn"
               onClick={() => setChatOpen((o) => !o)}
@@ -1410,7 +2301,32 @@ function AIPageInner() {
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               Chat
             </button>
-            <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: COLORS.accentGradient, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.875rem" }}>Z</div>
+            {supabaseUserEmail ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: COLORS.accentGradient, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "0.875rem", cursor: "pointer" }} title={supabaseUserEmail}>
+                  {supabaseUserEmail.charAt(0).toUpperCase()}
+                </div>
+                <button
+                  className="zivo-btn"
+                  onClick={() => {
+                    localStorage.removeItem(SUPABASE_TOKEN_KEY);
+                    setSupabaseToken(null);
+                    setSupabaseUserEmail(null);
+                    setSavedProjectId(null);
+                  }}
+                  style={{ padding: "0.3rem 0.65rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem" }}
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <a
+                href="/auth?next=/ai"
+                style={{ padding: "0.3rem 0.75rem", background: COLORS.accentGradient, borderRadius: "6px", color: "#fff", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+              >
+                Sign In
+              </a>
+            )}
           </div>
         </div>
 
@@ -1418,7 +2334,7 @@ function AIPageInner() {
         <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
           {/* Left Panel */}
-          <div style={{ width: "320px", flexShrink: 0, display: "flex", flexDirection: "column", borderRight: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
+          <div style={{ width: leftPanelCollapsed ? 0 : `${leftPanelWidth}px`, flexShrink: 0, display: "flex", flexDirection: "column", borderRight: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden", transition: leftPanelCollapsed ? "width 0.2s ease" : "none", position: "relative" }}>
 
             {/* Scrollable content */}
             <div style={{ flex: 1, overflowY: "auto", padding: "1.25rem" }}>
@@ -1451,11 +2367,11 @@ function AIPageInner() {
               {/* Header */}
               <div style={{ marginBottom: "1.25rem", textAlign: "center" }}>
                 <h1 style={{ fontSize: "1.375rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>What will you build today?</h1>
-                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 0.75rem" }}>Describe your app — ZIVO generates the code instantly</p>
+                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 0.75rem" }}>Describe what to build — ZIVO AI generates the full code instantly</p>
                 <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
-              {/* Prompt / Plan / Templates / Workflows / Generate / Blueprint Tabs */}
+              {/* Prompt / Plan / Templates / Workflows / Generate / Blueprint / Projects Tabs */}
               <div style={{ display: "flex", gap: "4px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px" }}>
                 {([
                   ["prompt", "Prompt"],
@@ -1464,6 +2380,7 @@ function AIPageInner() {
                   ["workflows", "Workflows"],
                   ["generate", "Generate"],
                   ["blueprint", "Blueprint"],
+                  ["projects", "Projects"],
                 ] as const).map(([tab, label]) => (
                   <button
                     key={tab}
@@ -1581,7 +2498,7 @@ function AIPageInner() {
                         aria-label={`Use template: ${tpl.label}`}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                          <span style={{ fontSize: "1.125rem", lineHeight: 1 }}>{tpl.icon}</span>
+                          <span style={{ display: "inline-flex", alignItems: "center", color: COLORS.accent }}><Icon name={tpl.iconName} size={16} /></span>
                           <span style={{ fontWeight: 600, fontSize: "0.875rem", color: COLORS.textPrimary }}>{tpl.label}</span>
                         </div>
                         <p style={{ margin: 0, fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.5 }}>{tpl.description}</p>
@@ -1674,6 +2591,79 @@ function AIPageInner() {
                 </div>
               )}
 
+              {/* Projects Tab — My Saved Projects */}
+              {activeLeftTab === "projects" && (
+                <div style={{ animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>My Projects</div>
+                  {savedProjectId ? (
+                    <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", padding: "0.875rem", marginBottom: "0.875rem" }}>
+                      <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, marginBottom: "0.35rem" }}>Current Project (saved)</div>
+                      <div style={{ fontSize: "0.8125rem", color: COLORS.accent, fontFamily: "monospace", wordBreak: "break-all", marginBottom: "0.5rem" }}>{savedProjectId}</div>
+                      <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>
+                        This project is persisted in Supabase. Use the <strong style={{ color: COLORS.textPrimary }}>Continue Building</strong> input below the output to add features.
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "1rem", marginBottom: "0.875rem", textAlign: "center" }}>
+                      <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, marginBottom: "0.35rem" }}>No active saved project</div>
+                      <div style={{ fontSize: "0.75rem", color: COLORS.textMuted }}>Build a project while authenticated to save it here.</div>
+                    </div>
+                  )}
+                  <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "1rem" }}>
+                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textPrimary, marginBottom: "0.35rem" }}>How It Works</div>
+                    <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.8 }}>
+                      <li>Sign in with Supabase to enable project persistence.</li>
+                      <li>After each build, your project files are saved automatically.</li>
+                      <li>Use <strong style={{ color: COLORS.textPrimary }}>Continue Building</strong> to patch the project iteratively.</li>
+                      <li>All projects default to <strong style={{ color: COLORS.textPrimary }}>public</strong> visibility.</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Conversation History Chat Bubbles */}
+              {activeLeftTab === "prompt" && conversationHistory.length > 0 && (
+                <div style={{ marginBottom: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Build History</div>
+                  {conversationHistory.map((msg, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: msg.role === "user" ? "flex-end" : "flex-start",
+                        animation: "fadeIn 0.3s ease",
+                      }}
+                    >
+                      <div
+                        style={{
+                          maxWidth: "88%",
+                          padding: "0.5rem 0.75rem",
+                          borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+                          background: msg.role === "user" ? "rgba(99,102,241,0.2)" : COLORS.bgCard,
+                          border: `1px solid ${msg.role === "user" ? "rgba(99,102,241,0.35)" : COLORS.border}`,
+                          fontSize: "0.8rem",
+                          color: msg.role === "user" ? COLORS.textPrimary : COLORS.textSecondary,
+                          lineHeight: 1.5,
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {msg.content.length > MAX_CHAT_HISTORY_DISPLAY_LENGTH ? msg.content.slice(0, MAX_CHAT_HISTORY_DISPLAY_LENGTH) + "…" : msg.content}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Continue Building section header */}
+              {activeLeftTab === "prompt" && buildIterationCount > 0 && (
+                <div style={{ marginBottom: "0.625rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                  <span style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Building</span>
+                  <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                </div>
+              )}
+
               {/* Unified Prompt Box */}
               {activeLeftTab === "prompt" && (
               <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "14px", overflow: "hidden" }}>
@@ -1688,7 +2678,7 @@ function AIPageInner() {
                       handleBuild();
                     }
                   }}
-                  placeholder="Describe the app you want to build... (e.g. A todo app with Supabase auth and dark mode)"
+                  placeholder="Build a complete e-commerce app with product listings, cart, and Stripe checkout…"
                   maxLength={2000}
                   style={{ width: "100%", minHeight: "100px", background: "transparent", border: "none", borderRadius: 0, padding: "0.875rem 0.875rem 0.25rem", resize: "none", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }}
                 />
@@ -1716,7 +2706,7 @@ function AIPageInner() {
                     </select>
                     <span style={{ position: "absolute", right: "0.45rem", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: "0.6rem", color: COLORS.accent }}>▾</span>
                   </div>
-                  {/* Voice input */}
+                  {/* Voice input (Web Speech API) */}
                   <button
                     className="zivo-btn"
                     onClick={handleVoiceInput}
@@ -1725,6 +2715,10 @@ function AIPageInner() {
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
                   </button>
+                  {/* Voice input (AI transcription) */}
+                  <VoiceInput
+                    onTranscription={(text) => { setPrompt((prev) => prev ? `${prev} ${text}` : text); }}
+                  />
                   <div style={{ flex: 1 }} />
                   {/* Char count */}
                   <span style={{ fontSize: "0.68rem", color: COLORS.textMuted, flexShrink: 0 }}>{prompt.length}/2000</span>
@@ -1822,8 +2816,26 @@ function AIPageInner() {
                 </div>
               )}
 
-              {/* Quick Prompts */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "1rem" }}>
+              {/* Quick Prompts — Lovable-style text chips with "+" prefix */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.875rem" }}>
+                {PROMPT_SUGGESTIONS.map((ps, i) => (
+                  <button
+                    key={i}
+                    className="zivo-chip"
+                    onClick={() => setPrompt(ps)}
+                    style={{ display: "flex", alignItems: "flex-start", gap: "0.35rem", padding: "0.35rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.72rem", transition: "background 0.15s, border-color 0.15s", textAlign: "left", lineHeight: 1.4 }}
+                    title={ps}
+                  >
+                    <span style={{ color: COLORS.accent, fontWeight: 700, flexShrink: 0 }}>+</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical" as const }}>
+                      {ps.length > MAX_PROMPT_SUGGESTION_LENGTH ? ps.slice(0, MAX_PROMPT_SUGGESTION_LENGTH) + "…" : ps}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Quick Prompt icon chips */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.875rem" }}>
                 {QUICK_PROMPTS.map((qp) => (
                   <button
                     key={qp.label}
@@ -1837,7 +2849,28 @@ function AIPageInner() {
                 ))}
               </div>
 
-              {/* Template Selector — shown when prompt is empty */}
+              {/* Template Shortcuts grid */}
+              {!prompt.trim() && (
+                <div style={{ marginBottom: "1rem" }}>
+                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.5rem" }}>Templates</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.35rem" }}>
+                    {TEMPLATE_SHORTCUTS.map((t) => (
+                      <button
+                        key={t.label}
+                        className="zivo-chip"
+                        onClick={() => setPrompt(t.prompt)}
+                        title={t.prompt}
+                        style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.4rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", transition: "background 0.15s, border-color 0.15s", textAlign: "left" }}
+                      >
+                        <span style={{ fontSize: "0.875rem", flexShrink: 0 }}>{t.icon}</span>
+                        <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Full Template Selector — shown when prompt is empty */}
               {!prompt.trim() && (
                 <div style={{ marginBottom: "1rem" }}>
                   <TemplateSelector
@@ -1993,17 +3026,143 @@ function AIPageInner() {
                   <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{output.error}</>
                 </div>
               )}
-              {output?.summary && (
-                <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.8125rem", color: COLORS.textSecondary, animation: "fadeIn 0.3s ease" }}>
-                  <span style={{ color: COLORS.textPrimary, fontWeight: 600 }}>Summary:</span> {output.summary}
+              {/* ── Build Summary Card (Lovable-style) ── */}
+              {hasFiles && !loading && output?.summary && (() => {
+                const buildFiles = output?.files ?? [];
+                const routeCount = buildFiles.filter(f => f.path.includes("/app/") || f.path.includes("/pages/") || f.path.match(/page\.(tsx?|jsx?)$/)).length;
+                const componentCount = buildFiles.filter(f => f.path.includes("/components/") || (f.path.match(/\.(tsx?)$/) && !f.path.includes("/api/") && !f.path.match(/page\.(tsx?|jsx?)$/))).length;
+                return (
+                <div style={{ marginBottom: "0.875rem", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.4s ease" }}>
+                  {/* Header */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.625rem 0.875rem", borderBottom: "1px solid rgba(16,185,129,0.12)", background: "rgba(16,185,129,0.04)" }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={COLORS.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: COLORS.success }}>Build complete</span>
+                    <div style={{ flex: 1 }} />
+                    <span style={{ fontSize: "0.65rem", padding: "1px 6px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", color: COLORS.success, fontWeight: 700 }}>
+                      {buildFiles.length} files
+                    </span>
+                  </div>
+                  {/* Summary text */}
+                  <div style={{ padding: "0.625rem 0.875rem", fontSize: "0.8125rem", color: COLORS.textSecondary, lineHeight: 1.55 }}>
+                    {output.summary}
+                  </div>
+                  {/* Stats row */}
+                  <div style={{ padding: "0 0.875rem 0.625rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                    {[
+                      { label: "Files", value: buildFiles.length, color: COLORS.accent },
+                      { label: "Routes", value: routeCount, color: "#8b5cf6" },
+                      { label: "Components", value: componentCount, color: COLORS.warning },
+                    ].map(({ label, value, color }) => value > 0 && (
+                      <div key={label} style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem 0.6rem", background: "rgba(255,255,255,0.04)", border: `1px solid ${COLORS.border}`, borderRadius: "20px" }}>
+                        <span style={{ fontSize: "0.8rem", fontWeight: 700, color }}>{value}</span>
+                        <span style={{ fontSize: "0.7rem", color: COLORS.textMuted }}>{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* View in Files link */}
+                  <button
+                    className="zivo-btn"
+                    onClick={() => setActiveRightTab("files")}
+                    style={{ width: "100%", padding: "0.45rem", background: "transparent", border: "none", borderTop: "1px solid rgba(16,185,129,0.12)", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                    <span>View in Files panel →</span>
+                  </button>
                 </div>
-              )}
-
-              {/* File count hint (files are in the right panel) */}
-              {hasFiles && (
+                );
+              })()}
+              {/* File count hint (files are in the right panel) — shown only when no summary */}
+              {hasFiles && !loading && !output?.summary && (
                 <div style={{ marginBottom: "0.5rem", padding: "0.5rem 0.625rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: COLORS.textSecondary, animation: "fadeIn 0.3s ease" }}>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                   <span><strong style={{ color: COLORS.accent }}>{output?.files?.length ?? 0} files</strong> generated — view in the <strong style={{ color: COLORS.textPrimary }}>Files</strong> panel →</span>
+                </div>
+              )}
+
+              {/* ── Saved Project ID badge ── */}
+              {savedProjectId && !loading && (
+                <div style={{ marginBottom: "0.75rem", padding: "0.625rem 0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "8px", animation: "fadeIn 0.3s ease" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.25rem" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                      <span style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.success }}>Saved ✓</span>
+                    </div>
+                    {supabaseToken && (
+                      <button
+                        className="zivo-btn"
+                        onClick={handleShare}
+                        disabled={sharing}
+                        style={{ padding: "0.2rem 0.55rem", background: sharing ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.35)", borderRadius: "5px", color: COLORS.accent, cursor: sharing ? "not-allowed" : "pointer", fontSize: "0.7rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem" }}
+                      >
+                        {sharing ? (
+                          <><span style={{ width: "10px", height: "10px", border: "2px solid rgba(99,102,241,0.3)", borderTopColor: COLORS.accent, borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /></>
+                        ) : (
+                          <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg> Share</>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {shareUrl ? (
+                    <div style={{ fontSize: "0.7rem", color: COLORS.success, wordBreak: "break-all" }}>
+                      Link copied! <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.success, fontWeight: 600 }}>{shareUrl}</a>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedProjectId}</div>
+                  )}
+                </div>
+              )}
+              {/* Continue Building in left sidebar (code mode) */}
+              {hasFiles && !loading && mode === "code" && (
+                <div style={{ marginBottom: "0.875rem", background: "rgba(99,102,241,0.05)", border: `1px solid rgba(99,102,241,0.18)`, borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
+                  {/* Card header */}
+                  <div style={{ padding: "0.5rem 0.75rem 0.4rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                    <span style={{ fontSize: "0.7rem", color: COLORS.accent, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>Continue Building</span>
+                    {buildIterationCount > 0 && (
+                      <span style={{ marginLeft: "auto", fontSize: "0.65rem", padding: "1px 6px", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", color: COLORS.accent, fontWeight: 700 }}>
+                        iter. {buildIterationCount}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ padding: "0 0.625rem 0.625rem" }}>
+                    <textarea
+                      className="zivo-textarea"
+                      value={continueInstruction}
+                      onChange={(e) => setContinueInstruction(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                          e.preventDefault();
+                          if (continueInstruction.trim()) {
+                            const instruction = continueInstruction;
+                            setContinueInstruction("");
+                            handleBuild(instruction);
+                          }
+                        }
+                      }}
+                      placeholder="Add dark mode… Add auth with Supabase… Add a dashboard page…"
+                      maxLength={1000}
+                      style={{ width: "100%", minHeight: "56px", resize: "none", background: "rgba(255,255,255,0.03)", border: `1px solid rgba(99,102,241,0.15)`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", lineHeight: 1.5, outline: "none", boxSizing: "border-box", padding: "0.5rem 0.625rem", marginBottom: "0.4rem" }}
+                    />
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <span style={{ fontSize: "0.68rem", color: COLORS.textMuted }}>{continueInstruction.length}/1000</span>
+                      <div style={{ flex: 1 }} />
+                      <button
+                        className="zivo-btn"
+                        disabled={!continueInstruction.trim() || loading}
+                        onClick={() => {
+                          if (continueInstruction.trim()) {
+                            const instruction = continueInstruction;
+                            setContinueInstruction("");
+                            handleBuild(instruction);
+                          }
+                        }}
+                        style={{ padding: "0.35rem 0.875rem", background: continueInstruction.trim() ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: !continueInstruction.trim() || loading ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: !continueInstruction.trim() || loading ? 0.5 : 1 }}
+                      >
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                        Send
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
               </>)}
@@ -2096,8 +3255,8 @@ function AIPageInner() {
               {mode === "website" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
                   <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Website Builder</h2>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a complete multi-page Next.js site with design tokens, real images &amp; icons</p>
+                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Website Builder v2</h2>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a real Next.js multi-page site with design tokens and multi-pass quality</p>
                   </div>
                   <div style={{ marginBottom: "0.75rem" }}>
                     <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
@@ -2131,24 +3290,113 @@ function AIPageInner() {
                     style={{ width: "100%", padding: "0.65rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
                   >
                     {websiteLoading ? (
-                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> {websiteStage || "Generating..."}</>
+                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
                     ) : (
                       <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Build Website</>
                     )}
                   </button>
+                  {websiteLoading && websitePassMessage && (
+                    <div style={{ padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px", fontSize: "0.8125rem", color: COLORS.accent }}>{websitePassMessage}</div>
+                  )}
                   {websiteError && (
                     <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{websiteError}</div>
                   )}
                   {websiteResult && (
                     <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
-                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600 }}>✓ Website generated</div>
+                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600 }}>Website generated</div>
                         {websiteIteration > 1 && (
                           <span style={{ padding: "0.1rem 0.4rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>iteration {websiteIteration}</span>
                         )}
                       </div>
                       <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{websiteResult.summary}</div>
                       <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{websiteResult.files.length} file(s) generated</div>
+                      <button
+                        className="zivo-btn"
+                        onClick={() => { setMode("code"); setActiveRightTab("files"); }}
+                        style={{ marginTop: "0.6rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: "pointer" }}
+                      >
+                        Open in Code Builder
+                      </button>
+                      <button
+                        className="zivo-btn"
+                        onClick={() => void startWebsiteLivePreview(websiteResult.files)}
+                        disabled={websiteLivePreviewRunning && !websiteLivePreviewError}
+                        style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: (websiteLivePreviewRunning && !websiteLivePreviewError) ? "not-allowed" : "pointer", opacity: (websiteLivePreviewRunning && !websiteLivePreviewError) ? 0.6 : 1 }}
+                      >
+                        {websiteLivePreviewRunning ? "Starting live runtime…" : websiteLivePreviewUrl ? "Restart Live Preview" : "Start Live Preview"}
+                      </button>
+                      {websiteLivePreviewStatus && (
+                        <div style={{ marginTop: "0.45rem", fontSize: "0.72rem", color: COLORS.textSecondary }}>{websiteLivePreviewStatus}</div>
+                      )}
+                      {/* Remote preview shortcut — only shown when project is saved */}
+                      {websiteProjectId && (
+                        <button
+                          className="zivo-btn"
+                          onClick={() => setWebsitePreviewTab("remote")}
+                          style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: "1px solid rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.08)", color: COLORS.accent, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.35rem" }}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                          {remotePreviewStatus === "running" ? "View Remote Preview" : "Remote Preview"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Changed Files Summary ── */}
+                  {websiteChangedFiles && (
+                    <div style={{ padding: "0.75rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px" }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 700, color: COLORS.accent, marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Changed Files</div>
+                      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
+                        {websiteChangedFiles.created.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(16,185,129,0.15)", color: COLORS.success, fontWeight: 600 }}>+{websiteChangedFiles.created.length} created</span>}
+                        {websiteChangedFiles.updated.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(245,158,11,0.15)", color: COLORS.warning, fontWeight: 600 }}>~{websiteChangedFiles.updated.length} updated</span>}
+                        {websiteChangedFiles.deleted.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(239,68,68,0.15)", color: COLORS.error, fontWeight: 600 }}>-{websiteChangedFiles.deleted.length} deleted</span>}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                        {websiteChangedFiles.created.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.success, fontFamily: "monospace" }}>+ {p}</div>)}
+                        {websiteChangedFiles.updated.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.warning, fontFamily: "monospace" }}>~ {p}</div>)}
+                        {websiteChangedFiles.deleted.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.error, fontFamily: "monospace" }}>- {p}</div>)}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Continue Build (requires saved project) ── */}
+                  {websiteProjectId && (
+                    <div style={{ padding: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.625rem" }}>
+                        <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                        <span style={{ fontSize: "0.65rem", color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Build</span>
+                        <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
+                      </div>
+                      <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", marginBottom: "0.5rem", wordBreak: "break-all" }}>Project: {websiteProjectId}</div>
+                      <textarea
+                        className="zivo-textarea"
+                        value={websiteContinueInstruction}
+                        onChange={(e) => setWebsiteContinueInstruction(e.target.value)}
+                        onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void handleContinueWebsiteBuild(); } }}
+                        placeholder="Add a dark mode toggle, improve the hero section, add an FAQ section…"
+                        maxLength={2000}
+                        style={{ width: "100%", minHeight: "80px", resize: "vertical", background: "rgba(255,255,255,0.03)", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.8125rem", fontFamily: "inherit", boxSizing: "border-box" }}
+                      />
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.5rem" }}>
+                        <span style={{ fontSize: "0.68rem", color: COLORS.textMuted }}>{websiteContinueInstruction.length}/2000</span>
+                        <button
+                          className="zivo-btn"
+                          onClick={() => void handleContinueWebsiteBuild()}
+                          disabled={websiteContinueLoading || !websiteContinueInstruction.trim()}
+                          style={{ padding: "0.35rem 0.875rem", background: websiteContinueInstruction.trim() && !websiteContinueLoading ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: websiteContinueLoading || !websiteContinueInstruction.trim() ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: websiteContinueLoading || !websiteContinueInstruction.trim() ? 0.5 : 1 }}
+                        >
+                          {websiteContinueLoading ? (
+                            <><span style={{ width: "11px", height: "11px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} /> Building…</>
+                          ) : "Continue Build ▶"}
+                        </button>
+                      </div>
+                      {websiteContinueLoading && websiteContinuePassMessage && (
+                        <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.625rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.accent }}>{websiteContinuePassMessage}</div>
+                      )}
+                      {websiteContinueError && (
+                        <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.625rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.error }}>{websiteContinueError}</div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2158,8 +3406,8 @@ function AIPageInner() {
               {mode === "mobile" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
                   <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Mobile App Builder</h2>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates an Expo Router project with navigation, UI primitives &amp; mock data</p>
+                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Mobile App Builder v2</h2>
+                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates a real Expo Router app with navigation, mock data, and multi-pass quality</p>
                   </div>
                   <div style={{ marginBottom: "0.75rem" }}>
                     <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
@@ -2172,8 +3420,18 @@ function AIPageInner() {
                       style={{ width: "100%", minHeight: "100px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit" }}
                     />
                   </div>
-                  <div style={{ padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.06)", border: `1px solid rgba(99,102,241,0.15)`, borderRadius: "8px", fontSize: "0.75rem", color: COLORS.textSecondary }}>
-                    <span style={{ fontWeight: 600, color: COLORS.accent }}>Expo Router</span> — generates a real Expo Router app with typed navigation, UI components, and mock data
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Framework</label>
+                    <select
+                      value={mobileFramework}
+                      onChange={(e) => setMobileFramework(e.target.value)}
+                      style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem" }}
+                    >
+                      <option value="react-native">React Native</option>
+                      <option value="expo">Expo (React Native)</option>
+                      <option value="flutter-web">Flutter (Web Preview)</option>
+                      <option value="ionic">Ionic / Capacitor</option>
+                    </select>
                   </div>
                   <button
                     className="zivo-btn"
@@ -2182,18 +3440,21 @@ function AIPageInner() {
                     style={{ width: "100%", padding: "0.65rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
                   >
                     {mobileLoading ? (
-                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> {mobileStage || "Generating..."}</>
+                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
                     ) : (
                       <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Build Mobile App</>
                     )}
                   </button>
+                  {mobileLoading && mobilePassMessage && (
+                    <div style={{ padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px", fontSize: "0.8125rem", color: COLORS.accent }}>{mobilePassMessage}</div>
+                  )}
                   {mobileError && (
                     <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{mobileError}</div>
                   )}
                   {mobileResult && (
                     <div>
                       <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px", marginBottom: "0.75rem" }}>
-                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600, marginBottom: "0.35rem" }}>✓ Mobile app generated</div>
+                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600, marginBottom: "0.35rem" }}>Mobile app generated</div>
                         <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{mobileResult.summary}</div>
                         <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{mobileResult.files.length} file(s) generated</div>
                       </div>
@@ -2385,50 +3646,143 @@ function AIPageInner() {
 
             {/* Bottom Actions — Code Builder only */}
             {mode === "code" && hasFiles && (
-              <div style={{ padding: "0.875rem 1.25rem", borderTop: `1px solid ${COLORS.border}`, display: "flex", gap: "0.5rem", flexShrink: 0 }}>
-                <button
-                  className="zivo-btn"
-                  onClick={handleDownload}
-                  style={{ flex: 1, padding: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                >
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> ZIP</>
-                </button>
-                <button
-                  className="zivo-btn"
-                  onClick={handleGithubPush}
-                  disabled={githubPushing}
-                  style={{ flex: 1, padding: "0.5rem", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "8px", color: COLORS.accent, cursor: githubPushing ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{display:"inline-block",flexShrink:0}}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                  {githubPushing ? "…" : "GitHub"}
-                </button>
-                <button
-                  className="zivo-btn"
-                  onClick={() => handleDeploy("vercel")}
-                  disabled={deploying}
-                  style={{ flex: 1, padding: "0.5rem", background: deploying ? "rgba(16,185,129,0.1)" : "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "8px", color: COLORS.success, cursor: deploying ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                >
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg> {deploying ? "…" : "Deploy"}</>
-                </button>
-                <button
-                  className="zivo-btn"
-                  onClick={() => {
-                    const all = output?.files?.map((f) => `// ${f.path}\n${f.content}`).join("\n\n---\n\n") ?? "";
-                    navigator.clipboard.writeText(all).then(() => {
-                      setCopyLabel("saved");
-                      setTimeout(() => setCopyLabel("save"), 2000);
-                    }).catch(() => {});
-                  }}
-                  style={{ flex: 1, padding: "0.5rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                >
-                  {copyLabel === "saved" ? (
-                    <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Saved!</>
-                  ) : (
-                    <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg> Save</>
-                  )}
-                </button>
+              <div style={{ padding: "0.75rem 1rem", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+                {/* Vercel token input (shown when deploy is clicked and no token exists) */}
+                {showVercelTokenInput && (
+                  <div style={{ marginBottom: "0.625rem", padding: "0.625rem 0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "8px", animation: "fadeIn 0.2s ease" }}>
+                    <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary, marginBottom: "0.4rem" }}>
+                      Enter your{" "}
+                      <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer" style={{ color: COLORS.accent }}>Vercel token</a>
+                      {" "}to deploy:
+                    </div>
+                    <div style={{ display: "flex", gap: "0.4rem" }}>
+                      <input
+                        type="password"
+                        value={vercelToken}
+                        onChange={(e) => setVercelToken(e.target.value)}
+                        placeholder="vercel_..."
+                        style={{ flex: 1, padding: "0.4rem 0.6rem", background: "rgba(0,0,0,0.3)", border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                      />
+                      <button
+                        className="zivo-btn"
+                        onClick={() => {
+                          if (vercelToken) {
+                            try { localStorage.setItem("zivo_vercel_token", vercelToken); } catch { /* ignore */ }
+                            setShowVercelTokenInput(false);
+                            handleDeploy("vercel");
+                          }
+                        }}
+                        disabled={!vercelToken.trim()}
+                        style={{ padding: "0.4rem 0.75rem", background: COLORS.accentGradient, border: "none", borderRadius: "6px", color: "#fff", cursor: !vercelToken.trim() ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600, flexShrink: 0 }}
+                      >
+                        Deploy
+                      </button>
+                      <button
+                        className="zivo-btn"
+                        onClick={() => setShowVercelTokenInput(false)}
+                        style={{ padding: "0.4rem 0.6rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "6px", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem" }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {/* Action row */}
+                <div style={{ display: "flex", gap: "0.4rem" }}>
+                  {/* ZIP download */}
+                  <button
+                    className="zivo-btn"
+                    onClick={handleDownload}
+                    title="Download as ZIP"
+                    style={{ flex: 1, padding: "0.45rem 0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", transition: "border-color 0.15s" }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+                    <span>ZIP</span>
+                  </button>
+                  {/* GitHub push */}
+                  <button
+                    className="zivo-btn"
+                    onClick={() => {
+                      if (connectedGithubRepo) {
+                        handleGithubPush();
+                      } else {
+                        setGithubModalOpen(true);
+                      }
+                    }}
+                    disabled={githubPushing}
+                    title="Push to GitHub"
+                    style={{ flex: 1, padding: "0.45rem 0.5rem", background: githubPushing ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "8px", color: COLORS.accent, cursor: githubPushing ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem" }}
+                  >
+                    {githubPushing ? (
+                      <span style={{ display: "inline-block", width: "11px", height: "11px", border: "2px solid rgba(99,102,241,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    ) : (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                    )}
+                    <span>{githubPushing ? "Pushing…" : "GitHub"}</span>
+                  </button>
+                  {/* Deploy */}
+                  <button
+                    className="zivo-btn"
+                    onClick={() => handleDeploy("vercel")}
+                    disabled={deploying}
+                    title="Deploy to Vercel"
+                    style={{ flex: 1, padding: "0.45rem 0.5rem", background: deploying ? "rgba(16,185,129,0.06)" : "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.28)", borderRadius: "8px", color: COLORS.success, cursor: deploying ? "not-allowed" : "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem" }}
+                  >
+                    {deploying ? (
+                      <span style={{ display: "inline-block", width: "11px", height: "11px", border: "2px solid rgba(16,185,129,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                    ) : (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                    )}
+                    <span>{deploying ? "Deploying…" : "Deploy"}</span>
+                  </button>
+                  {/* Save / copy all */}
+                  <button
+                    className="zivo-btn"
+                    onClick={() => {
+                      const all = output?.files?.map((f) => `// ${f.path}\n${f.content}`).join("\n\n---\n\n") ?? "";
+                      navigator.clipboard.writeText(all).then(() => {
+                        setCopyLabel("saved");
+                        setTimeout(() => setCopyLabel("save"), 2000);
+                      }).catch(() => {});
+                    }}
+                    title="Copy all files to clipboard"
+                    style={{ flex: 1, padding: "0.45rem 0.5rem", background: copyLabel === "saved" ? "rgba(16,185,129,0.12)" : "transparent", border: `1px solid ${copyLabel === "saved" ? "rgba(16,185,129,0.3)" : COLORS.border}`, borderRadius: "8px", color: copyLabel === "saved" ? COLORS.success : COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", transition: "background 0.2s, border-color 0.2s, color 0.2s" }}
+                  >
+                    {copyLabel === "saved" ? (
+                      <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>Saved!</span></>
+                    ) : (
+                      <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg><span>Save</span></>
+                    )}
+                  </button>
+                </div>
               </div>
             )}
+          </div>
+
+          {/* Left Panel Drag Handle + Collapse Toggle */}
+          <div style={{ position: "relative", width: "0px", flexShrink: 0 }}>
+            {/* Drag handle */}
+            <div
+              onMouseDown={(e) => {
+                e.preventDefault();
+                isDraggingPanelRef.current = true;
+                dragStartXRef.current = e.clientX;
+                dragStartWidthRef.current = leftPanelCollapsed ? 0 : leftPanelWidth;
+                if (leftPanelCollapsed) setLeftPanelCollapsed(false);
+                document.body.style.cursor = "ew-resize";
+                document.body.style.userSelect = "none";
+              }}
+              style={{ position: "absolute", top: 0, left: "-2px", width: "4px", height: "100%", cursor: "ew-resize", zIndex: 10, background: "transparent" }}
+              title="Drag to resize panel"
+            />
+            {/* Collapse/expand toggle */}
+            <button
+              onClick={() => setLeftPanelCollapsed((c) => !c)}
+              title={leftPanelCollapsed ? "Expand panel" : "Collapse panel"}
+              style={{ position: "absolute", top: "50%", left: "-12px", transform: "translateY(-50%)", width: "18px", height: "40px", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "4px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: COLORS.textMuted, zIndex: 10, fontSize: "10px", padding: 0, transition: "background 0.15s, color 0.15s" }}
+            >
+              {leftPanelCollapsed ? "›" : "‹"}
+            </button>
           </div>
 
           {/* Right Panel */}
@@ -2436,23 +3790,23 @@ function AIPageInner() {
 
             {/* Preview Toolbar — Code Builder mode only */}
             {mode === "code" && (
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
               {/* Tabs */}
-              <div style={{ display: "flex", gap: "2px", marginRight: "0.5rem" }}>
+              <div style={{ display: "flex", gap: "1px", background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "3px" }}>
                 {(["preview", "code", "console"] as const).map((tab) => (
                   <button
                     key={tab}
                     className="zivo-tab"
                     onClick={() => setActiveTab(tab)}
-                    style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeTab === tab ? "rgba(99,102,241,0.15)" : "transparent", color: activeTab === tab ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s" }}
+                    style={{ padding: "0.25rem 0.7rem", borderRadius: "6px", border: "none", background: activeTab === tab ? COLORS.bgPanel : "transparent", color: activeTab === tab ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", fontWeight: activeTab === tab ? 600 : 400, transition: "color 0.15s, background 0.15s", boxShadow: activeTab === tab ? `0 0 0 1px ${COLORS.border}` : "none" }}
                   >
-                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {tab === "preview" && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: "0.25rem", verticalAlign: "middle" }}><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>}{tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
                 <button
                   className="zivo-tab"
                   onClick={() => setActiveTab("design")}
-                  style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeTab === "design" ? "rgba(99,102,241,0.15)" : "transparent", color: activeTab === "design" ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, transition: "color 0.15s" }}
+                  style={{ padding: "0.25rem 0.7rem", borderRadius: "6px", border: "none", background: activeTab === "design" ? COLORS.bgPanel : "transparent", color: activeTab === "design" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", fontWeight: activeTab === "design" ? 600 : 400, transition: "color 0.15s, background 0.15s", boxShadow: activeTab === "design" ? `0 0 0 1px ${COLORS.border}` : "none" }}
                 >
                   Design
                 </button>
@@ -2460,7 +3814,7 @@ function AIPageInner() {
                   <button
                     className="zivo-tab"
                     onClick={() => setActiveTab("diff")}
-                    style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeTab === "diff" ? "rgba(99,102,241,0.15)" : "transparent", color: activeTab === "diff" ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, transition: "color 0.15s" }}
+                    style={{ padding: "0.25rem 0.7rem", borderRadius: "6px", border: "none", background: activeTab === "diff" ? COLORS.bgPanel : "transparent", color: activeTab === "diff" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", fontWeight: activeTab === "diff" ? 600 : 400, transition: "color 0.15s, background 0.15s", boxShadow: activeTab === "diff" ? `0 0 0 1px ${COLORS.border}` : "none" }}
                   >
                     Diff
                   </button>
@@ -2468,9 +3822,18 @@ function AIPageInner() {
               </div>
 
               {/* URL bar */}
-              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{color:COLORS.textMuted,flexShrink:0}}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace" }}>localhost:3000</span>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.2rem 0.65rem", maxWidth: "260px", marginLeft: "0.25rem" }}>
+                {loading ? (
+                  <span style={{ display: "inline-block", width: "9px", height: "9px", border: "2px solid rgba(99,102,241,0.3)", borderTop: `2px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite", flexShrink: 0 }} />
+                ) : (
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: output?.preview_html ? COLORS.success : COLORS.textMuted, flexShrink: 0 }}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                )}
+                <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {loading ? "Building…" : output?.preview_html ? "localhost:3000" : "No preview"}
+                </span>
+                {output?.preview_html && !loading && (
+                  <span style={{ fontSize: "0.6rem", padding: "1px 5px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "4px", color: COLORS.success, fontWeight: 700, flexShrink: 0 }}>Live</span>
+                )}
               </div>
 
               <div style={{ flex: 1 }} />
@@ -2526,6 +3889,28 @@ function AIPageInner() {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/></svg>
                 <span>Design</span>
               </button>
+              {/* HTML Snapshot button */}
+              {(output?.preview_html || (output?.files?.length ?? 0) > 0) && (
+                <button
+                  className="zivo-btn"
+                  onClick={() => {
+                    const html = output?.preview_html ?? (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
+                    if (!html) return;
+                    const blob = new Blob([html], { type: "text/html" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "snapshot.html";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  title="Download HTML Snapshot"
+                  style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.35rem" }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                  <span>HTML Snapshot</span>
+                </button>
+              )}
               {/* Design Panel button (visual token editor) */}
               <button
                 className="zivo-btn"
@@ -2562,16 +3947,67 @@ function AIPageInner() {
             </div>
             )}
 
-            {/* Loading progress bar */}
-            {loading && (
-              <div style={{ padding: "0.5rem 1rem", borderBottom: `1px solid ${COLORS.border}` }}>
+            {/* Build progress indicator — shown during loading and briefly after completion */}
+            {(loading || (buildIterationCount > 0 && !loading && mode === "code")) && (
+              <div style={{ padding: "0.4rem 1rem", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
                 <BuildProgressIndicator stages={buildStages} currentStage={currentBuildStage} />
               </div>
             )}
             {loading && (
-              <div style={{ height: "3px", background: COLORS.bgCard, flexShrink: 0 }}>
+              <div style={{ height: "2px", background: COLORS.bgCard, flexShrink: 0 }}>
                 <div style={{ height: "100%", background: COLORS.accentGradient, width: loadingStep === 0 ? "20%" : loadingStep === 1 ? "45%" : loadingStep === 2 ? "75%" : "95%", transition: "width 0.8s ease" }} />
               </div>
+            )}
+
+            {/* ── Collapsible Build Output Bar ── */}
+            {mode === "code" && (loading || consoleLogs.length > 0) && (
+              <div style={{ flexShrink: 0, borderBottom: `1px solid ${COLORS.border}` }}>
+                {/* Header / toggle */}
+                <button
+                  className="zivo-btn"
+                  onClick={() => setBuildOutputOpen((o) => !o)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 1rem", background: COLORS.bgPanel, border: "none", borderBottom: buildOutputOpen ? `1px solid ${COLORS.border}` : "none", cursor: "pointer", textAlign: "left" }}
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={COLORS.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: buildOutputOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}><polyline points="9 18 15 12 9 6"/></svg>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textSecondary, letterSpacing: "0.04em", textTransform: "uppercase" }}>Build Output</span>
+                  <div style={{ flex: 1 }} />
+                  {loading ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "1px 7px", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.warning }}>
+                      <span style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: COLORS.warning, animation: "statusBlink 1.2s infinite" }} />
+                      Running…
+                    </span>
+                  ) : consoleLogs.some((l) => l.type === "error") ? (
+                    <span style={{ padding: "1px 7px", background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.error }}>
+                      Errors
+                    </span>
+                  ) : buildIterationCount > 0 ? (
+                    <span style={{ padding: "1px 7px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.success }}>
+                      Pass {buildIterationCount} ✓
+                    </span>
+                  ) : null}
+                </button>
+                {/* Scrollable log area */}
+                {buildOutputOpen && (
+                  <div style={{ maxHeight: "140px", overflowY: "auto", background: "#000", padding: "0.5rem 1rem" }}>
+                    <div style={{ fontFamily: "'Fira Code', 'SF Mono', monospace", fontSize: "0.75rem", lineHeight: 1.7 }}>
+                      {consoleLogs.slice(-60).map((log, i) => (
+                        <div key={i} style={{ color: log.type === "error" ? COLORS.error : log.type === "success" ? COLORS.success : "#4ade80" }}>
+                          {log.text}
+                        </div>
+                      ))}
+                      {loading && (
+                        <span style={{ display: "inline-block", width: "7px", height: "1em", background: "#4ade80", verticalAlign: "middle", animation: "cursorBlink 1s step-end infinite" }} />
+                      )}
+                      <div ref={consoleEndRef} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Generated App Analysis (below build output, above preview) ── */}
+            {mode === "code" && !loading && (output?.files?.length ?? 0) > 0 && (
+              <GeneratedAppAnalysis files={(output?.files ?? []) as Array<{ path: string; content: string; action?: "create" | "update" | "delete" }>} />
             )}
 
             {/* ── Code Builder Right Panel ── */}
@@ -2580,19 +4016,26 @@ function AIPageInner() {
 
               {/* Empty State */}
               {!loading && !output && (
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", animation: "fadeIn 0.5s ease", padding: "2rem", textAlign: "center" }}>
-                  <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></div>
-                  <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.5rem", color: COLORS.textPrimary }}>Your app will appear here</h2>
-                    <p style={{ fontSize: "0.875rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app on the left and click Build to get started</p>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.25rem", animation: "fadeIn 0.5s ease", padding: "2rem", textAlign: "center" }}>
+                  {/* Logo badge */}
+                  <div style={{ position: "relative" }}>
+                    <div style={{ width: "72px", height: "72px", borderRadius: "18px", background: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.15))", border: "1px solid rgba(99,102,241,0.25)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <div style={{ width: "38px", height: "38px", background: COLORS.accentGradient, borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px", fontWeight: 900, color: "#fff", letterSpacing: "-0.03em" }}>Z</div>
+                    </div>
+                    {/* Glow ring */}
+                    <div style={{ position: "absolute", inset: "-4px", borderRadius: "22px", border: "1px solid rgba(99,102,241,0.15)", pointerEvents: "none" }} />
                   </div>
-                  <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", justifyContent: "center" }}>
+                  <div>
+                    <h2 style={{ fontSize: "1.375rem", fontWeight: 700, margin: "0 0 0.5rem", color: COLORS.textPrimary, letterSpacing: "-0.02em" }}>Your app preview lives here</h2>
+                    <p style={{ fontSize: "0.875rem", color: COLORS.textSecondary, margin: 0, lineHeight: 1.6 }}>Describe what you want to build →<br />ZIVO AI generates the full app instantly</p>
+                  </div>
+                  <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", justifyContent: "center" }}>
                     {[
                       { key: "preview", label: "Instant Preview", icon: <InstantPreviewIcon /> },
                       { key: "ai", label: "AI-Powered", icon: <AiPoweredIcon /> },
                       { key: "edit", label: "Fully Editable", icon: <EditableIcon /> },
                     ].map((chip) => (
-                      <span key={chip.key} style={{ padding: "0.35rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", fontSize: "0.8125rem", color: COLORS.textSecondary, display:"inline-flex", alignItems:"center", gap:"0.35rem" }}>{chip.icon}{chip.label}</span>
+                      <span key={chip.key} style={{ padding: "0.35rem 0.875rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.18)", borderRadius: "20px", fontSize: "0.8125rem", color: COLORS.textSecondary, display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>{chip.icon}{chip.label}</span>
                     ))}
                   </div>
                 </div>
@@ -2601,6 +4044,13 @@ function AIPageInner() {
               {/* Loading State */}
               {loading && (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
+                  {/* Pass counter badge */}
+                  {buildIteration > 0 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.35rem 0.875rem", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px" }}>
+                      <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: COLORS.accent, animation: "statusBlink 1.5s ease-in-out infinite" }} />
+                      <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.accent }}>Pass {buildIteration}/8</span>
+                    </div>
+                  )}
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", width: "100%", maxWidth: "320px" }}>
                     {[
                       "🧠 Analyzing prompt…",
@@ -2626,68 +4076,93 @@ function AIPageInner() {
                       <div key={i} style={{ height: "16px", borderRadius: "8px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
                     ))}
                   </div>
+                  {/* Streaming file counter */}
+                  {output?.files?.length ? (
+                    <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                      <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: COLORS.success, animation: "statusBlink 1s ease-in-out infinite" }} />
+                      {output.files.length} file{output.files.length !== 1 ? "s" : ""} generated…
+                    </div>
+                  ) : null}
                 </div>
               )}
 
               {/* Preview Tab */}
               {!loading && output && activeTab === "preview" && (
-                <div style={{ width: iframeWidth, height: "100%", position: "relative", transition: "width 0.3s ease" }}>
-                  {output?.preview_html ? (
-                    <>
-                      <iframe
-                        ref={iframeRef}
-                        srcDoc={output.preview_html}
-                        title="Live Preview"
-                        style={{ width: "100%", height: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
-                        sandbox="allow-scripts"
-                        onLoad={() => applyVisualEditOverlay(visualEdit)}
-                      />
-                      {popover && (
-                        <div style={{ position: "absolute", top: popover.y, left: popover.x, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.875rem", boxShadow: "0 8px 32px rgba(0,0,0,0.4)", zIndex: 10000, minWidth: "220px", animation: "fadeIn 0.2s ease" }}>
-                          <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", color: COLORS.textSecondary }}>Edit element text:</p>
-                          <input
-                            className="zivo-input"
-                            value={popoverInput}
-                            onChange={(e) => setPopoverInput(e.target.value)}
-                            style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "0.35rem 0.5rem", color: COLORS.textPrimary, fontSize: "0.875rem" }}
-                          />
-                          <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}>
-                            <button
-                              className="zivo-btn"
-                              onClick={() => {
-                                if (output?.preview_html && popover) {
-                                  const updated = output.preview_html.replace(popover.text, popoverInput);
-                                  setOutput((prev) => prev ? { ...prev, preview_html: updated } : prev);
-                                }
-                                setPopover(null);
-                              }}
-                              style={{ flex: 1, padding: "0.35rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "6px", border: "none", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600 }}
-                            >
-                              Apply
-                            </button>
-                            <button
-                              className="zivo-btn"
-                              onClick={() => setPopover(null)}
-                              style={{ flex: 1, padding: "0.35rem", background: COLORS.bgCard, color: COLORS.textSecondary, borderRadius: "6px", border: `1px solid ${COLORS.border}`, cursor: "pointer", fontSize: "0.75rem" }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.875rem", textAlign: "center", padding: "2rem" }}>
-                      {output?.files?.some((f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts"))
-                        ? "Live preview not available for TypeScript files — view in Code tab"
-                        : "No preview available for this project type."}
+                <div style={{ width: iframeWidth, height: "100%", position: "relative", transition: "width 0.3s ease", display: "flex", flexDirection: "column" }}>
+                  {/* WebContainer fallback banner */}
+                  {websiteLivePreviewError && (
+                    <div style={{ padding: "0.4rem 0.75rem", background: "rgba(245,158,11,0.08)", borderBottom: "1px solid rgba(245,158,11,0.2)", fontSize: "0.75rem", color: COLORS.warning, display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0 }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+                      {websiteLivePreviewError}
                     </div>
                   )}
+                  <div style={{ flex: 1, position: "relative", display: "flex", flexDirection: "column" }}>
+                  {(() => {
+                    const previewHtml = output?.preview_html ||
+                      (output?.files?.length ? buildHTMLSnapshot(output.files) : null);
+                    const isSnapshot = !output?.preview_html && Boolean(previewHtml);
+                    return previewHtml ? (
+                      <>
+                        {isSnapshot && (
+                          <div style={{ padding: "0.4rem 0.875rem", background: "rgba(245,158,11,0.08)", borderBottom: "1px solid rgba(245,158,11,0.2)", fontSize: "0.75rem", color: COLORS.warning, display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                            <span>This is a static snapshot preview. Use the <strong>Code</strong> tab to view and edit files.</span>
+                          </div>
+                        )}
+                        <iframe
+                          ref={iframeRef}
+                          srcDoc={previewHtml}
+                          title={isSnapshot ? "HTML Snapshot Preview" : "Live Preview"}
+                          style={{ flex: 1, width: "100%", border: visualEdit ? "2px solid rgba(99,102,241,0.6)" : "none", boxShadow: visualEdit ? "0 0 0 3px rgba(99,102,241,0.25)" : "none", transition: "box-shadow 0.2s, border-color 0.2s" }}
+                          sandbox="allow-scripts"
+                          onLoad={() => { if (!isSnapshot) applyVisualEditOverlay(visualEdit); }}
+                        />
+                        {!isSnapshot && popover && (
+                          <div style={{ position: "absolute", top: popover.y, left: popover.x, background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.875rem", boxShadow: "0 8px 32px rgba(0,0,0,0.4)", zIndex: 10000, minWidth: "220px", animation: "fadeIn 0.2s ease" }}>
+                            <p style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", color: COLORS.textSecondary }}>Edit element text:</p>
+                            <input
+                              className="zivo-input"
+                              value={popoverInput}
+                              onChange={(e) => setPopoverInput(e.target.value)}
+                              style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", padding: "0.35rem 0.5rem", color: COLORS.textPrimary, fontSize: "0.875rem" }}
+                            />
+                            <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.5rem" }}>
+                              <button
+                                className="zivo-btn"
+                                onClick={() => {
+                                  if (output?.preview_html && popover) {
+                                    const updated = output.preview_html.replace(popover.text, popoverInput);
+                                    setOutput((prev) => prev ? { ...prev, preview_html: updated } : prev);
+                                  }
+                                  setPopover(null);
+                                }}
+                                style={{ flex: 1, padding: "0.35rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "6px", border: "none", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600 }}
+                              >
+                                Apply
+                              </button>
+                              <button
+                                className="zivo-btn"
+                                onClick={() => setPopover(null)}
+                                style={{ flex: 1, padding: "0.35rem", background: COLORS.bgCard, color: COLORS.textSecondary, borderRadius: "6px", border: `1px solid ${COLORS.border}`, cursor: "pointer", fontSize: "0.75rem" }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.875rem", textAlign: "center", padding: "2rem" }}>
+                        No preview available for this project type.
+                      </div>
+                    );
+                  })()}
+                  </div>
                 </div>
               )}
 
               {/* Code Tab */}
-              {!loading && output && activeTab === "code" && (
+              {(loading || (!loading && output)) && activeTab === "code" && (
                 <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", animation: "fadeIn 0.3s ease" }}>
                   {activeFile ? (
                     <>
@@ -2695,6 +4170,12 @@ function AIPageInner() {
                         <span style={{ fontSize: "0.875rem" }}>{getFileIcon(activeFile.path)}</span>
                         <code style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, fontFamily: "monospace" }}>{activeFile.path}</code>
                         <span style={{ fontSize: "0.7rem", padding: "1px 6px", borderRadius: "4px", textTransform: "uppercase", fontWeight: 600, ...getActionStyle(activeFile.action) }}>{activeFile.action}</span>
+                        {loading && (
+                          <span style={{ fontSize: "0.7rem", color: COLORS.accent, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                            <span style={{ display: "inline-block", width: "8px", height: "8px", border: `1.5px solid rgba(99,102,241,0.3)`, borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                            Writing…
+                          </span>
+                        )}
                         <div style={{ flex: 1 }} />
                         <button
                           className="zivo-btn"
@@ -2713,12 +4194,15 @@ function AIPageInner() {
                       </div>
                       <div style={{ flex: 1, overflow: "auto", padding: "1rem" }}>
                         <pre style={{ margin: 0, fontSize: "0.8125rem", lineHeight: 1.7, color: COLORS.textPrimary, fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                          {activeFile.content.split("\n").map((line, i) => (
+                          {(loading ? streamedCodeContent : activeFile.content).split("\n").map((line, i) => (
                             <div key={i} style={{ display: "flex", gap: "1rem" }}>
                               <span style={{ color: COLORS.textMuted, userSelect: "none", minWidth: "2.5rem", textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
                               <span>{line}</span>
                             </div>
                           ))}
+                          {loading && (
+                            <span style={{ display: "inline-block", width: "2px", height: "1.1em", background: COLORS.accent, verticalAlign: "middle", marginLeft: "2px", animation: "cursorBlink 1s step-end infinite" }} />
+                          )}
                         </pre>
                       </div>
                     </>
@@ -2916,6 +4400,51 @@ function AIPageInner() {
               )}
             </div>
             )}
+
+            {/* ── Sticky Continue Build Bar (Code Builder mode) ── */}
+            {mode === "code" && hasFiles && !loading && (
+              <div style={{ borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "0.625rem 1rem", display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0, animation: "fadeIn 0.3s ease" }}>
+                <input
+                  className="zivo-input"
+                  value={continueInstruction}
+                  onChange={(e) => setContinueInstruction(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (continueInstruction.trim()) {
+                        const instruction = continueInstruction;
+                        setContinueInstruction("");
+                        handleBuild(instruction);
+                      }
+                    }
+                  }}
+                  placeholder="Describe what to add or change… (e.g. Add dark mode toggle)"
+                  maxLength={1000}
+                  style={{ flex: 1, background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.4rem 0.75rem", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
+                />
+                {buildIterationCount > 0 && (
+                  <span style={{ padding: "0.2rem 0.55rem", background: "rgba(99,102,241,0.15)", border: `1px solid rgba(99,102,241,0.3)`, borderRadius: "20px", fontSize: "0.7rem", fontWeight: 700, color: COLORS.accent, flexShrink: 0 }}>
+                    #{buildIterationCount}
+                  </span>
+                )}
+                <button
+                  className="zivo-btn"
+                  disabled={!continueInstruction.trim() || loading}
+                  onClick={() => {
+                    if (continueInstruction.trim()) {
+                      const instruction = continueInstruction;
+                      setContinueInstruction("");
+                      handleBuild(instruction);
+                    }
+                  }}
+                  style={{ padding: "0.4rem 0.875rem", background: continueInstruction.trim() ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "8px", color: "#fff", cursor: !continueInstruction.trim() ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.35rem", flexShrink: 0, opacity: !continueInstruction.trim() ? 0.5 : 1 }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                  Continue Build ▶
+                </button>
+              </div>
+            )}
+
             {mode === "code" && (
               <BuildOutputPanel
                 errors={buildErrors}
@@ -2946,9 +4475,12 @@ function AIPageInner() {
                 )}
                 {imageResult && (
                   <div style={{ width: "100%", maxWidth: "640px", animation: "fadeIn 0.4s ease" }}>
-                    <img
+                    <Image
                       src={imageResult.dataUrl}
                       alt={imageResult.prompt}
+                      width={1024}
+                      height={1024}
+                      unoptimized
                       style={{ width: "100%", borderRadius: "12px", border: `1px solid ${COLORS.border}`, display: "block" }}
                     />
                     <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem" }}>
@@ -3006,32 +4538,288 @@ function AIPageInner() {
             {/* ── Website Right Panel ── */}
             {mode === "website" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                {/* Toolbar */}
+                {/* Toolbar with tabs + URL bar */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 1rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.accent }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                  <span style={{ fontSize: "0.8125rem", fontWeight: 500, color: COLORS.textSecondary }}>Website Preview</span>
-                </div>
-                {!websiteResult && !websiteLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
-                    <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
-                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                  {/* Preview mode tabs */}
+                  <div style={{ display: "flex", gap: "1px", background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "3px", flexShrink: 0 }}>
+                    <button
+                      className="zivo-tab"
+                      onClick={() => setWebsitePreviewTab("webcontainer")}
+                      title="In-browser preview (WebContainer)"
+                      style={{ padding: "0.2rem 0.6rem", borderRadius: "5px", border: "none", background: websitePreviewTab === "webcontainer" ? COLORS.bgPanel : "transparent", color: websitePreviewTab === "webcontainer" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", fontWeight: websitePreviewTab === "webcontainer" ? 600 : 400, boxShadow: websitePreviewTab === "webcontainer" ? `0 0 0 1px ${COLORS.border}` : "none" }}
+                    >
+                      Browser
+                    </button>
+                    <button
+                      className="zivo-tab"
+                      onClick={() => setWebsitePreviewTab("remote")}
+                      title="Remote Docker preview runner"
+                      style={{ padding: "0.2rem 0.6rem", borderRadius: "5px", border: "none", background: websitePreviewTab === "remote" ? COLORS.bgPanel : "transparent", color: websitePreviewTab === "remote" ? COLORS.textPrimary : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", fontWeight: websitePreviewTab === "remote" ? 600 : 400, boxShadow: websitePreviewTab === "remote" ? `0 0 0 1px ${COLORS.border}` : "none", display: "flex", alignItems: "center", gap: "0.25rem" }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                      Remote
+                    </button>
+                  </div>
+                  {/* URL bar */}
+                  {websitePreviewTab === "webcontainer" && (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                      <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {websiteLivePreviewUrl ?? "preview"}
+                      </span>
                     </div>
-                    <p style={{ fontSize: "0.875rem" }}>Your generated website will appear here</p>
+                  )}
+                  {websitePreviewTab === "remote" && remotePreviewUrl && (
+                    <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.25rem 0.75rem", maxWidth: "320px" }}>
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: COLORS.textMuted, flexShrink: 0 }}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                      <span style={{ fontSize: "0.8rem", color: COLORS.textSecondary, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {remotePreviewUrl}
+                      </span>
+                    </div>
+                  )}
+                  {/* Reload button — webcontainer tab */}
+                  {websitePreviewTab === "webcontainer" && (websiteLivePreviewUrl || websiteResult?.preview_html) && (
+                    <button
+                      className="zivo-btn"
+                      title="Reload preview"
+                      onClick={() => {
+                        if (websiteLivePreviewUrl) {
+                          const url = websiteLivePreviewUrl;
+                          setWebsiteLivePreviewUrl(null);
+                          setTimeout(() => setWebsiteLivePreviewUrl(url), 50);
+                        }
+                      }}
+                      style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >↻</button>
+                  )}
+                  {/* Reload button — remote tab */}
+                  {websitePreviewTab === "remote" && remotePreviewUrl && (
+                    <button
+                      className="zivo-btn"
+                      title="Open in new tab"
+                      onClick={() => { if (remotePreviewUrl) window.open(remotePreviewUrl, "_blank", "noopener"); }}
+                      style={{ width: "30px", height: "30px", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: "transparent", color: COLORS.textMuted, cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >↗</button>
+                  )}
+                  {/* Live / Snapshot badge — webcontainer */}
+                  {websitePreviewTab === "webcontainer" && websiteResult && (
+                    <span style={{ padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 600, flexShrink: 0, background: websiteLivePreviewUrl ? "rgba(16,185,129,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${websiteLivePreviewUrl ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`, color: websiteLivePreviewUrl ? COLORS.success : COLORS.warning }}>
+                      {websiteLivePreviewUrl ? "🟢 Live" : "🟡 Snapshot"}
+                    </span>
+                  )}
+                  {/* Remote status badge */}
+                  {websitePreviewTab === "remote" && remotePreviewStatus && (
+                    <span style={{ padding: "0.2rem 0.6rem", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 600, flexShrink: 0, background: remotePreviewStatus === "running" ? "rgba(16,185,129,0.15)" : remotePreviewStatus === "failed" ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${remotePreviewStatus === "running" ? "rgba(16,185,129,0.3)" : remotePreviewStatus === "failed" ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)"}`, color: remotePreviewStatus === "running" ? COLORS.success : remotePreviewStatus === "failed" ? COLORS.error : COLORS.warning }}>
+                      {remotePreviewStatus === "running" ? "🟢 Running" : remotePreviewStatus === "failed" ? "🔴 Failed" : remotePreviewStatus === "stopped" ? "⚫ Stopped" : remotePreviewStatus === "building" ? "🟡 Building" : "🟡 Queued"}
+                    </span>
+                  )}
+                  <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                    {/* Webcontainer: status with spinner */}
+                    {websitePreviewTab === "webcontainer" && websiteLivePreviewStatus && websiteLivePreviewRunning && (
+                      <span style={{ fontSize: "0.72rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                        <span style={{ display: "inline-block", width: "8px", height: "8px", border: "1.5px solid rgba(99,102,241,0.3)", borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        {websiteLivePreviewStatus}
+                      </span>
+                    )}
+                    {websitePreviewTab === "webcontainer" && websiteResult?.files && websiteResult.files.length > 0 && (
+                      <button
+                        onClick={() => void startWebsiteLivePreview(websiteResult.files)}
+                        disabled={websiteLivePreviewRunning && !websiteLivePreviewError}
+                        style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: (websiteLivePreviewRunning && !websiteLivePreviewError) ? "not-allowed" : "pointer", opacity: (websiteLivePreviewRunning && !websiteLivePreviewError) ? 0.6 : 1 }}
+                      >
+                        {websiteLivePreviewRunning ? "Starting…" : websiteLivePreviewUrl ? "Restart Live" : "Start Live"}
+                      </button>
+                    )}
+                    {/* Remote preview: start / stop button */}
+                    {websitePreviewTab === "remote" && websiteProjectId && (
+                      <>
+                        {(remotePreviewStatus === "queued" || remotePreviewStatus === "building" || remotePreviewLoading) && (
+                          <span style={{ fontSize: "0.72rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                            <span style={{ display: "inline-block", width: "8px", height: "8px", border: "1.5px solid rgba(99,102,241,0.3)", borderTop: `1.5px solid ${COLORS.accent}`, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                            {remotePreviewStatus === "building" ? "Building…" : "Queued…"}
+                          </span>
+                        )}
+                        {remotePreviewStatus === "running" ? (
+                          <button
+                            onClick={() => void handleStopRemotePreview()}
+                            style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: "1px solid rgba(239,68,68,0.4)", background: "rgba(239,68,68,0.08)", color: COLORS.error, cursor: "pointer" }}
+                          >
+                            Stop
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => void handleStartRemotePreview()}
+                            disabled={remotePreviewLoading}
+                            style={{ padding: "0.25rem 0.55rem", fontSize: "0.72rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: remotePreviewLoading ? "not-allowed" : "pointer", opacity: remotePreviewLoading ? 0.6 : 1 }}
+                          >
+                            {remotePreviewLoading ? "Starting…" : "Start Preview"}
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
+                </div>
+
+                {/* ── WebContainer tab content ── */}
+                {websitePreviewTab === "webcontainer" && (
+                  <>
+                    {/* Error banner with snapshot fallback message */}
+                    {websiteLivePreviewError && (
+                      <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "8px", color: COLORS.warning, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem" }}>
+                        <span>{websiteLivePreviewError}</span>
+                        {websiteResult && (
+                          <button
+                            className="zivo-btn"
+                            onClick={() => void startWebsiteLivePreview(websiteResult.files)}
+                            style={{ padding: "0.2rem 0.6rem", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.4)", borderRadius: "6px", color: COLORS.warning, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
+                          >
+                            Try Again
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {!websiteResult && !websiteLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Your generated website will appear here</p>
+                      </div>
+                    )}
+                    {/* Loading shimmer */}
+                    {websiteLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1.5rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
+                        <div style={{ width: "100%", maxWidth: "480px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                          {[75, 55, 85].map((w, i) => (
+                            <div key={i} style={{ height: "14px", borderRadius: "8px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* WebContainer booting status */}
+                    {websiteResult && websiteLivePreviewRunning && !websiteLivePreviewUrl && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{websiteLivePreviewStatus ?? "Starting live preview…"}</p>
+                        <div style={{ width: "100%", maxWidth: "380px", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                          {[70, 50, 80].map((w, i) => (
+                            <div key={i} style={{ height: "12px", borderRadius: "6px", background: "linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.5s infinite", width: `${w}%` }} />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {websiteResult && websiteLivePreviewUrl && (
+                      <iframe
+                        title="Website Live Runtime Preview"
+                        src={websiteLivePreviewUrl}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      />
+                    )}
+                    {websiteResult?.preview_html && !websiteLivePreviewUrl && !websiteLivePreviewRunning && (
+                      <iframe
+                        title="Website Preview"
+                        srcDoc={websiteResult.preview_html}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin"
+                      />
+                    )}
+                  </>
                 )}
-                {websiteLoading && (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem" }}>
-                    <span style={{ display: "inline-block", width: "40px", height: "40px", border: "3px solid rgba(99,102,241,0.2)", borderTop: "3px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>Building website…</p>
+
+                {/* ── Remote Preview tab content ── */}
+                {websitePreviewTab === "remote" && (
+                  <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                    {/* No project saved yet */}
+                    {!websiteProjectId && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "80px", height: "80px", borderRadius: "20px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Generate a website first to enable remote preview</p>
+                        <p style={{ fontSize: "0.78rem", color: COLORS.textMuted, maxWidth: "320px" }}>The remote preview runner builds your site in an isolated Docker container and serves it at a stable URL.</p>
+                      </div>
+                    )}
+
+                    {/* Error banner */}
+                    {remotePreviewError && (
+                      <div style={{ margin: "0.75rem 1rem 0", padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.5rem", flexShrink: 0 }}>
+                        <span>{remotePreviewError}</span>
+                        <button
+                          className="zivo-btn"
+                          onClick={() => void handleStartRemotePreview()}
+                          style={{ padding: "0.2rem 0.6rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "6px", color: COLORS.error, cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, flexShrink: 0 }}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Waiting / building state */}
+                    {websiteProjectId && (remotePreviewStatus === "queued" || remotePreviewStatus === "building") && !remotePreviewUrl && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", padding: "2rem" }}>
+                        <span style={{ display: "inline-block", width: "32px", height: "32px", border: "2px solid rgba(99,102,241,0.2)", borderTop: "2px solid #6366f1", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                        <p style={{ color: COLORS.textSecondary, fontSize: "0.875rem" }}>{remotePreviewStatus === "building" ? "Building your site in a Docker container…" : "Preview queued — waiting for a runner slot…"}</p>
+                        {/* Logs */}
+                        {remotePreviewLogs.length > 0 && (
+                          <div style={{ width: "100%", maxWidth: "600px", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.75rem", maxHeight: "180px", overflowY: "auto", fontFamily: "monospace", fontSize: "0.72rem", color: COLORS.textSecondary, whiteSpace: "pre-wrap" }}>
+                            {remotePreviewLogs.slice(-40).join("\n")}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Idle state (no preview started yet) */}
+                    {websiteProjectId && !remotePreviewStatus && !remotePreviewLoading && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <div style={{ width: "64px", height: "64px", borderRadius: "16px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#6366f1" }}>
+                          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        </div>
+                        <p style={{ fontSize: "0.875rem" }}>Click <strong>Start Preview</strong> to build and run your site in an isolated Docker container</p>
+                        <button
+                          onClick={() => void handleStartRemotePreview()}
+                          style={{ marginTop: "0.5rem", padding: "0.5rem 1.25rem", background: COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600 }}
+                        >
+                          Start Preview
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Running: iframe */}
+                    {remotePreviewStatus === "running" && remotePreviewUrl && (
+                      <iframe
+                        key={remotePreviewUrl}
+                        title="Remote Preview"
+                        src={remotePreviewUrl}
+                        style={{ flex: 1, width: "100%", border: "none" }}
+                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                      />
+                    )}
+
+                    {/* Logs panel (visible when running and logs exist) */}
+                    {remotePreviewStatus === "running" && remotePreviewLogs.length > 0 && (
+                      <div style={{ borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "0.5rem 0.75rem", maxHeight: "120px", overflowY: "auto", fontFamily: "monospace", fontSize: "0.7rem", color: COLORS.textMuted, whiteSpace: "pre-wrap", flexShrink: 0 }}>
+                        {remotePreviewLogs.slice(-20).join("\n")}
+                      </div>
+                    )}
+
+                    {/* Stopped state */}
+                    {remotePreviewStatus === "stopped" && (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flex: 1, gap: "1rem", color: COLORS.textMuted, textAlign: "center", padding: "2rem" }}>
+                        <p style={{ fontSize: "0.875rem" }}>Preview stopped.</p>
+                        {websiteProjectId && (
+                          <button
+                            onClick={() => void handleStartRemotePreview()}
+                            style={{ padding: "0.4rem 1rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem" }}
+                          >
+                            Restart Preview
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                )}
-                {websiteResult?.preview_html && (
-                  <iframe
-                    title="Website Preview"
-                    srcDoc={websiteResult.preview_html}
-                    style={{ flex: 1, width: "100%", border: "none" }}
-                    sandbox="allow-scripts allow-same-origin"
-                  />
                 )}
               </div>
             )}
@@ -3219,7 +5007,7 @@ function AIPageInner() {
 
           {/* Right Panel — Files / Code / Diff (Code Builder only) */}
           {mode === "code" && (
-            <div style={{ width: "360px", flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
+            <div style={{ width: "280px", flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
               {/* Tab bar */}
               <div style={{ display: "flex", alignItems: "center", gap: "2px", padding: "0 0.75rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
                 {(["files", "code", "diff"] as const).map((tab) => (
@@ -3230,7 +5018,7 @@ function AIPageInner() {
                     style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeRightTab === tab ? "rgba(99,102,241,0.15)" : "transparent", color: activeRightTab === tab ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s", display: "flex", alignItems: "center", gap: "0.3rem" }}
                   >
                     {tab === "files" && output?.files?.length ? (
-                      <>{tab.charAt(0).toUpperCase() + tab.slice(1)}<span style={{ background: "rgba(99,102,241,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>{output.files.length}</span></>
+                      <>{tab.charAt(0).toUpperCase() + tab.slice(1)}<span style={{ background: loading ? "rgba(245,158,11,0.25)" : "rgba(99,102,241,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.65rem", fontWeight: 700, color: loading ? COLORS.warning : COLORS.accent }}>{output.files.length}</span></>
                     ) : tab.charAt(0).toUpperCase() + tab.slice(1)}
                   </button>
                 ))}
@@ -3239,26 +5027,11 @@ function AIPageInner() {
               {/* Files tab */}
               {activeRightTab === "files" && (
                 <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", animation: "fadeIn 0.3s ease" }}>
-                  {/* File search (Upgrade 14b) */}
-                  <div style={{ padding: "0.5rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
-                    <div style={{ position: "relative" }}>
-                      <svg style={{ position: "absolute", left: "0.5rem", top: "50%", transform: "translateY(-50%)", color: COLORS.textMuted, pointerEvents: "none" }} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
-                      <input
-                        type="text"
-                        placeholder="Search files…"
-                        value={fileSearchQuery}
-                        onChange={(e) => setFileSearchQuery(e.target.value)}
-                        style={{ width: "100%", padding: "0.3rem 0.5rem 0.3rem 1.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "5px", color: COLORS.textPrimary, fontSize: "0.75rem", outline: "none" }}
-                      />
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, overflow: "hidden" }}>
-                    <FileExplorer
-                      files={(output?.files ?? []).filter((f) => !fileSearchQuery || f.path.toLowerCase().includes(fileSearchQuery.toLowerCase())) as Array<{ path: string; content: string; action: "create" | "update" | "delete" }>}
-                      activeFilePath={activeFile?.path ?? null}
-                      onFileSelect={(f) => { setActiveFile(f); setActiveRightTab("code"); }}
-                    />
-                  </div>
+                  <FileTree
+                    files={(output?.files ?? []) as Array<{ path: string; content: string; action?: "create" | "update" | "delete" }>}
+                    activeFile={activeFile?.path ?? null}
+                    onFileSelect={(f) => { setActiveFile(f as { path: string; content: string; action: "create" | "update" | "delete" }); setEditedContent(f.content); setSaveStatus("idle"); setActiveRightTab("code"); }}
+                  />
                 </div>
               )}
 
@@ -3267,34 +5040,114 @@ function AIPageInner() {
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
                   {activeFile ? (
                     <>
+                      {/* File header: path + action badge + Save/Copy buttons */}
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
                         <span style={{ fontSize: "0.875rem" }}>{getFileIcon(activeFile.path)}</span>
-                        <code style={{ flex: 1, fontSize: "0.75rem", color: COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeFile.path}</code>
+                        <code style={{ flex: 1, fontSize: "0.75rem", color: COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={activeFile.path}>{activeFile.path}</code>
+                        {/* Save button */}
                         <button
                           className="zivo-btn"
-                          onClick={() => navigator.clipboard.writeText(activeFile.content).then(() => {
+                          onClick={handleFileSave}
+                          disabled={isSaving || loading || editedContent === activeFile.content}
+                          title={loading ? "Build in progress — editing disabled" : "Save file"}
+                          style={{
+                            padding: "0.2rem 0.55rem",
+                            background: saveStatus === "saved" ? "rgba(16,185,129,0.15)" : saveStatus === "error" ? "rgba(239,68,68,0.15)" : "rgba(99,102,241,0.15)",
+                            border: `1px solid ${saveStatus === "saved" ? "rgba(16,185,129,0.4)" : saveStatus === "error" ? "rgba(239,68,68,0.4)" : "rgba(99,102,241,0.3)"}`,
+                            borderRadius: "5px",
+                            color: saveStatus === "saved" ? COLORS.success : saveStatus === "error" ? COLORS.error : COLORS.accent,
+                            cursor: isSaving || loading || editedContent === activeFile.content ? "not-allowed" : "pointer",
+                            fontSize: "0.7rem",
+                            fontWeight: 600,
+                            flexShrink: 0,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "0.3rem",
+                            opacity: editedContent === activeFile.content ? 0.5 : 1,
+                          }}
+                        >
+                          {isSaving ? (
+                            <><span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid rgba(99,102,241,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Saving…</>
+                          ) : saveStatus === "saved" ? (
+                            <>✓ Saved</>
+                          ) : saveStatus === "error" ? (
+                            <>✕ Error</>
+                          ) : (
+                            <>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                              Save
+                            </>
+                          )}
+                        </button>
+                        {/* Copy button */}
+                        <button
+                          className="zivo-btn"
+                          onClick={() => navigator.clipboard.writeText(editedContent ?? activeFile.content).then(() => {
                             setCopyFileLabel("copied");
                             setTimeout(() => setCopyFileLabel("copy"), 2000);
                           }).catch(() => {})}
                           style={{ padding: "0.2rem 0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "5px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.7rem", flexShrink: 0 }}
                         >
-                          {copyFileLabel === "copied" ? "✓ Copied" : "Copy"}
+                          {copyFileLabel === "copied" ? "✓" : "Copy"}
                         </button>
                       </div>
-                      <div style={{ flex: 1, overflow: "auto", padding: "0.75rem" }}>
-                        <pre style={{ margin: 0, fontSize: "0.75rem", lineHeight: 1.7, color: COLORS.textPrimary, fontFamily: "'JetBrains Mono', 'Fira Code', monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                          {activeFile.content.split("\n").map((line, i) => (
-                            <div key={i} style={{ display: "flex", gap: "0.75rem" }}>
-                              <span style={{ color: COLORS.textMuted, userSelect: "none", minWidth: "2rem", textAlign: "right", flexShrink: 0, fontSize: "0.7rem" }}>{i + 1}</span>
-                              <span>{line}</span>
-                            </div>
-                          ))}
-                        </pre>
-                      </div>
+                      {/* Editable textarea */}
+                      <textarea
+                        className="zivo-textarea"
+                        value={editedContent ?? activeFile.content}
+                        onChange={(e) => { setEditedContent(e.target.value); setSaveStatus("idle"); }}
+                        readOnly={loading}
+                        spellCheck={false}
+                        onKeyDown={(e) => {
+                          // Ctrl/Cmd+S to save
+                          if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+                            e.preventDefault();
+                            void handleFileSave();
+                          }
+                          // Tab key inserts spaces instead of leaving the field
+                          if (e.key === "Tab") {
+                            e.preventDefault();
+                            const el = e.currentTarget;
+                            const start = el.selectionStart;
+                            const end = el.selectionEnd;
+                            const val = el.value;
+                            const newVal = val.slice(0, start) + "  " + val.slice(end);
+                            setEditedContent(newVal);
+                            // Restore cursor position after React re-render
+                            requestAnimationFrame(() => {
+                              el.selectionStart = start + 2;
+                              el.selectionEnd = start + 2;
+                            });
+                          }
+                        }}
+                        style={{
+                          flex: 1,
+                          resize: "none",
+                          width: "100%",
+                          padding: "0.75rem",
+                          background: "transparent",
+                          border: "none",
+                          color: loading ? COLORS.textMuted : COLORS.textPrimary,
+                          fontSize: "0.75rem",
+                          lineHeight: 1.7,
+                          fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
+                          outline: "none",
+                          boxSizing: "border-box",
+                          cursor: loading ? "not-allowed" : "text",
+                        }}
+                        title={loading ? "Build in progress — editing will resume when build completes" : undefined}
+                      />
+                      {/* Unsaved changes indicator */}
+                      {editedContent !== null && editedContent !== activeFile.content && saveStatus === "idle" && (
+                        <div style={{ padding: "0.3rem 0.75rem", borderTop: `1px solid ${COLORS.border}`, flexShrink: 0, display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.7rem", color: COLORS.warning }}>
+                          <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: COLORS.warning, flexShrink: 0 }} />
+                          Unsaved changes — press <kbd style={{ padding: "0 4px", background: "rgba(255,255,255,0.08)", borderRadius: "3px", fontSize: "0.65rem" }}>⌘S</kbd> or click Save
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.8125rem", textAlign: "center", padding: "2rem" }}>
-                      Select a file from the Files tab to view its code.
+                      Select a file from the Files tab to view and edit its code.
                     </div>
                   )}
                 </div>
@@ -3588,6 +5441,137 @@ function AIPageInner() {
           </div>
         </div>
       )}
+
+      {/* GitHub Push Modal */}
+      {githubModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1001,
+            padding: "1rem",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setGithubModalOpen(false); }}
+        >
+          <div
+            style={{
+              background: "#0f1120",
+              border: "1px solid rgba(255,255,255,0.12)",
+              borderRadius: 14,
+              padding: "1.5rem",
+              width: "100%",
+              maxWidth: 460,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+              animation: "fadeIn 0.2s ease",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill={COLORS.textPrimary}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+                <span style={{ fontSize: "1rem", fontWeight: 700, color: COLORS.textPrimary }}>Push to GitHub</span>
+              </div>
+              <button
+                onClick={() => setGithubModalOpen(false)}
+                style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1.1rem", padding: "0 0.25rem" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Owner</span>
+                  <input
+                    type="text"
+                    value={githubModalOwner}
+                    onChange={(e) => setGithubModalOwner(e.target.value)}
+                    placeholder="your-username"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Repository</span>
+                  <input
+                    type="text"
+                    value={githubModalRepo}
+                    onChange={(e) => setGithubModalRepo(e.target.value)}
+                    placeholder="my-app"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
+                  />
+                </label>
+              </div>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Branch</span>
+                <input
+                  type="text"
+                  value={githubModalBranch}
+                  onChange={(e) => setGithubModalBranch(e.target.value)}
+                  placeholder="main"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", fontFamily: "monospace", outline: "none" }}
+                />
+              </label>
+
+              <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                  GitHub Token{" "}
+                  <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" style={{ color: COLORS.accent, textTransform: "none", fontWeight: 400 }}>(generate)</a>
+                </span>
+                <input
+                  type="password"
+                  value={githubModalToken}
+                  onChange={(e) => setGithubModalToken(e.target.value)}
+                  placeholder="ghp_... (leave blank to use saved token)"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", fontFamily: "monospace", outline: "none" }}
+                />
+              </label>
+
+              <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, background: "rgba(255,255,255,0.03)", border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "0.5rem 0.65rem" }}>
+                Pushing <strong style={{ color: COLORS.textSecondary }}>{output?.files?.length ?? 0} files</strong> to GitHub. Token is saved locally for future pushes.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.25rem" }}>
+              <button
+                onClick={() => setGithubModalOpen(false)}
+                style={{ flex: 1, padding: "0.6rem", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: COLORS.textMuted, fontSize: "0.875rem", cursor: "pointer", fontWeight: 600 }}
+              >
+                Cancel
+              </button>
+              <button
+                disabled={githubPushing}
+                onClick={handleGithubModalPush}
+                style={{
+                  flex: 2,
+                  padding: "0.6rem",
+                  background: githubPushing ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
+                  border: "none",
+                  borderRadius: 8,
+                  color: "#fff",
+                  fontSize: "0.875rem",
+                  cursor: githubPushing ? "not-allowed" : "pointer",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "0.4rem",
+                }}
+              >
+                {githubPushing ? (
+                  <><span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Pushing…</>
+                ) : (
+                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" x2="12" y1="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Push to GitHub</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -3599,3 +5583,10 @@ export default function AIPage() {
     </Suspense>
   );
 }
+
+
+
+
+
+
+

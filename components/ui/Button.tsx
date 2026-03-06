@@ -1,73 +1,109 @@
-"use client";
+// components/ui/Button.tsx — Reusable Button primitive using design tokens
+'use client';
 
-import * as React from "react";
-import { clsx } from "clsx";
+import * as React from 'react';
 
-type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive" | "outline";
-type ButtonSize = "sm" | "md" | "lg";
+export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+export type ButtonSize = 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
-  loading?: boolean;
+  isLoading?: boolean;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
+  fullWidth?: boolean;
 }
 
-const variantClasses: Record<ButtonVariant, string> = {
-  primary:
-    "bg-indigo-500 hover:bg-indigo-400 text-white border-transparent shadow-sm",
-  secondary:
-    "bg-white/[0.06] hover:bg-white/[0.10] text-slate-200 border-white/[0.08]",
-  ghost:
-    "bg-transparent hover:bg-white/[0.06] text-slate-300 border-transparent",
-  destructive:
-    "bg-red-500 hover:bg-red-400 text-white border-transparent shadow-sm",
-  outline:
-    "bg-transparent hover:bg-white/[0.06] text-slate-200 border-white/[0.16]",
+const variantStyles: Record<ButtonVariant, React.CSSProperties> = {
+  primary: {
+    background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+    color: '#ffffff',
+    border: '1px solid transparent',
+  },
+  secondary: {
+    background: 'rgba(99,102,241,0.12)',
+    color: '#818cf8',
+    border: '1px solid rgba(99,102,241,0.3)',
+  },
+  outline: {
+    background: 'transparent',
+    color: '#f1f5f9',
+    border: '1px solid rgba(255,255,255,0.16)',
+  },
+  ghost: {
+    background: 'transparent',
+    color: '#94a3b8',
+    border: '1px solid transparent',
+  },
+  danger: {
+    background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+    color: '#ffffff',
+    border: '1px solid transparent',
+  },
 };
 
-const sizeClasses: Record<ButtonSize, string> = {
-  sm: "px-3 py-1.5 text-xs rounded-md gap-1.5",
-  md: "px-4 py-2 text-sm rounded-lg gap-2",
-  lg: "px-6 py-2.5 text-base rounded-xl gap-2.5",
+const sizeStyles: Record<ButtonSize, React.CSSProperties> = {
+  sm: { padding: '0.375rem 0.75rem', fontSize: '0.8125rem', borderRadius: '6px', height: '32px' },
+  md: { padding: '0.5rem 1rem', fontSize: '0.9375rem', borderRadius: '8px', height: '40px' },
+  lg: { padding: '0.75rem 1.5rem', fontSize: '1rem', borderRadius: '10px', height: '48px' },
 };
 
-const spinnerSizeMap: Record<ButtonSize, number> = { sm: 12, md: 14, lg: 16 };
+export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  (
+    {
+      variant = 'primary',
+      size = 'md',
+      isLoading = false,
+      leftIcon,
+      rightIcon,
+      fullWidth = false,
+      children,
+      disabled,
+      style,
+      ...props
+    },
+    ref
+  ) => {
+    const baseStyle: React.CSSProperties = {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '0.5rem',
+      fontWeight: 600,
+      lineHeight: 1,
+      cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
+      opacity: disabled || isLoading ? 0.6 : 1,
+      transition: 'all 0.2s',
+      outline: 'none',
+      whiteSpace: 'nowrap',
+      width: fullWidth ? '100%' : undefined,
+      ...variantStyles[variant],
+      ...sizeStyles[size],
+      ...style,
+    };
 
-export function Button({
-  variant = "primary",
-  size = "md",
-  loading = false,
-  leftIcon,
-  rightIcon,
-  className,
-  disabled,
-  children,
-  ...props
-}: ButtonProps) {
-  return (
-    <button
-      disabled={disabled ?? loading}
-      className={clsx(
-        "inline-flex items-center justify-center font-semibold border transition-all duration-150 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0a0b14] disabled:opacity-50 disabled:cursor-not-allowed",
-        variantClasses[variant],
-        sizeClasses[size],
-        className
-      )}
-      {...props}
-    >
-      {loading ? (
-        <span
-          className="inline-block border-2 border-current border-t-transparent rounded-full animate-spin"
-          style={{ width: spinnerSizeMap[size], height: spinnerSizeMap[size] }}
-          aria-hidden="true"
-        />
-      ) : (
-        leftIcon
-      )}
-      {children}
-      {!loading && rightIcon}
-    </button>
-  );
-}
+    return (
+      <button ref={ref} disabled={disabled || isLoading} style={baseStyle} {...props}>
+        {isLoading && (
+          <span
+            style={{
+              display: 'inline-block',
+              width: '14px',
+              height: '14px',
+              border: '2px solid rgba(255,255,255,0.3)',
+              borderTop: '2px solid currentColor',
+              borderRadius: '50%',
+              animation: 'spin 0.7s linear infinite',
+            }}
+          />
+        )}
+        {!isLoading && leftIcon}
+        {children}
+        {!isLoading && rightIcon}
+      </button>
+    );
+  }
+);
+
+Button.displayName = 'Button';
