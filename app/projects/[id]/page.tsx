@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import SidebarLayout from '@/components/layout/SidebarLayout';
+import PlanChecklist from '@/components/builder/PlanChecklist';
 import {
   ArrowLeft,
   Play,
@@ -26,6 +27,7 @@ import {
   Github,
   Container,
   ExternalLink,
+  ClipboardList,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -289,6 +291,7 @@ export default function ProjectWorkspacePage() {
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
   const streamEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [planDrawerOpen, setPlanDrawerOpen] = useState(false);
 
   // Restore state
   const [restoringBuildId, setRestoringBuildId] = useState<string | null>(null);
@@ -679,7 +682,9 @@ export default function ProjectWorkspacePage() {
 
   return (
     <SidebarLayout>
-      <div style={s.page}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1.5rem', minHeight: '100vh', background: '#0a0a0f' }}>
+        {/* ── Main content column ── */}
+        <div style={{ ...s.page, flex: 1, minWidth: 0, marginBottom: 0 }}>
         {/* ── Header ── */}
         <div style={s.header}>
           <Link href="/projects" style={s.backBtn}>
@@ -694,6 +699,22 @@ export default function ProjectWorkspacePage() {
               </span>
             </div>
           </div>
+          {/* Plan & Checklist toggle button */}
+          <button
+            onClick={() => setPlanDrawerOpen((v) => !v)}
+            title="Plan & Checklist"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.45rem 0.875rem', borderRadius: '8px',
+              background: planDrawerOpen ? 'rgba(99,102,241,0.2)' : 'rgba(99,102,241,0.08)',
+              color: planDrawerOpen ? '#818cf8' : '#64748b',
+              border: `1px solid ${planDrawerOpen ? 'rgba(99,102,241,0.4)' : 'rgba(99,102,241,0.15)'}`,
+              cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600, whiteSpace: 'nowrap',
+            }}
+          >
+            <ClipboardList size={15} />
+            Plan &amp; Checklist
+          </button>
         </div>
 
         {/* ── Continue Build Panel ── */}
@@ -1219,6 +1240,21 @@ export default function ProjectWorkspacePage() {
 
         {/* Hidden iframe to bust preview cache — key change forces reload */}
         <iframe key={iframeKey} src="about:blank" style={{ display: 'none' }} title="preview-cache-bust" />
+        </div>{/* end main content column */}
+
+        {/* ── Plan & Checklist right-side drawer ── */}
+        {planDrawerOpen && token && (
+          <div style={{
+            width: '340px', flexShrink: 0, paddingTop: '2rem', paddingRight: '1.5rem',
+            position: 'sticky', top: 0, maxHeight: '100vh', overflowY: 'auto',
+          }}>
+            <PlanChecklist
+              projectId={projectId}
+              token={token}
+              onApplied={() => { fetchFiles(); fetchBuilds(); fetchMessages(); }}
+            />
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -1236,7 +1272,6 @@ const styles = {
     minHeight: '100vh',
     background: '#0a0a0f',
     color: '#f1f5f9',
-    maxWidth: '900px',
   } as React.CSSProperties,
 
   header: {
@@ -1244,6 +1279,7 @@ const styles = {
     alignItems: 'flex-start',
     gap: '1rem',
     marginBottom: '1.5rem',
+    flexWrap: 'wrap',
   } as React.CSSProperties,
 
   backBtn: {

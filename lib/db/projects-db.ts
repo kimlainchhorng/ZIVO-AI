@@ -522,3 +522,125 @@ export async function deleteProject(token: string, projectId: string): Promise<v
   const { error } = await client.from("projects").delete().eq("id", projectId);
   if (error) throw new Error(`deleteProject: ${error.message}`);
 }
+
+// ─── Project Change Plans ──────────────────────────────────────────────────────
+
+export type ChangePlanStatus =
+  | "draft"
+  | "awaiting_approval"
+  | "approved"
+  | "rejected"
+  | "applied"
+  | "verified"
+  | "failed";
+
+export interface PlanJson {
+  steps: string[];
+  planned_files: string[];
+  checklist: string[];
+  risks: string[];
+}
+
+export interface DbChangePlan {
+  id: string;
+  project_id: string;
+  created_at: string;
+  updated_at: string;
+  created_by_user_id: string;
+  status: ChangePlanStatus;
+  plan_json: PlanJson;
+  approved_at: string | null;
+  approved_by_user_id: string | null;
+  apply_attempts: number;
+  max_apply_attempts: number;
+  verification_run_id: string | null;
+  result_json: unknown | null;
+}
+
+/** Creates a new change plan record. */
+export async function createChangePlan(
+  token: string,
+  projectId: string,
+  userId: string,
+  planJson: PlanJson
+): Promise<DbChangePlan> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_change_plans")
+    .insert({
+      project_id: projectId,
+      created_by_user_id: userId,
+      status: "awaiting_approval",
+      plan_json: planJson,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`createChangePlan: ${error.message}`);
+  return data as DbChangePlan;
+}
+
+/** Fetches a single change plan by ID. */
+export async function getChangePlan(token: string, planId: string): Promise<DbChangePlan | null> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_change_plans")
+    .select("*")
+    .eq("id", planId)
+    .maybeSingle();
+  if (error) throw new Error(`getChangePlan: ${error.message}`);
+  return data as DbChangePlan | null;
+}
+
+/** Returns the latest change plan for a project, or null if none exists. */
+export async function getLatestChangePlan(token: string, projectId: string): Promise<DbChangePlan | null> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_change_plans")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`getLatestChangePlan: ${error.message}`);
+  return data as DbChangePlan | null;
+}
+
+/** Lists all change plans for a project (newest first). */
+export async function listChangePlans(token: string, projectId: string, limit = 20): Promise<DbChangePlan[]> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_change_plans")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listChangePlans: ${error.message}`);
+  return (data ?? []) as DbChangePlan[];
+}
+
+/** Updates fields on an existing change plan. */
+export async function updateChangePlan(
+  token: string,
+  planId: string,
+  updates: Partial<
+    Pick<
+      DbChangePlan,
+      | "status"
+      | "approved_at"
+      | "approved_by_user_id"
+      | "apply_attempts"
+      | "verification_run_id"
+      | "result_json"
+    >
+  >
+): Promise<DbChangePlan> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_change_plans")
+    .update(updates)
+    .eq("id", planId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateChangePlan: ${error.message}`);
+  return data as DbChangePlan;
+}
