@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Layers, ImageIcon, FolderKanban, Rocket } from 'lucide-react';
+import { LayoutDashboard, Layers, ImageIcon, FolderKanban, Rocket } from 'lucide-react';
 
 const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: FolderKanban },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/projects', label: 'Projects', icon: FolderKanban },
   { href: '/ai-builder', label: 'AI Builder', icon: Layers },
   { href: '/image-studio', label: 'Image Studio', icon: ImageIcon },

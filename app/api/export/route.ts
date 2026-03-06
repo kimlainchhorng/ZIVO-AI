@@ -21,6 +21,11 @@ import type { StylePreset } from "@/types/builder";
 
 export const runtime = "nodejs";
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Max characters of section content to include in exported previews. */
+const MAX_SECTION_CONTENT_LENGTH = 300;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface GeneratedFile {
@@ -75,7 +80,7 @@ function escapeJSX(text: string): string {
 function sectionToReact(section: SectionLike, presetClasses: string): string {
   const type = section.type ?? "custom";
   const title = escapeJSX(section.title ?? "");
-  const content = escapeJSX((section.content ?? "").slice(0, 300));
+  const content = escapeJSX((section.content ?? "").slice(0, MAX_SECTION_CONTENT_LENGTH));
 
   return `
 /** Section: ${type} */
@@ -156,7 +161,7 @@ function buildNextjsExport(pages: PageLike[], preset: StylePreset): GeneratedFil
           `      <section className="py-16 px-8">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl font-bold mb-4">${escapeJSX(s.title ?? "")}</h2>
-          <p className="text-lg opacity-80">${escapeJSX((s.content ?? "").slice(0, 300))}</p>
+          <p className="text-lg opacity-80">${escapeJSX((s.content ?? "").slice(0, MAX_SECTION_CONTENT_LENGTH))}</p>
         </div>
       </section>`
       )
@@ -219,7 +224,7 @@ function buildTailwindExport(pages: PageLike[], preset: StylePreset): GeneratedF
   <section class="py-16 px-8">
     <div class="max-w-6xl mx-auto">
       <h2 class="text-3xl font-bold mb-4">${escapeJSX(s.title ?? "")}</h2>
-      <p class="text-lg opacity-80">${escapeJSX((s.content ?? "").slice(0, 300))}</p>
+      <p class="text-lg opacity-80">${escapeJSX((s.content ?? "").slice(0, MAX_SECTION_CONTENT_LENGTH))}</p>
     </div>
   </section>`
       )

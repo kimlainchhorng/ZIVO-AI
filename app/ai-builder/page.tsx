@@ -46,11 +46,14 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import SidebarLayout from '@/components/layout/SidebarLayout';
-import { useBuilderStore } from '@/lib/builder-store';
+import { useBuilderStore } from '@/lib/stores/builder-store';
 import { toast } from 'sonner';
 import type { Section, StylePreset } from '@/types/builder';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Debounce delay (ms) before auto-saving changes to the server. */
+const AUTO_SAVE_DELAY_MS = 3000;
 
 const STYLE_PRESETS: { value: StylePreset; label: string; color: string }[] = [
   { value: 'premium', label: '✨ Premium', color: '#6366f1' },
@@ -353,7 +356,7 @@ export default function AIBuilderPage() {
       } catch {
         setAutoSaveStatus('unsaved');
       }
-    }, 3000);
+    }, AUTO_SAVE_DELAY_MS);
   }, [projectId, token, pages]);
 
   useEffect(() => {
@@ -618,8 +621,12 @@ export default function AIBuilderPage() {
       const data = await res.json();
       if (res.ok) {
         toast.success(`Restored to version ${data.restoredVersion}`);
-        // Reload the project state
-        window.location.reload();
+        // Apply restored snapshot to the Zustand store without a full page reload
+        if (data.snapshot && data.snapshot.pages) {
+          setUIOutput(data.snapshot);
+        } else if (Array.isArray(data.pages) && data.pages.length > 0) {
+          setUIOutput({ pages: data.pages, title: projectTitle });
+        }
       } else {
         toast.error(data.error ?? 'Restore failed');
       }
