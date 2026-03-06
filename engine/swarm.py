@@ -100,6 +100,22 @@ class ZIVOSwarm:
             ],
         )
 
+        # ── Executor: Design System ──────────────────────────────────────────
+        design_prompt = _load_prompt(
+            "prompts/design_system_agent.txt",
+            "You are ZIVO-AI's Design System specialist. Generate consistent design tokens, color palettes, typography scales, and Tailwind config snippets.",
+        )
+        self.design_system_agent = Agent(
+            name="DesignSystemAgent",
+            instructions=design_prompt,
+            model="gpt-4o",
+            model_settings=ModelSettings(temperature=0.4),
+            tools=[
+                CONNECTOR_REGISTRY["write_local_file"],
+                CONNECTOR_REGISTRY["read_local_file"],
+            ],
+        )
+
         # ── Planner ─────────────────────────────────────────────────────────
         planner_prompt = _load_prompt(
             "prompts/planner_v1.txt",
@@ -115,6 +131,7 @@ class ZIVOSwarm:
                 self.code_builder_agent,
                 self.code_executor_agent,
                 self.data_validator_agent,
+                self.design_system_agent,
             ],
         )
 
@@ -131,3 +148,10 @@ class ZIVOSwarm:
             f"{m['role'].upper()}: {m['content']}" for m in messages
         )
         return Runner.run_sync(self.planner_agent, conversation)
+
+    async def run_async(self, messages: list[dict]) -> "RunResult":
+        """Async variant of run() for use in async contexts (e.g. FastAPI)."""
+        conversation = "\n".join(
+            f"{m['role'].upper()}: {m['content']}" for m in messages
+        )
+        return await Runner.run(self.planner_agent, conversation)

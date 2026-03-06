@@ -1,5 +1,6 @@
 import streamlit as st
 from engine.mcp_client import MCPClientManager
+from engine.tools import CONNECTOR_REGISTRY
 from engine.zivo_brain import ZivoBrain
 
 # ──────────────────────────────────────────────
@@ -37,10 +38,38 @@ use_swarm: bool = st.sidebar.toggle(
     "🕸️ Swarm Mode", value=False, key="use_swarm_toggle"
 )
 
-# Re-initialize brain when swarm mode changes
-if "brain" not in st.session_state or st.session_state.get("_swarm_mode") != use_swarm:
-    st.session_state.brain = ZivoBrain(use_swarm=use_swarm)
+# ──────────────────────────────────────────────
+# Agent Mode toggle
+# ──────────────────────────────────────────────
+agent_mode: bool = st.sidebar.toggle(
+    "🤖 Agent Mode", value=False, key="use_agent_mode_toggle",
+    help="Enables autonomous behaviour: codebase exploration, web search, multi-file coordination.",
+)
+
+# ──────────────────────────────────────────────
+# Model selector
+# ──────────────────────────────────────────────
+selected_model: str = st.sidebar.selectbox(
+    "Model",
+    ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"],
+    index=0,
+    key="model_selector",
+)
+
+# Re-initialize brain when swarm mode, agent mode, or model changes
+if (
+    "brain" not in st.session_state
+    or st.session_state.get("_swarm_mode") != use_swarm
+    or st.session_state.get("_agent_mode") != agent_mode
+    or st.session_state.get("_model") != selected_model
+):
+    st.session_state.brain = ZivoBrain(
+        use_swarm=use_swarm,
+        agent_mode=agent_mode,
+    )
     st.session_state["_swarm_mode"] = use_swarm
+    st.session_state["_agent_mode"] = agent_mode
+    st.session_state["_model"] = selected_model
 
 # ──────────────────────────────────────────────
 # MCP Servers status panel
@@ -58,6 +87,8 @@ with st.sidebar.expander("🔌 MCP Servers"):
         st.info("No MCP servers configured.")
     _active = _mcp.list_tools()
     st.caption(f"Active tools: {len(_active)}")
+
+st.sidebar.caption(f"🔧 Active tools: {len(list(CONNECTOR_REGISTRY.values()))}")
 
 # ──────────────────────────────────────────────
 # Session state bootstrap
@@ -91,12 +122,13 @@ if debug_mode and use_swarm:
         st.json({
             "planner": {
                 "model": "gpt-4o",
-                "handoffs": ["WebResearchAgent", "CodeExecutorAgent", "DataValidatorAgent"],
+                "handoffs": ["WebResearchAgent", "CodeExecutorAgent", "DataValidatorAgent", "DesignSystemAgent"],
             },
             "executors": {
                 "WebResearchAgent": {"tools": ["get_current_datetime"]},
                 "CodeExecutorAgent": {"tools": ["read_local_file", "list_directory"]},
                 "DataValidatorAgent": {"tools": ["read_local_file"]},
+                "DesignSystemAgent": {"tools": ["write_local_file", "read_local_file"]},
             },
         })
 
