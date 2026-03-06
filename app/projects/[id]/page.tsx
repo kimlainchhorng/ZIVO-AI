@@ -39,7 +39,9 @@ import {
   ExternalLink,
   ClipboardList,
   Palette,
+  ImageIcon,
 } from 'lucide-react';
+import AssetsPanel from '@/components/builder/AssetsPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -314,7 +316,7 @@ function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean 
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'domains' | 'deployments' | 'team' | 'publish' | 'design';
+type Tab = 'conversation' | 'files' | 'builds' | 'quality' | 'domains' | 'deployments' | 'team' | 'publish' | 'design' | 'assets';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -1088,7 +1090,7 @@ export default function ProjectWorkspacePage() {
 
         {/* ── Tabs ── */}
         <div style={s.tabs}>
-          {(['conversation', 'files', 'builds', 'quality', 'domains', 'deployments', 'team', 'publish', 'design'] as Tab[]).map((tab) => (
+          {(['conversation', 'files', 'builds', 'quality', 'domains', 'deployments', 'team', 'publish', 'design', 'assets'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1103,6 +1105,7 @@ export default function ProjectWorkspacePage() {
               {tab === 'team' && <Users size={14} />}
               {tab === 'publish' && <Rocket size={14} />}
               {tab === 'design' && <Palette size={14} />}
+              {tab === 'assets' && <ImageIcon size={14} />}
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'files' && files.length > 0 && (
                 <span style={s.badge}>{files.length}</span>
@@ -1878,6 +1881,17 @@ export default function ProjectWorkspacePage() {
                 initialTokens={designTokens ?? undefined}
                 onSaved={(updated) => setDesignTokens(updated)}
               />
+            </div>
+          )}
+
+          {/* ── Assets ── */}
+          {activeTab === 'assets' && token && (
+            <AssetsPanel projectId={projectId} token={token} />
+          )}
+          {activeTab === 'assets' && !token && (
+            <div style={s.emptyTab}>
+              <ImageIcon size={32} style={{ color: '#475569', marginBottom: '0.75rem' }} />
+              <p>Sign in to manage project assets.</p>
             </div>
           )}
         </div>

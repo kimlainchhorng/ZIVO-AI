@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { getDefaultManifestFilesForTest, LEGAL_PAGE_PATHS } from './helpers/manifest-helpers';
 import { buildWebsiteManifest } from '@/lib/ai/manifest-builders';
 import { runCompletenessGate, summarizeCompletenessGate } from '@/lib/ai/validators/completeness-gate';
+import { getAllPlaceholderAssets, generatePlaceholderIcons, generatePlaceholderIllustrations, generateOgImage, generateFavicon } from '@/lib/placeholder-assets';
 import type { WebsitePlan } from '@/lib/ai/website-plan';
 import type { GeneratedFile } from '@/lib/ai/schema';
 
@@ -336,6 +337,211 @@ describe('CompletenessGate', () => {
     const files = buildCompleteFileset().filter((f) => f.path !== 'app/app/page.tsx');
     const result = runCompletenessGate(files);
     expect(result.missingSaasRoutes).toContain('/app');
+  });
+});
+
+// ─── SaaS routes in buildWebsiteManifest ──────────────────────────────────────
+
+describe('Website manifest — SaaS routes always included', () => {
+  const manifest = buildWebsiteManifest(MOCK_PLAN);
+  const manifestPaths = manifest.files.map((f) => f.path);
+
+  const SAAS_CORE_ROUTES = [
+    'app/app/page.tsx',
+    'app/pricing/page.tsx',
+    'app/features/page.tsx',
+    'app/faq/page.tsx',
+  ] as const;
+
+  it.each(SAAS_CORE_ROUTES)('manifest includes SaaS route %s', (routePath) => {
+    expect(manifestPaths, `Expected SaaS route "${routePath}" in website manifest`).toContain(routePath);
+  });
+
+  it('manifest uses app/(legal) path format for Terms of Service', () => {
+    expect(manifestPaths).toContain('app/(legal)/terms/page.tsx');
+    expect(manifestPaths).not.toContain('app/terms/page.tsx');
+  });
+
+  it('manifest uses app/(legal) path format for Privacy Policy', () => {
+    expect(manifestPaths).toContain('app/(legal)/privacy/page.tsx');
+    expect(manifestPaths).not.toContain('app/privacy/page.tsx');
+  });
+
+  it('manifest uses app/(legal) path format for all legal pages', () => {
+    const legalPaths = [
+      'app/(legal)/terms/page.tsx',
+      'app/(legal)/privacy/page.tsx',
+      'app/(legal)/cookies/page.tsx',
+      'app/(legal)/acceptable-use/page.tsx',
+      'app/(legal)/disclaimer/page.tsx',
+    ];
+    for (const p of legalPaths) {
+      expect(manifestPaths, `Expected legal page "${p}" in manifest`).toContain(p);
+    }
+  });
+
+  it('manifest includes seo-metadata.ts', () => {
+    expect(manifestPaths).toContain('lib/content/seo-metadata.ts');
+  });
+
+  it('manifest includes sitemap.ts and robots.ts', () => {
+    expect(manifestPaths).toContain('app/sitemap.ts');
+    expect(manifestPaths).toContain('app/robots.ts');
+  });
+
+  it('/app page description mentions dashboard content blueprint', () => {
+    const appPage = manifest.files.find((f) => f.path === 'app/app/page.tsx');
+    expect(appPage).toBeDefined();
+    expect(appPage?.description.toLowerCase()).toMatch(/dashboard|app|saas/);
+  });
+
+  it('/pricing page description mentions pricing tiers', () => {
+    const pricingPage = manifest.files.find((f) => f.path === 'app/pricing/page.tsx');
+    expect(pricingPage).toBeDefined();
+    expect(pricingPage?.description.toLowerCase()).toMatch(/pricing|tier|plan/);
+  });
+
+  it('/faq page description mentions FAQ questions', () => {
+    const faqPage = manifest.files.find((f) => f.path === 'app/faq/page.tsx');
+    expect(faqPage).toBeDefined();
+    expect(faqPage?.description.toLowerCase()).toMatch(/faq|question|accord/);
+  });
+
+  it('/features page description mentions feature grid with icons', () => {
+    const featuresPage = manifest.files.find((f) => f.path === 'app/features/page.tsx');
+    expect(featuresPage).toBeDefined();
+    expect(featuresPage?.description.toLowerCase()).toMatch(/feature|icon|grid/);
+  });
+});
+
+// ─── Placeholder assets ────────────────────────────────────────────────────────
+
+describe('Placeholder assets — generatePlaceholderIcons', () => {
+  const icons = generatePlaceholderIcons();
+
+  it('generates 6 feature icons', () => {
+    expect(icons).toHaveLength(6);
+  });
+
+  it('all icons are placed under public/icons/', () => {
+    for (const icon of icons) {
+      expect(icon.path).toMatch(/^public\/icons\/.+\.svg$/);
+    }
+  });
+
+  it('all icons have non-empty SVG content', () => {
+    for (const icon of icons) {
+      expect(icon.content).toContain('<svg');
+      expect(icon.content).toContain('</svg>');
+    }
+  });
+
+  it('includes expected icon names', () => {
+    const names = icons.map((i) => i.path);
+    expect(names).toContain('public/icons/analytics.svg');
+    expect(names).toContain('public/icons/security.svg');
+    expect(names).toContain('public/icons/api.svg');
+  });
+});
+
+describe('Placeholder assets — generatePlaceholderIllustrations', () => {
+  const illustrations = generatePlaceholderIllustrations();
+
+  it('generates 3 illustrations', () => {
+    expect(illustrations).toHaveLength(3);
+  });
+
+  it('all illustrations are under public/illustrations/', () => {
+    for (const illus of illustrations) {
+      expect(illus.path).toMatch(/^public\/illustrations\/.+\.svg$/);
+    }
+  });
+
+  it('includes hero and features illustrations', () => {
+    const paths = illustrations.map((i) => i.path);
+    expect(paths).toContain('public/illustrations/hero.svg');
+    expect(paths).toContain('public/illustrations/features.svg');
+  });
+});
+
+describe('Placeholder assets — generateOgImage', () => {
+  it('generates og image at public/og.svg', () => {
+    const og = generateOgImage('TestCo', 'Build amazing things');
+    expect(og.path).toBe('public/og.svg');
+  });
+
+  it('embeds brand name in OG SVG content', () => {
+    const og = generateOgImage('TestCo', 'Build amazing things');
+    expect(og.content).toContain('TestCo');
+  });
+
+  it('embeds tagline in OG SVG content', () => {
+    const og = generateOgImage('TestCo', 'Build amazing things');
+    expect(og.content).toContain('Build amazing things');
+  });
+
+  it('handles special XML characters safely', () => {
+    const og = generateOgImage('Test & Co <Ltd>', '"Hello" & \'World\'');
+    expect(og.content).toContain('&amp;');
+    expect(og.content).not.toContain('<Ltd>');
+  });
+
+  it('is a valid SVG with 1200x630 dimensions', () => {
+    const og = generateOgImage('Brand', 'Tagline');
+    expect(og.content).toContain('width="1200"');
+    expect(og.content).toContain('height="630"');
+  });
+});
+
+describe('Placeholder assets — generateFavicon', () => {
+  it('generates two files: public/favicon.svg and app/icon.svg', () => {
+    const favicons = generateFavicon('TestCo');
+    const paths = favicons.map((f) => f.path);
+    expect(paths).toContain('public/favicon.svg');
+    expect(paths).toContain('app/icon.svg');
+  });
+
+  it('uses first letter of brand name as icon', () => {
+    const favicons = generateFavicon('Zebra');
+    for (const fav of favicons) {
+      expect(fav.content).toContain('Z');
+    }
+  });
+
+  it('handles empty brand name gracefully', () => {
+    const favicons = generateFavicon('');
+    for (const fav of favicons) {
+      expect(fav.content).toContain('<svg');
+    }
+  });
+});
+
+describe('Placeholder assets — getAllPlaceholderAssets', () => {
+  const assets = getAllPlaceholderAssets('AcmeCo', 'Ship faster');
+
+  it('returns icons + illustrations + og + favicons', () => {
+    expect(assets.length).toBeGreaterThan(10);
+  });
+
+  it('contains public/og.svg', () => {
+    expect(assets.some((a) => a.path === 'public/og.svg')).toBe(true);
+  });
+
+  it('contains public/favicon.svg', () => {
+    expect(assets.some((a) => a.path === 'public/favicon.svg')).toBe(true);
+  });
+
+  it('all asset contents are non-empty strings', () => {
+    for (const asset of assets) {
+      expect(typeof asset.content).toBe('string');
+      expect(asset.content.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('no duplicate paths', () => {
+    const paths = assets.map((a) => a.path);
+    const unique = new Set(paths);
+    expect(unique.size).toBe(paths.length);
   });
 });
 

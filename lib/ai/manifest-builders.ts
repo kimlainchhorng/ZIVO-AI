@@ -42,6 +42,13 @@ export function buildWebsiteManifest(
     mf("lib/design/tokens.ts", "style", "Design system tokens (colors, spacing, typography)", [], priority++),
     mf("lib/assets.ts", "util", "Single source-of-truth: exports brand, brandLogoSvg, images (hero 1600x900, features 800x600, avatars 200x200) using stable picsum.photos/id/N URLs", [], priority++),
     mf("lib/content/site-copy.ts", "util", "All site copy generated from the website plan", [], priority++),
+    mf(
+      "lib/content/seo-metadata.ts",
+      "util",
+      `Per-page SEO metadata for "${plan.brand.name}". Export a \`seoMetadata\` record keyed by route path. Each entry: title (brand suffix), description (150 chars), openGraph { title, description, images: [{ url: '/og.svg', width: 1200, height: 630, alt }] }, twitter { card: 'summary_large_image', title, description }. Routes: /, /app, /pricing, /features, /about, /contact, /faq, /privacy, /terms.`,
+      [],
+      priority++
+    ),
     mf("app/globals.css", "style", "Global CSS with CSS custom properties from design tokens", [], priority++)
   );
 
@@ -129,8 +136,8 @@ export function buildWebsiteManifest(
   );
 
   // ── App pages ──────────────────────────────────────────────────────────────
-  // Ensure core pages exist regardless of plan
-  const coreRoutes = ["/", "/about", "/contact"];
+  // Ensure all required SaaS routes exist regardless of plan
+  const coreRoutes = ["/", "/app", "/about", "/contact", "/pricing", "/features", "/faq"];
   const planRoutes = plan.pages.map((p) => p.route);
   const allRoutes = [...new Set([...coreRoutes, ...planRoutes])];
 
@@ -138,12 +145,13 @@ export function buildWebsiteManifest(
     const filePath = routeToFilePath(route);
     const planPage = plan.pages.find((p) => p.route === route);
     const title = planPage?.title ?? routeToTitle(route);
+    const desc = contentBlueprintDescription(route, plan.brand.name, plan.brand.tagline, plan.brand.tone, title);
     files.push(
       mf(
         filePath,
         "page",
-        `${title} page — assembles section components`,
-        ["components/site/Header.tsx", "components/site/Footer.tsx"],
+        desc,
+        ["components/site/Header.tsx", "components/site/Footer.tsx", "lib/content/seo-metadata.ts"],
         priority++
       )
     );
@@ -169,19 +177,39 @@ export function buildWebsiteManifest(
 
   // ── Legal pages ────────────────────────────────────────────────────────────
   const legalPages = [
-    { route: "/terms", title: "Terms of Service" },
-    { route: "/privacy", title: "Privacy Policy" },
-    { route: "/cookies", title: "Cookie Policy" },
-    { route: "/acceptable-use", title: "Acceptable Use Policy" },
-    { route: "/disclaimer", title: "Disclaimer" },
+    {
+      file: "app/(legal)/terms/page.tsx",
+      title: "Terms of Service",
+      desc: `Terms of Service legal page for "[Company Name]" (placeholder). Sections: 1) Acceptance of Terms, 2) Description of Services, 3) User Accounts, 4) Payment Terms, 5) Intellectual Property, 6) Termination, 7) Limitation of Liability, 8) Governing Law, 9) Contact Information. Use placeholders: "[Company Name]", "[Contact Email]", "[Effective Date]", "[Jurisdiction]". Full boilerplate — no jurisdiction-specific legal advice. Export Next.js page with metadata title="Terms of Service | [Company Name]". Import Header/Footer.`,
+    },
+    {
+      file: "app/(legal)/privacy/page.tsx",
+      title: "Privacy Policy",
+      desc: `Privacy Policy legal page for "[Company Name]". Sections: 1) Introduction, 2) Information We Collect (personal, usage, cookies), 3) How We Use Information, 4) Data Sharing & Third Parties, 5) Data Retention, 6) Your Rights (GDPR/CCPA), 7) Security Measures, 8) Children's Privacy, 9) Changes to This Policy, 10) Contact. Use placeholders: "[Company Name]", "[DPO Email]", "[Data Retention Period]". Export Next.js page with metadata. Import Header/Footer.`,
+    },
+    {
+      file: "app/(legal)/cookies/page.tsx",
+      title: "Cookie Policy",
+      desc: `Cookie Policy legal page for "[Company Name]". Include: what cookies are, types table (Essential/Functional/Analytics/Marketing), list of third-party cookies, how to manage/disable cookies. Use placeholders. Export Next.js page. Import Header/Footer.`,
+    },
+    {
+      file: "app/(legal)/acceptable-use/page.tsx",
+      title: "Acceptable Use Policy",
+      desc: `Acceptable Use Policy legal page for "[Company Name]". Covers: prohibited activities (spam, illegal content, abuse, reverse engineering), enforcement, reporting violations. Use placeholders. Export Next.js page. Import Header/Footer.`,
+    },
+    {
+      file: "app/(legal)/disclaimer/page.tsx",
+      title: "Disclaimer",
+      desc: `General Disclaimer legal page for "[Company Name]". Covers: no warranty, accuracy of information, external links, limitation of liability. Use placeholders. Export Next.js page. Import Header/Footer.`,
+    },
   ];
 
-  for (const { route, title } of legalPages) {
+  for (const { file, title, desc } of legalPages) {
     files.push(
       mf(
-        routeToFilePath(route),
+        file,
         "page",
-        `${title} legal page`,
+        desc,
         ["components/site/Header.tsx", "components/site/Footer.tsx"],
         priority++
       )
@@ -190,9 +218,22 @@ export function buildWebsiteManifest(
 
   // ── SEO metadata ──────────────────────────────────────────────────────────
   files.push(
-    mf("app/sitemap.ts", "util", "Auto-generated sitemap for all pages", [], priority++),
-    mf("app/robots.ts", "util", "Robots.txt configuration", [], priority++),
-    mf("public/favicon.ico", "config", "Favicon placeholder", [], priority++)
+    mf(
+      "app/sitemap.ts",
+      "util",
+      `Auto-generated sitemap for "${plan.brand.name}". Export default async function sitemap() returning MetadataRoute.Sitemap. Include all routes: /, /app, /pricing, /features, /about, /contact, /faq, /blog, /privacy, /terms, /cookies, /acceptable-use, /disclaimer. Use NEXT_PUBLIC_SITE_URL env var (fallback 'https://example.com'). lastModified: new Date(). changeFrequency and priority per route type.`,
+      [],
+      priority++
+    ),
+    mf(
+      "app/robots.ts",
+      "util",
+      `robots.txt configuration for "${plan.brand.name}". Export default function robots() returning MetadataRoute.Robots. Allow all, sitemap at NEXT_PUBLIC_SITE_URL/sitemap.xml. Disallow /api/, /admin/.`,
+      [],
+      priority++
+    ),
+    mf("public/favicon.svg", "config", "Placeholder SVG favicon — replace with branded favicon", [], priority++),
+    mf("app/icon.svg", "config", "Next.js SVG icon file — used as favicon by the App Router", [], priority++)
   );
 
   return createManifest(projectId, prompt, files, plan, batchSize);
@@ -436,6 +477,39 @@ function routeToTitle(route: string): string {
   if (route === "/") return "Home";
   const segment = route.replace(/^\//, "").replace(/-/g, " ");
   return capitalize(segment);
+}
+
+/**
+ * Returns a detailed content blueprint description for a given route.
+ * Used as the generator prompt hint so that each page is feature-complete.
+ */
+function contentBlueprintDescription(
+  route: string,
+  brandName: string,
+  tagline: string,
+  tone: string,
+  title: string
+): string {
+  const brand = brandName || "Your Brand";
+  const sub = tagline || "Your tagline";
+
+  const blueprints: Record<string, string> = {
+    "/": `Home page for "${brand}" — ${sub}. Sections: 1) Hero with bold headline ("${sub}"), animated subheading, primary CTA ("Get Started") + secondary CTA ("Learn More"), hero illustration from public/illustrations/hero.svg; 2) Logo strip (trust logos placeholder); 3) Features grid — 3-column, 6 cards each with icon from public/icons/ and 2-line description; 4) How It Works — 3 numbered steps; 5) Testimonials — 3 cards with avatars (images.avatars); 6) Pricing preview — 3 tiers teaser with CTA to /pricing; 7) FAQ preview — 3 questions accordion with link to /faq; 8) CTA banner — gradient background, headline, sign-up button. Include page-level metadata from lib/content/seo-metadata.ts. Tone: ${tone}.`,
+
+    "/app": `App dashboard entry page for "${brand}" — authenticated SaaS user dashboard. Layout: left sidebar nav (Dashboard, Analytics, Settings, Team, Billing), main content area. Content: 1) Welcome banner ("Welcome back!"); 2) Stats row — 4 KPI cards (Active Users, Revenue, Uptime %, New Signups) each with trend arrow; 3) Quick Actions — 3 CTA buttons (Create Project, Invite Team, View Docs); 4) Recent Activity feed — 5 placeholder activity items with timestamps; 5) Usage chart placeholder (bar chart outline). Include skeleton loading states. Link back to marketing site. Include page metadata. Tone: ${tone}.`,
+
+    "/pricing": `Pricing page for "${brand}". Sections: 1) Header — "Simple, transparent pricing" with monthly/yearly toggle (yearly = 20% off badge); 2) 3 pricing cards: Free ($0/mo, 5 features, CTA "Get Started"), Pro ($29/mo, 10 features, "Most Popular" badge, CTA "Start Free Trial"), Enterprise (Custom/contact, unlimited + SLA, CTA "Contact Sales"); each card lists feature bullets with check icons; 3) Feature comparison table — side-by-side comparison rows for all 3 tiers; 4) FAQ section — 5 pricing questions in accordion; 5) Trust strip — "Loved by X+ teams", logos; 6) CTA banner. Import illustration from public/illustrations/pricing.svg. Include metadata from seo-metadata.ts. Tone: ${tone}.`,
+
+    "/features": `Features page for "${brand}" — ${sub}. Sections: 1) Hero — "Everything you need to ${sub.toLowerCase()}" with subheading and CTA; 2) Feature grid — 6 cards, each with icon (from public/icons/), title, 2-sentence description (analytics, team, security, api, performance, integration); 3) Detailed feature section 1 — left image + right text block with bullet list; 4) Detailed feature section 2 — right image + left text block (reversed); 5) Detailed feature section 3 — centered with full-width illustration from public/illustrations/features.svg; 6) CTA. Use icons from public/icons/ directory. Include metadata. Tone: ${tone}.`,
+
+    "/about": `About page for "${brand}". Sections: 1) Hero — "Our mission: ${sub}" with founding story intro paragraph; 2) Mission & Values — 4 value cards (Innovation, Transparency, Customer Focus, Quality) each with icon and 2-sentence description; 3) Team section — "Meet the team" grid with 3 placeholder team member cards (name, role, avatar from images.avatars, bio 2 lines); 4) Company timeline — 4 milestones (Founded, First Customer, $Xm ARR, Present); 5) Stats row — 4 numbers (Customers, Countries, Uptime %, Team Size); 6) Join the team CTA linking to /contact. Include metadata. Tone: ${tone}.`,
+
+    "/contact": `Contact page for "${brand}". Sections: 1) Hero — "Get in touch" with subheading; 2) Two-column layout: Left — contact form (Name, Email, Company, Subject select [Sales/Support/Partnership/Other], Message textarea, Submit button with loading state, success/error feedback); Right — contact info (email address placeholder, office hours, LinkedIn/Twitter links, support response time badge); 3) Alternative contact cards (Sales, Support, Partnerships) with email and description; 4) FAQ link CTA. Full form validation (required fields, email format). Include metadata. Tone: ${tone}.`,
+
+    "/faq": `FAQ page for "${brand}". Sections: 1) Hero — "Frequently Asked Questions" with search bar; 2) Accordion FAQ — 12 questions across 4 categories: Getting Started (1-3): "How do I create an account?", "Is there a free trial?", "What happens after the trial?"; Features (4-6): "Can I integrate with [tool]?", "How secure is my data?", "Does it support team collaboration?"; Billing (7-9): "How does billing work?", "Can I change my plan?", "Do you offer refunds?"; Support (10-12): "How do I get help?", "What is your SLA?", "How do I cancel?". Each answer is 2-3 sentences. Smooth accordion animation. 3) "Still have questions?" CTA to contact page. Include metadata. Tone: ${tone}.`,
+  };
+
+  return blueprints[route] ?? `${title} page — assembles section components for "${brand}". Tone: ${tone}.`;
 }
 
 function screenNameToFile(name: string): string {
