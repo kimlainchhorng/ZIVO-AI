@@ -3,7 +3,7 @@ import {
   View,
   Text,
   ScrollView,
-  Image,
+  Image as RNImage,
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
@@ -98,7 +98,7 @@ export default function HomeScreen() {
       <Text style={styles.sectionTitle}>Featured</Text>
       {items.map((item) => (
         <TouchableOpacity key={item.id} style={styles.itemCard} activeOpacity={0.8}>
-          <Image source={{ uri: item.imageUrl }} style={styles.itemImage} />
+          <RNImage source={{ uri: item.imageUrl }} style={styles.itemImage} />
           <View style={styles.itemContent}>
             <Text style={styles.itemTitle}>{item.title}</Text>
             <Text style={styles.itemSubtitle}>{item.subtitle}</Text>
@@ -168,3 +168,6 @@ const styles = StyleSheet.create({
   activityAction: { fontSize: typography.fontSize.sm, color: colors.textPrimary, fontWeight: typography.fontWeight.medium },
   activityMeta: { fontSize: typography.fontSize.xs, color: colors.textSecondary, marginTop: 2 },
 });
+
+
+
