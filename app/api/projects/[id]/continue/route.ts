@@ -105,9 +105,11 @@ export async function POST(
     try {
       const designTokens = await getProjectDesignTokens(token, id);
       const tokenFragment = buildDesignTokenPromptFragment(designTokens);
-      conversationContext = conversationContext
-        ? `${tokenFragment}\n\n${conversationContext}`
-        : tokenFragment;
+      if (tokenFragment.trim()) {
+        conversationContext = conversationContext
+          ? `${tokenFragment}\n\n${conversationContext}`
+          : tokenFragment;
+      }
     } catch {
       // Non-fatal: proceed without design token context
     }

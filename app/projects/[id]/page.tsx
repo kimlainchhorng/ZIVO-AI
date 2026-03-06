@@ -6,6 +6,7 @@ import Link from 'next/link';
 import SidebarLayout from '@/components/layout/SidebarLayout';
 import PlanChecklist from '@/components/builder/PlanChecklist';
 import DesignTokensPanel from '@/components/builder/DesignTokensPanel';
+import type { ProjectDesignTokens } from '@/lib/design-tokens-schema';
 import {
   ArrowLeft,
   Play,
@@ -375,7 +376,7 @@ export default function ProjectWorkspacePage() {
   const [zipDownloading, setZipDownloading] = useState(false);
 
   // Design tokens state
-  const [designTokens, setDesignTokens] = useState<import('@/lib/design-tokens-schema').ProjectDesignTokens | null>(null);
+  const [designTokens, setDesignTokens] = useState<ProjectDesignTokens | null>(null);
 
   // UI
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
@@ -475,7 +476,7 @@ export default function ProjectWorkspacePage() {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return;
-    const data = await res.json() as { tokens?: import('@/lib/design-tokens-schema').ProjectDesignTokens };
+    const data = await res.json() as { tokens?: ProjectDesignTokens };
     if (data.tokens) setDesignTokens(data.tokens);
   }, [token, projectId]);
 
@@ -807,6 +808,8 @@ export default function ProjectWorkspacePage() {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) await fetchMembers();
+  }
+
   // ─── Publish handlers ──────────────────────────────────────────────────────
 
   async function handleExportZip() {
@@ -1504,7 +1507,6 @@ export default function ProjectWorkspacePage() {
 
             </div>
           )}
-        </div>
 
           {/* ── Domains ── */}
           {activeTab === 'domains' && (
@@ -1882,7 +1884,7 @@ export default function ProjectWorkspacePage() {
         </div>{/* end main content column */}
 
         {/* ── Plan & Checklist right-side drawer ── */}
-        {planDrawerOpen && token && (
+        {planDrawerOpen && token ? (
           <div style={{
             width: '340px', flexShrink: 0, paddingTop: '2rem', paddingRight: '1.5rem',
             position: 'sticky', top: 0, maxHeight: '100vh', overflowY: 'auto',
@@ -1893,12 +1895,9 @@ export default function ProjectWorkspacePage() {
               onApplied={() => { fetchFiles(); fetchBuilds(); fetchMessages(); }}
             />
           </div>
-        )}
+        ) : null}
       </div>
 
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-      `}</style>
     </SidebarLayout>
   );
 }

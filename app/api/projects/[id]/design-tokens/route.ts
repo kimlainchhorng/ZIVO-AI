@@ -53,7 +53,7 @@ export async function GET(req: Request, { params }: RouteParams) {
   }
 }
 
-async function handleWrite(req: Request, id: string) {
+async function handleUpsertDesignTokens(req: Request, id: string) {
   const token = extractBearerToken(req.headers.get('Authorization'));
   if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -85,10 +85,10 @@ async function handleWrite(req: Request, id: string) {
 
 export async function PUT(req: Request, { params }: RouteParams) {
   const { id } = await params;
-  return handleWrite(req, id);
+  return handleUpsertDesignTokens(req, id);
 }
 
 export async function POST(req: Request, { params }: RouteParams) {
   const { id } = await params;
-  return handleWrite(req, id);
+  return handleUpsertDesignTokens(req, id);
 }

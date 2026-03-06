@@ -186,7 +186,7 @@ function ColorRow({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const isHex = /^#[0-9a-fA-F]{3,8}$/.test(value);
+  const isHex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value);
 
   return (
     <div style={S.row}>
@@ -404,10 +404,21 @@ export default function DesignTokensPanel({
         body: JSON.stringify({ tokens }),
       });
       if (!res.ok) {
-        const d = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(d.error ?? `Save failed (${res.status})`);
+        let errMsg = `Save failed (${res.status})`;
+        try {
+          const d = await res.json() as { error?: string };
+          if (d.error) errMsg = d.error;
+        } catch {
+          // response body is not JSON; use the default message
+        }
+        throw new Error(errMsg);
       }
-      const data = await res.json() as { tokens: ProjectDesignTokens };
+      let data: { tokens: ProjectDesignTokens };
+      try {
+        data = await res.json() as { tokens: ProjectDesignTokens };
+      } catch {
+        throw new Error('Failed to parse save response');
+      }
       setTokens(data.tokens);
       setSaved(true);
       onSaved?.(data.tokens);
