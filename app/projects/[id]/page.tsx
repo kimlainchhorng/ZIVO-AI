@@ -13,9 +13,14 @@ import {
   History,
   AlertCircle,
   CheckCircle2,
+  XCircle,
   Loader2,
   LogIn,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  ShieldCheck,
 } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -65,6 +70,29 @@ interface SSEDoneData {
   changedFiles?: ChangedFile[];
 }
 
+// ─── Quality Pass types ────────────────────────────────────────────────────────
+
+interface CheckResult {
+  check: 'build' | 'lint' | 'typecheck';
+  passed: boolean;
+  output: string;
+  durationMs: number;
+}
+
+type QualityRunStatus = 'queued' | 'running' | 'passed' | 'failed';
+
+interface QualityRun {
+  id: string;
+  status: QualityRunStatus;
+  logs: string;
+  checks: CheckResult[] | null;
+  fix_attempts: number;
+  max_retries: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getStoredToken(): string | null {
@@ -72,9 +100,144 @@ function getStoredToken(): string | null {
   return localStorage.getItem('zivo_supabase_token');
 }
 
+function qualityStatusColor(status: QualityRunStatus): string {
+  switch (status) {
+    case 'passed': return '#10b981';
+    case 'failed': return '#ef4444';
+    case 'running': return '#f59e0b';
+    default: return '#6366f1';
+  }
+}
+
+function qualityStatusLabel(status: QualityRunStatus): string {
+  switch (status) {
+    case 'passed': return 'Passed ✓';
+    case 'failed': return 'Failed ✗';
+    case 'running': return 'Running…';
+    default: return 'Queued';
+  }
+}
+
+// ─── Quality sub-components ──────────────────────────────────────────────────
+
+function CheckBadge({ result }: { result: CheckResult }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div
+      style={{
+        borderRadius: '8px',
+        border: `1px solid ${result.passed ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+        background: result.passed ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)',
+        padding: '0.75rem 1rem',
+        marginBottom: '0.5rem',
+      }}
+    >
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {result.passed
+          ? <CheckCircle2 size={16} color="#10b981" />
+          : <XCircle size={16} color="#ef4444" />}
+        <span style={{ fontWeight: 600, color: '#f1f5f9', flex: 1 }}>{result.check}</span>
+        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{result.durationMs}ms</span>
+        {result.output
+          ? (expanded ? <ChevronUp size={14} color="#64748b" /> : <ChevronDown size={14} color="#64748b" />)
+          : null}
+      </div>
+      {expanded && result.output && (
+        <pre
+          style={{
+            marginTop: '0.75rem',
+            fontSize: '0.75rem',
+            color: '#94a3b8',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            background: '#0a0a0f',
+            borderRadius: '6px',
+            padding: '0.75rem',
+            maxHeight: '300px',
+            overflow: 'auto',
+          }}
+        >
+          {result.output}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function QualityRunCard({ run, isActive }: { run: QualityRun; isActive: boolean }) {
+  const [showLogs, setShowLogs] = useState(false);
+  return (
+    <div
+      style={{
+        borderRadius: '10px',
+        border: isActive
+          ? `1px solid ${qualityStatusColor(run.status)}40`
+          : '1px solid rgba(99,102,241,0.1)',
+        background: isActive ? `${qualityStatusColor(run.status)}08` : 'rgba(15,15,26,0.6)',
+        padding: '1rem',
+        marginBottom: '0.75rem',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+        {run.status === 'running' || run.status === 'queued'
+          ? <Loader2 size={16} color={qualityStatusColor(run.status)} style={{ animation: 'spin 1s linear infinite' }} />
+          : run.status === 'passed'
+          ? <CheckCircle2 size={16} color="#10b981" />
+          : <XCircle size={16} color="#ef4444" />}
+        <span style={{ fontWeight: 600, color: qualityStatusColor(run.status) }}>
+          {qualityStatusLabel(run.status)}
+        </span>
+        {run.fix_attempts > 0 && (
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>(auto-fixed {run.fix_attempts}×)</span>
+        )}
+        <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#475569' }}>
+          {new Date(run.created_at).toLocaleString()}
+        </span>
+      </div>
+
+      {run.checks && run.checks.length > 0 && (
+        <div style={{ marginBottom: '0.5rem' }}>
+          {run.checks.map((c) => (
+            <CheckBadge key={c.check} result={c} />
+          ))}
+        </div>
+      )}
+
+      {run.logs && (
+        <button
+          onClick={() => setShowLogs((v) => !v)}
+          style={{
+            background: 'transparent', border: 'none', color: '#6366f1',
+            cursor: 'pointer', fontSize: '0.8rem', padding: '0.25rem 0',
+            display: 'flex', alignItems: 'center', gap: '0.25rem',
+          }}
+        >
+          {showLogs ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+          {showLogs ? 'Hide logs' : 'Show full logs'}
+        </button>
+      )}
+      {showLogs && run.logs && (
+        <pre
+          style={{
+            marginTop: '0.5rem', fontSize: '0.72rem', color: '#64748b',
+            whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+            background: '#07070f', borderRadius: '6px', padding: '0.75rem',
+            maxHeight: '400px', overflow: 'auto',
+          }}
+        >
+          {run.logs}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
-type Tab = 'conversation' | 'files' | 'builds';
+type Tab = 'conversation' | 'files' | 'builds' | 'quality';
 
 export default function ProjectWorkspacePage() {
   const params = useParams();
@@ -98,6 +261,12 @@ export default function ProjectWorkspacePage() {
   const [lastChangedFiles, setLastChangedFiles] = useState<ChangedFile[]>([]);
   const [lastBuildId, setLastBuildId] = useState<string | null>(null);
   const [iframeKey, setIframeKey] = useState(0);
+
+  // Quality Pass state
+  const [qualityRuns, setQualityRuns] = useState<QualityRun[]>([]);
+  const [activeQualityRunId, setActiveQualityRunId] = useState<string | null>(null);
+  const [qualityStarting, setQualityStarting] = useState(false);
+  const qualityPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // UI
   const [activeTab, setActiveTab] = useState<Tab>('conversation');
@@ -146,11 +315,21 @@ export default function ProjectWorkspacePage() {
     setMessages(data.messages ?? []);
   }, [token, projectId]);
 
+  const fetchQualityRuns = useCallback(async () => {
+    if (!token || !projectId) return;
+    const res = await fetch(`/api/projects/${projectId}/quality/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setQualityRuns(data.runs ?? []);
+  }, [token, projectId]);
+
   useEffect(() => {
     if (!token) { setLoading(false); return; }
     setLoading(true);
-    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages()])
-      .catch((err) => setError(err.message ?? 'Failed to load workspace'))
+    Promise.all([fetchProject(), fetchFiles(), fetchBuilds(), fetchMessages(), fetchQualityRuns()])
+      .catch((err: unknown) => setError((err as Error).message ?? 'Failed to load workspace'))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, token]);
@@ -159,6 +338,71 @@ export default function ProjectWorkspacePage() {
   useEffect(() => {
     streamEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [streamLog]);
+
+  // ─── Quality Pass polling ──────────────────────────────────────────────────
+
+  const pollQualityRun = useCallback(async (runId: string) => {
+    if (!token) return;
+    const res = await fetch(
+      `/api/projects/${projectId}/quality/status?runId=${runId}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.run) {
+      setQualityRuns((prev) => {
+        const idx = prev.findIndex((r) => r.id === runId);
+        if (idx === -1) return [data.run as QualityRun, ...prev];
+        const next = [...prev];
+        next[idx] = data.run as QualityRun;
+        return next;
+      });
+      const status = (data.run as QualityRun).status;
+      if (status === 'passed' || status === 'failed') {
+        setActiveQualityRunId(null);
+      }
+    }
+  }, [token, projectId]);
+
+  useEffect(() => {
+    if (!activeQualityRunId) {
+      if (qualityPollRef.current) { clearInterval(qualityPollRef.current); qualityPollRef.current = null; }
+      return;
+    }
+    qualityPollRef.current = setInterval(() => pollQualityRun(activeQualityRunId), 3000);
+    return () => {
+      if (qualityPollRef.current) { clearInterval(qualityPollRef.current); qualityPollRef.current = null; }
+    };
+  }, [activeQualityRunId, pollQualityRun]);
+
+  async function handleStartQuality(maxRetries: number) {
+    if (!token || qualityStarting) return;
+    setQualityStarting(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/quality/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxRetries }),
+      });
+      const data = await res.json();
+      if (res.ok && data.runId) {
+        setActiveQualityRunId(data.runId as string);
+        setQualityRuns((prev) => [{
+          id: data.runId as string,
+          status: 'queued',
+          logs: '',
+          checks: null,
+          fix_attempts: 0,
+          max_retries: maxRetries,
+          started_at: null,
+          finished_at: null,
+          created_at: new Date().toISOString(),
+        }, ...prev]);
+      }
+    } finally {
+      setQualityStarting(false);
+    }
+  }
 
   // ─── Continue Build ────────────────────────────────────────────────────────
 
@@ -200,7 +444,7 @@ export default function ProjectWorkspacePage() {
       });
 
       if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
+        const errData = await res.json().catch(() => ({})) as { error?: string };
         if (res.status === 401) throw new Error('Unauthorized — please log in again.');
         if (res.status === 404) throw new Error('Project not found.');
         throw new Error(errData.error ?? `Build failed (${res.status})`);
@@ -314,6 +558,11 @@ export default function ProjectWorkspacePage() {
       </SidebarLayout>
     );
   }
+
+  const activeQualityRun = qualityRuns.find((r) => r.id === activeQualityRunId);
+  const isQualityRunning = activeQualityRun?.status === 'running' || activeQualityRun?.status === 'queued';
+  const latestQualityRun = qualityRuns[0];
+  const canAutoFix = latestQualityRun?.status === 'failed' && !isQualityRunning;
 
   return (
     <SidebarLayout>
@@ -444,7 +693,7 @@ export default function ProjectWorkspacePage() {
 
         {/* ── Tabs ── */}
         <div style={s.tabs}>
-          {(['conversation', 'files', 'builds'] as Tab[]).map((tab) => (
+          {(['conversation', 'files', 'builds', 'quality'] as Tab[]).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -453,6 +702,7 @@ export default function ProjectWorkspacePage() {
               {tab === 'conversation' && <MessageSquare size={14} />}
               {tab === 'files' && <FileCode2 size={14} />}
               {tab === 'builds' && <History size={14} />}
+              {tab === 'quality' && <ShieldCheck size={14} />}
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
               {tab === 'files' && files.length > 0 && (
                 <span style={s.badge}>{files.length}</span>
@@ -460,10 +710,19 @@ export default function ProjectWorkspacePage() {
               {tab === 'builds' && builds.length > 0 && (
                 <span style={s.badge}>{builds.length}</span>
               )}
+              {tab === 'quality' && latestQualityRun && (
+                <span style={{
+                  ...s.badge,
+                  background: latestQualityRun.status === 'passed' ? 'rgba(16,185,129,0.2)' : latestQualityRun.status === 'failed' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)',
+                  color: latestQualityRun.status === 'passed' ? '#10b981' : latestQualityRun.status === 'failed' ? '#ef4444' : '#f59e0b',
+                }}>
+                  {latestQualityRun.status}
+                </span>
+              )}
             </button>
           ))}
           <button
-            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); }}
+            onClick={() => { fetchFiles(); fetchBuilds(); fetchMessages(); fetchQualityRuns(); }}
             title="Refresh"
             style={{ ...s.outlineBtn, marginLeft: 'auto' }}
           >
@@ -570,11 +829,91 @@ export default function ProjectWorkspacePage() {
               )}
             </div>
           )}
+
+          {/* Quality Pass */}
+          {activeTab === 'quality' && (
+            <div>
+              {/* Panel header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                <div>
+                  <p style={{ fontSize: '0.82rem', color: '#64748b', margin: 0 }}>
+                    build · lint · typecheck — strict gate, up to 3 auto-fix retries
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem' }}>
+                  {canAutoFix && (
+                    <button
+                      onClick={() => handleStartQuality(3)}
+                      disabled={qualityStarting}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                        padding: '0.5rem 1rem', borderRadius: '8px',
+                        background: 'rgba(239,68,68,0.15)', color: '#ef4444',
+                        border: '1px solid rgba(239,68,68,0.3)', cursor: 'pointer',
+                        fontWeight: 600, fontSize: '0.85rem',
+                        opacity: qualityStarting ? 0.6 : 1,
+                      }}
+                    >
+                      <RotateCcw size={14} /> Auto-fix &amp; re-run
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleStartQuality(0)}
+                    disabled={qualityStarting || isQualityRunning}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.4rem',
+                      padding: '0.5rem 1.25rem', borderRadius: '8px',
+                      background: 'linear-gradient(135deg, #6366f1, #4f46e5)',
+                      color: '#fff', border: 'none', cursor: 'pointer',
+                      fontWeight: 600, fontSize: '0.85rem',
+                      opacity: qualityStarting || isQualityRunning ? 0.6 : 1,
+                    }}
+                  >
+                    {isQualityRunning
+                      ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Running…</>
+                      : <><Play size={14} /> Run checks</>}
+                  </button>
+                </div>
+              </div>
+
+              {/* Security note */}
+              <div
+                style={{
+                  display: 'flex', gap: '0.5rem', alignItems: 'flex-start',
+                  background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)',
+                  borderRadius: '8px', padding: '0.6rem 0.75rem', marginBottom: '1rem',
+                  fontSize: '0.78rem', color: '#f59e0b',
+                }}
+              >
+                <AlertTriangle size={14} style={{ marginTop: '1px', flexShrink: 0 }} />
+                <span>
+                  <strong>Security note:</strong> Checks run inside the app container by executing
+                  project files as child processes. Only use with trusted code.
+                </span>
+              </div>
+
+              {/* Runs */}
+              {qualityRuns.length === 0 ? (
+                <div style={s.emptyTab}>
+                  <ShieldCheck size={32} style={{ color: '#334155', marginBottom: '0.75rem' }} />
+                  <p>No quality runs yet. Click <strong style={{ color: '#818cf8' }}>Run checks</strong> to start.</p>
+                </div>
+              ) : (
+                qualityRuns.map((run) => (
+                  <QualityRunCard key={run.id} run={run} isActive={run.id === activeQualityRunId} />
+                ))
+              )}
+            </div>
+          )}
         </div>
 
         {/* Hidden iframe to bust preview cache — key change forces reload */}
         <iframe key={iframeKey} src="about:blank" style={{ display: 'none' }} title="preview-cache-bust" />
       </div>
+
+      <style>{`
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      `}</style>
     </SidebarLayout>
   );
 }

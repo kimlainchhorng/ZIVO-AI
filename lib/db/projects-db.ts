@@ -242,6 +242,83 @@ export async function appendProjectBuild(
 }
 
 
+// ─── Project Quality Runs ──────────────────────────────────────────────────────
+
+export type QualityRunStatus = "queued" | "running" | "passed" | "failed";
+
+export interface DbQualityRun {
+  id: string;
+  project_id: string;
+  build_id: string | null;
+  status: QualityRunStatus;
+  logs: string;
+  checks: unknown | null;
+  fix_attempts: number;
+  max_retries: number;
+  patches: unknown | null;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
+/** Creates a new queued quality run record. */
+export async function createQualityRun(
+  token: string,
+  projectId: string,
+  maxRetries = 3
+): Promise<DbQualityRun> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_quality_runs")
+    .insert({ project_id: projectId, max_retries: maxRetries })
+    .select()
+    .single();
+  if (error) throw new Error(`createQualityRun: ${error.message}`);
+  return data as DbQualityRun;
+}
+
+/** Updates fields on an existing quality run (e.g. status, logs). */
+export async function updateQualityRun(
+  token: string,
+  runId: string,
+  updates: Partial<Pick<DbQualityRun, "status" | "logs" | "checks" | "fix_attempts" | "patches" | "started_at" | "finished_at" | "build_id">>
+): Promise<DbQualityRun> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_quality_runs")
+    .update(updates)
+    .eq("id", runId)
+    .select()
+    .single();
+  if (error) throw new Error(`updateQualityRun: ${error.message}`);
+  return data as DbQualityRun;
+}
+
+/** Fetches a single quality run by ID. */
+export async function getQualityRun(token: string, runId: string): Promise<DbQualityRun | null> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_quality_runs")
+    .select("*")
+    .eq("id", runId)
+    .maybeSingle();
+  if (error) throw new Error(`getQualityRun: ${error.message}`);
+  return data as DbQualityRun | null;
+}
+
+/** Lists quality runs for a project (newest first). */
+export async function listQualityRuns(token: string, projectId: string, limit = 20): Promise<DbQualityRun[]> {
+  const client = createAuthedClient(token);
+  const { data, error } = await client
+    .from("project_quality_runs")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`listQualityRuns: ${error.message}`);
+  return (data ?? []) as DbQualityRun[];
+}
+
 /** Alias for getProject — fetches a single project by ID. */
 export async function getProjectById(token: string, projectId: string): Promise<DbProject | null> {
   return getProject(token, projectId);

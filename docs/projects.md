@@ -23,6 +23,7 @@ Run the following SQL files in the Supabase SQL Editor **in order**:
 1. `supabase/migrations/20260305000000_plugin_installs.sql` — plugin_installs table
 2. `supabase/migrations/20260305000001_projects_workspace.sql` — projects, project_files, project_builds tables + RLS
 3. `supabase/migrations/20260306000003_project_messages.sql` — project_messages table + RLS
+4. `supabase/migrations/20260307000002_quality_runs.sql` — project_quality_runs table + RLS
 
 You can paste each file into the [Supabase SQL Editor](https://app.supabase.com/project/_/sql) and click **Run**.
 
@@ -160,6 +161,77 @@ The main build endpoint. Now supports optional persistence:
 - If `projectId` is provided AND user is authenticated: loads existing files from Supabase.
 - After a successful build: upserts files, appends build record, and returns `data.projectId` in the `DONE` SSE event.
 - Without auth: behaves exactly as before (no persistence).
+
+### `POST /api/projects/{id}/quality/start`
+Starts a Quality Pass (build + lint + typecheck) against the project's current files.  
+**Auth**: Required (owner only).  
+**Body** (optional): `{ maxRetries?: number }` — auto-fix retries 0–3 (default 3).  
+**Response**: `{ runId: string }` (HTTP 202 Accepted).  
+The run executes asynchronously; poll `.../quality/status` for results.
+
+> ⚠️ **Security**: This endpoint executes project files as child processes inside the
+> app container. See `lib/quality-runner.ts` for the full security note.
+
+### `GET /api/projects/{id}/quality/status?runId=<uuid>`
+Polls a specific Quality Pass run.  
+**Auth**: Required (owner only).  
+**Response**: `{ run: DbQualityRun }` — includes `status`, `checks`, `logs`, `fix_attempts`.
+
+Omit `runId` to list the last 10 runs:  
+`GET /api/projects/{id}/quality/status` → `{ runs: DbQualityRun[] }`
+
+---
+
+## Quality Pass
+
+The Quality Pass pipeline runs three checks against the current `project_files` workspace:
+
+| Check        | Command                    |
+|--------------|----------------------------|
+| `build`      | `npm run build --if-present` |
+| `lint`       | `npm run lint --if-present`  |
+| `typecheck`  | `npx tsc --noEmit --skipLibCheck` |
+
+All three must pass for the gate to be green (`status: "passed"`).
+
+### Auto-fix loop
+
+When checks fail, the runner asks GPT-4o to patch the failing files and retries — up to
+**3 times** (configurable via `maxRetries` in the request body).
+
+1. Capture error output from failing checks.
+2. Send relevant source files + errors to the AI model.
+3. Apply minimal patches back into `project_files`.
+4. Re-run all three checks.
+5. Stop after 3 retries regardless of outcome.
+
+### `project_quality_runs` table
+
+| Column          | Type        | Notes                                        |
+|-----------------|-------------|----------------------------------------------|
+| `id`            | `uuid`      | Primary key                                  |
+| `project_id`    | `uuid`      | FK → `projects.id`                           |
+| `build_id`      | `uuid`      | Optional FK → `project_builds.id`            |
+| `status`        | `text`      | `queued \| running \| passed \| failed`      |
+| `logs`          | `text`      | Combined build/lint/typecheck output         |
+| `checks`        | `jsonb`     | Per-check results (check, passed, output, durationMs) |
+| `fix_attempts`  | `integer`   | Number of auto-fix iterations used           |
+| `max_retries`   | `integer`   | Max retries configured at run start          |
+| `patches`       | `jsonb`     | File paths patched by auto-fix               |
+| `started_at`    | `timestamptz` |                                            |
+| `finished_at`   | `timestamptz` |                                            |
+| `created_at`    | `timestamptz` |                                            |
+
+Migration: `supabase/migrations/20260307000002_quality_runs.sql`
+
+### UI
+
+Navigate to `/projects/<id>` and click the **Quality** tab to see the Quality Pass panel:
+
+- **Run checks** — triggers a single-pass Quality Check (no auto-fix).
+- **Auto-fix & re-run** — re-triggers checks with up to 3 AI-fix retries (shown after a failure).
+- Per-check status badges with collapsible output.
+- Full log viewer.
 
 ---
 
