@@ -484,7 +484,10 @@ function AIPageInner() {
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   // Instruction input for continuing an existing project build
   const [continueInstruction, setContinueInstruction] = useState("");
-  const [activeRightTab, setActiveRightTab] = useState<"files" | "code" | "diff">("files");
+  const [activeRightTab, setActiveRightTab] = useState<"files" | "code" | "diff" | "actions">("files");
+  const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [showPromptHistory, setShowPromptHistory] = useState(false);
+  const promptHistoryRef = useRef<HTMLDivElement>(null);
   const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
   const [showDiff, setShowDiff] = useState(false);
   // Architecture plan from /api/plan
@@ -568,6 +571,13 @@ function AIPageInner() {
     const existingFilesForBuild = output?.files?.length ? output.files : undefined;
     const isIteration = buildIterationCount > 0;
 
+    if (buildPrompt.trim()) {
+      setPromptHistory((prev) => {
+        const deduped = [buildPrompt, ...prev.filter((p) => p !== buildPrompt)];
+        return deduped.slice(0, 20);
+      });
+    }
+
     setLoading(true);
     setLoadingStep(0);
     setOutput(null);
@@ -581,7 +591,7 @@ function AIPageInner() {
     setAutoFixLog(null);
     setWebsiteLivePreviewError(null);
     setConsoleLogs([{ text: isIteration ? `> Iteration ${buildIterationCount + 1}: Updating project...` : "> Building project...", type: "info" }]);
-    setBuildOutputOpen(true); // auto-open build output when build starts
+    setBuildOutputOpen(true);
     setIsBuildRunning(true);
     setBuildErrors([]);
     setBuildWarnings([]);
@@ -2399,24 +2409,26 @@ function AIPageInner() {
                 <ModelSelector task="code" value={model} onChange={setModel} />
               </div>
 
-              {/* Prompt / Plan / Templates / Workflows / Generate / Blueprint / Projects Tabs */}
-              <div style={{ display: "flex", gap: "4px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px" }}>
+              {/* Left Panel Tabs */}
+              <div style={{ display: "flex", gap: "3px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px", flexWrap: "wrap" }}>
                 {([
-                  ["prompt", "Prompt"],
-                  ["plan", "Plan"],
-                  ["templates", "Templates"],
-                  ["workflows", "Workflows"],
-                  ["generate", "Generate"],
-                  ["blueprint", "Blueprint"],
-                  ["projects", "Projects"],
-                ] as const).map(([tab, label]) => (
+                  ["prompt", "Prompt", <svg key="p" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>],
+                  ["plan", "Plan", <svg key="pl" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>],
+                  ["templates", "Templates", <svg key="t" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>],
+                  ["workflows", "Workflows", <svg key="w" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>],
+                  ["generate", "Generate", <svg key="g" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>],
+                  ["blueprint", "Blueprint", <svg key="b" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>],
+                  ["projects", "Projects", <svg key="pr" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>],
+                ] as const).map(([tab, label, icon]) => (
                   <button
                     key={tab}
                     className="zivo-btn"
                     onClick={() => setActiveLeftTab(tab)}
-                    style={{ flex: 1, padding: "0.35rem 0.5rem", borderRadius: "6px", border: "none", background: activeLeftTab === tab ? COLORS.accentGradient : "transparent", color: activeLeftTab === tab ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.8125rem", fontWeight: activeLeftTab === tab ? 600 : 400, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem" }}
+                    title={label}
+                    style={{ flex: 1, minWidth: "28px", padding: "0.35rem 0.4rem", borderRadius: "6px", border: "none", background: activeLeftTab === tab ? COLORS.accentGradient : "transparent", color: activeLeftTab === tab ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.7rem", fontWeight: activeLeftTab === tab ? 600 : 400, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", transition: "background 0.15s, color 0.15s" }}
                   >
-                    {label}
+                    {icon}
+                    <span style={{ display: leftPanelWidth > 320 ? "inline" : "none" }}>{label}</span>
                   </button>
                 ))}
               </div>
@@ -2694,7 +2706,7 @@ function AIPageInner() {
 
               {/* Unified Prompt Box */}
               {activeLeftTab === "prompt" && (
-              <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "14px", overflow: "hidden" }}>
+              <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "14px", overflow: "visible", position: "relative" }}>
                 {/* Textarea */}
                 <textarea
                   className="zivo-textarea"
@@ -2710,6 +2722,14 @@ function AIPageInner() {
                   maxLength={2000}
                   style={{ width: "100%", minHeight: "100px", background: "transparent", border: "none", borderRadius: 0, padding: "0.875rem 0.875rem 0.25rem", resize: "none", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }}
                 />
+                {/* Char count + shortcut hint */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.1rem 0.875rem 0.3rem", pointerEvents: "none" }}>
+                  <span style={{ fontSize: "0.65rem", color: prompt.length > 1800 ? COLORS.warning : COLORS.textMuted }}>{prompt.length}/2000</span>
+                  <span style={{ fontSize: "0.65rem", color: COLORS.textMuted }}>
+                    <kbd style={{ padding: "1px 4px", background: "rgba(255,255,255,0.06)", borderRadius: "3px", border: `1px solid ${COLORS.border}`, fontSize: "0.6rem" }}>⌘↵</kbd>
+                    {" to generate"}
+                  </span>
+                </div>
                 {/* Toolbar row */}
                 <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.5rem 0.625rem 0.625rem", borderTop: `1px solid ${COLORS.border}` }}>
                   {/* Attachment button */}
@@ -2720,6 +2740,40 @@ function AIPageInner() {
                   >
                     +
                   </button>
+                  {/* History button */}
+                  {promptHistory.length > 0 && (
+                    <div style={{ position: "relative", flexShrink: 0 }} ref={promptHistoryRef}>
+                      <button
+                        className="zivo-btn"
+                        title="Recent prompts"
+                        onClick={() => setShowPromptHistory((v) => !v)}
+                        style={{ width: "30px", height: "30px", borderRadius: "7px", background: showPromptHistory ? "rgba(99,102,241,0.15)" : "transparent", border: `1px solid ${showPromptHistory ? "rgba(99,102,241,0.4)" : COLORS.border}`, color: showPromptHistory ? COLORS.accent : COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                      </button>
+                      {showPromptHistory && (
+                        <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, width: "280px", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 999, overflow: "hidden", animation: "fadeIn 0.15s ease" }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", borderBottom: `1px solid ${COLORS.border}` }}>
+                            <span style={{ fontSize: "0.7rem", fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recent Prompts</span>
+                            <button onClick={() => { setPromptHistory([]); setShowPromptHistory(false); }} style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.7rem" }}>Clear</button>
+                          </div>
+                          <div style={{ maxHeight: "220px", overflowY: "auto" }}>
+                            {promptHistory.map((p, i) => (
+                              <button
+                                key={i}
+                                onClick={() => { setPrompt(p); setShowPromptHistory(false); }}
+                                className="zivo-file"
+                                style={{ width: "100%", padding: "0.5rem 0.75rem", background: "transparent", border: "none", borderBottom: i < promptHistory.length - 1 ? `1px solid ${COLORS.border}` : "none", color: COLORS.textSecondary, cursor: "pointer", textAlign: "left", fontSize: "0.75rem", lineHeight: 1.4, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                title={p}
+                              >
+                                {p.length > 70 ? p.slice(0, 70) + "…" : p}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {/* Model selector — styled ModelBadge */}
                   <div style={{ position: "relative", flexShrink: 0 }}>
                     <select
@@ -3288,8 +3342,32 @@ function AIPageInner() {
                     <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Website Builder v2</h2>
                     <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a real Next.js multi-page site with design tokens and multi-pass quality</p>
                   </div>
+                  {/* Quick-start prompts */}
                   <div style={{ marginBottom: "0.75rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.4rem" }}>Quick Start</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
+                      {[
+                        "SaaS landing page",
+                        "Portfolio site",
+                        "Agency website",
+                        "Blog with dark theme",
+                        "E-commerce store",
+                        "Restaurant site",
+                      ].map((q) => (
+                        <button
+                          key={q}
+                          className="zivo-btn"
+                          onClick={() => setWebsitePrompt(q)}
+                          style={{ padding: "0.2rem 0.55rem", borderRadius: "20px", border: `1px solid ${websitePrompt === q ? "rgba(99,102,241,0.5)" : COLORS.border}`, background: websitePrompt === q ? "rgba(99,102,241,0.12)" : COLORS.bgCard, color: websitePrompt === q ? COLORS.accent : COLORS.textSecondary, cursor: "pointer", fontSize: "0.7rem", fontWeight: 500, transition: "border-color 0.15s, color 0.15s" }}
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Describe your website</label>
                     <textarea
                       className="zivo-textarea"
                       value={websitePrompt}
@@ -3298,31 +3376,46 @@ function AIPageInner() {
                       placeholder="A portfolio website for a designer with a dark theme, project gallery, and contact form..."
                       style={{ width: "100%", minHeight: "100px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit" }}
                     />
+                    <div style={{ fontSize: "0.65rem", color: COLORS.textMuted, marginTop: "0.25rem", textAlign: "right" }}>{websitePrompt.length}/1000</div>
                   </div>
+
                   <div style={{ marginBottom: "0.75rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Style</label>
-                    <select
-                      value={websiteStyle}
-                      onChange={(e) => setWebsiteStyle(e.target.value)}
-                      style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem" }}
-                    >
-                      <option value="modern">Modern &amp; Minimal</option>
-                      <option value="bold">Bold &amp; Colorful</option>
-                      <option value="corporate">Corporate &amp; Professional</option>
-                      <option value="creative">Creative &amp; Artistic</option>
-                      <option value="dark">Dark &amp; Elegant</option>
-                    </select>
+                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.4rem" }}>Visual Style</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                      {[
+                        { value: "modern", label: "Modern", color: "#3b82f6" },
+                        { value: "bold", label: "Bold", color: "#f59e0b" },
+                        { value: "corporate", label: "Corporate", color: "#64748b" },
+                        { value: "creative", label: "Creative", color: "#ec4899" },
+                        { value: "dark", label: "Dark", color: "#1e293b" },
+                        { value: "glassmorphism", label: "Glass", color: "#06b6d4" },
+                        { value: "brutalist", label: "Brutalist", color: "#ef4444" },
+                        { value: "retro", label: "Retro", color: "#84cc16" },
+                      ].map((s) => (
+                        <button
+                          key={s.value}
+                          className="zivo-btn"
+                          onClick={() => setWebsiteStyle(s.value)}
+                          title={s.label}
+                          style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1.5px solid ${websiteStyle === s.value ? s.color : COLORS.border}`, background: websiteStyle === s.value ? `${s.color}22` : COLORS.bgCard, color: websiteStyle === s.value ? s.color : COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", fontWeight: websiteStyle === s.value ? 600 : 400, display: "flex", alignItems: "center", gap: "0.35rem", transition: "all 0.15s" }}
+                        >
+                          <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: s.color, flexShrink: 0 }} />
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
                   <button
                     className="zivo-btn"
                     onClick={handleWebsiteGenerate}
                     disabled={websiteLoading || !websitePrompt.trim()}
-                    style={{ width: "100%", padding: "0.65rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
+                    style={{ width: "100%", padding: "0.65rem", background: websiteLoading || !websitePrompt.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: websiteLoading || !websitePrompt.trim() ? "not-allowed" : "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
                   >
                     {websiteLoading ? (
                       <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
                     ) : (
-                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Build Website</>
+                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Build Website  <kbd style={{ fontSize: "0.6rem", opacity: 0.7, background: "rgba(255,255,255,0.15)", borderRadius: "3px", padding: "0 4px" }}>⌘↵</kbd></>
                     )}
                   </button>
                   {websiteLoading && websitePassMessage && (
@@ -5062,21 +5155,28 @@ function AIPageInner() {
 
           </div>
 
-          {/* Right Panel — Files / Code / Diff (Code Builder only) */}
+          {/* Right Panel — Files / Code / Diff / Actions (Code Builder only) */}
           {mode === "code" && (
             <div style={{ width: "280px", flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
               {/* Tab bar */}
-              <div style={{ display: "flex", alignItems: "center", gap: "2px", padding: "0 0.75rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
-                {(["files", "code", "diff"] as const).map((tab) => (
+              <div style={{ display: "flex", alignItems: "center", gap: "2px", padding: "0 0.5rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+                {([
+                  ["files", "Files", <svg key="f" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>],
+                  ["code", "Code", <svg key="c" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>],
+                  ["diff", "Diff", <svg key="d" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><path d="M5 12l7-7 7 7"/></svg>],
+                  ["actions", "Actions", <svg key="a" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>],
+                ] as const).map(([tab, label, icon]) => (
                   <button
                     key={tab}
                     className="zivo-tab"
                     onClick={() => setActiveRightTab(tab)}
-                    style={{ padding: "0.3rem 0.75rem", borderRadius: "6px", border: "none", background: activeRightTab === tab ? "rgba(99,102,241,0.15)" : "transparent", color: activeRightTab === tab ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.8125rem", fontWeight: 500, textTransform: "capitalize", transition: "color 0.15s", display: "flex", alignItems: "center", gap: "0.3rem" }}
+                    title={label}
+                    style={{ padding: "0.3rem 0.6rem", borderRadius: "6px", border: "none", background: activeRightTab === tab ? "rgba(99,102,241,0.15)" : "transparent", color: activeRightTab === tab ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", fontWeight: activeRightTab === tab ? 600 : 400, transition: "color 0.15s", display: "flex", alignItems: "center", gap: "0.25rem" }}
                   >
+                    {icon}
                     {tab === "files" && output?.files?.length ? (
-                      <>{tab.charAt(0).toUpperCase() + tab.slice(1)}<span style={{ background: loading ? "rgba(245,158,11,0.25)" : "rgba(99,102,241,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.65rem", fontWeight: 700, color: loading ? COLORS.warning : COLORS.accent }}>{output.files.length}</span></>
-                    ) : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                      <><span>{label}</span><span style={{ background: loading ? "rgba(245,158,11,0.25)" : "rgba(99,102,241,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.6rem", fontWeight: 700, color: loading ? COLORS.warning : COLORS.accent }}>{output.files.length}</span></>
+                    ) : <span>{label}</span>}
                   </button>
                 ))}
               </div>
@@ -5220,6 +5320,67 @@ function AIPageInner() {
                       No diff available. Build a project to see changes.
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Actions tab */}
+              {activeRightTab === "actions" && (
+                <div style={{ flex: 1, overflowY: "auto", padding: "0.875rem", animation: "fadeIn 0.3s ease", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+                  <div style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700, marginBottom: "0.25rem" }}>Export &amp; Deploy</div>
+                  {[
+                    { label: "Download ZIP", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>, action: () => handleDownload(), disabled: !output?.files?.length },
+                    { label: "Copy All Files", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>, action: () => { if (output?.files?.length) { const all = output.files.map((f) => `// === ${f.path} ===\n${f.content}`).join("\n\n"); navigator.clipboard.writeText(all).catch(() => {}); setCopyLabel("saved"); setTimeout(() => setCopyLabel("save"), 2000); } }, disabled: !output?.files?.length },
+                    { label: "Push to GitHub", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>, action: () => setGithubModalOpen(true), disabled: !output?.files?.length },
+                    { label: "Deploy to Vercel", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M24 22.525H0l12-21.05 12 21.05z"/></svg>, action: () => { setShowVercelTokenInput(true); }, disabled: !output?.files?.length },
+                  ].map(({ label, icon, action, disabled }) => (
+                    <button
+                      key={label}
+                      className="zivo-btn"
+                      onClick={action}
+                      disabled={disabled || loading}
+                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: disabled ? COLORS.textMuted : COLORS.textPrimary, cursor: disabled || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: disabled ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
+                    >
+                      <span style={{ color: COLORS.accent, flexShrink: 0 }}>{icon}</span>
+                      {label}
+                    </button>
+                  ))}
+
+                  <div style={{ height: "1px", background: COLORS.border, margin: "0.25rem 0" }} />
+                  <div style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700, marginBottom: "0.25rem" }}>Analysis</div>
+                  {[
+                    { label: "SEO Analyzer", action: () => { setAnalysisTab("seo"); setAnalysisPanelOpen(true); }, icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> },
+                    { label: "Accessibility", action: () => { setAnalysisTab("a11y"); setAnalysisPanelOpen(true); }, icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg> },
+                    { label: "Performance", action: () => { setAnalysisTab("perf"); setAnalysisPanelOpen(true); }, icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/></svg> },
+                    { label: "Generate Docs", action: () => { setAnalysisTab("docs"); setAnalysisPanelOpen(true); }, icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> },
+                  ].map(({ label, action, icon }) => (
+                    <button
+                      key={label}
+                      className="zivo-btn"
+                      onClick={action}
+                      disabled={!output?.files?.length || loading}
+                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: !output?.files?.length || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: !output?.files?.length ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
+                    >
+                      <span style={{ color: COLORS.success, flexShrink: 0 }}>{icon}</span>
+                      {label}
+                    </button>
+                  ))}
+
+                  <div style={{ height: "1px", background: COLORS.border, margin: "0.25rem 0" }} />
+                  <div style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700, marginBottom: "0.25rem" }}>Design</div>
+                  {[
+                    { label: "Design System", action: () => setDesignSystemOpen(true), icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/></svg> },
+                    { label: "Theme Editor", action: () => setDesignPanelOpen((o) => !o), icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/></svg> },
+                  ].map(({ label, action, icon }) => (
+                    <button
+                      key={label}
+                      className="zivo-btn"
+                      onClick={action}
+                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", transition: "border-color 0.15s, background 0.15s" }}
+                    >
+                      <span style={{ color: COLORS.warning, flexShrink: 0 }}>{icon}</span>
+                      {label}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
