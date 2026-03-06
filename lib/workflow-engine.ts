@@ -251,7 +251,6 @@ async function executeStep(
       const outputKey = (step.config.outputKey as string | undefined) ?? "transformed";
       let output: unknown;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval
         const fn = new Function("data", transformation);
         output = fn(data);
       } catch (err) {
@@ -405,7 +404,6 @@ async function executeStep(
       let result = false;
       try {
         // Note: new Function executes in the Node.js server process; only use for trusted workflow definitions.
-        // eslint-disable-next-line @typescript-eslint/no-implied-eval
         const fn = new Function("input", `"use strict"; return !!(${expression});`);
         result = Boolean(fn(input));
       } catch {
@@ -452,7 +450,6 @@ async function executeStep(
       const language = (step.config.language as string | undefined) ?? "javascript";
       if (language === "javascript" || language === "js") {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-implied-eval
           const fn = new Function("input", script);
           const result = fn(input);
           return { status: "executed", result };
@@ -478,3 +475,4 @@ async function executeStep(
 export function getNotifications(): NotificationEntry[] {
   return [..._notificationStore];
 }
+
