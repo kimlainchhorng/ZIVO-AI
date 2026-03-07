@@ -11,20 +11,20 @@ interface CodeBuilderRightPanelProps {
   output: { files?: Array<{ path: string; content: string; action: "create" | "update" | "delete" }>; preview_html?: string; summary?: string; } | null;
   loading: boolean;
   activeFile: { path: string; content: string; action: "create" | "update" | "delete" } | null;
-  setActiveFile: (f: any) => void;
-  editedContent: string;
-  setEditedContent: (v: string) => void;
+  setActiveFile: (f: { path: string; content: string; action: "create" | "update" | "delete" } | null) => void;
+  editedContent: string | null;
+  setEditedContent: (v: string | null) => void;
   saveStatus: "idle" | "saved" | "saving" | "error";
-  setSaveStatus: (v: "idle" | "saved" | "saving" | "error") => void;
+  setSaveStatus: React.Dispatch<React.SetStateAction<"idle" | "saved" | "saving" | "error">>;
   isSaving: boolean;
   handleFileSave: () => void;
   showDiff: boolean;
-  diffFiles: Array<any>;
+  diffFiles: Array<{ path: string; oldContent: string; newContent: string }>;
   handleDownload: () => void;
-  setCopyLabel: (v: string) => void;
-  copyLabel: string;
-  copyFileLabel: string;
-  setCopyFileLabel: (v: string) => void;
+  setCopyLabel: React.Dispatch<React.SetStateAction<"save" | "saved">>;
+  copyLabel: "save" | "saved";
+  copyFileLabel: "copy" | "copied";
+  setCopyFileLabel: React.Dispatch<React.SetStateAction<"copy" | "copied">>;
   setGithubModalOpen: (v: boolean) => void;
   setShowVercelTokenInput: (v: boolean) => void;
   setAnalysisTab: (v: "seo" | "a11y" | "perf" | "docs" | "agents") => void;
@@ -231,7 +231,7 @@ export default function CodeBuilderRightPanel({
               className="zivo-btn"
               onClick={action}
               disabled={disabled || loading}
-              style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: disabled ? COLORS.textMuted : COLORS.textPrimary, cursor: disabled || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: disabled ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
+              style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: disabled ? COLORS.textMuted : COLORS.textPrimary, cursor: disabled || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: disabled ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
             >
               <span style={{ color: COLORS.accent, flexShrink: 0 }}>{icon}</span>
               {label}
@@ -251,7 +251,7 @@ export default function CodeBuilderRightPanel({
               className="zivo-btn"
               onClick={action}
               disabled={!output?.files?.length || loading}
-              style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: !output?.files?.length || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: !output?.files?.length ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
+              style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: !output?.files?.length || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: !output?.files?.length ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
             >
               <span style={{ color: COLORS.success, flexShrink: 0 }}>{icon}</span>
               {label}
@@ -268,7 +268,7 @@ export default function CodeBuilderRightPanel({
               key={label}
               className="zivo-btn"
               onClick={action}
-              style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", transition: "border-color 0.15s, background 0.15s" }}
+              style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", transition: "border-color 0.15s, background 0.15s" }}
             >
               <span style={{ color: COLORS.warning, flexShrink: 0 }}>{icon}</span>
               {label}

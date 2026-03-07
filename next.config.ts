@@ -7,6 +7,22 @@ const nextConfig: NextConfig = {
     workerThreads: false,
     cpus: 1,
   },
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.optimization = {
+        ...config.optimization,
+        minimize: true,
+        splitChunks: {
+          chunks: 'all',
+          cacheGroups: {
+            default: false,
+            vendors: false,
+          },
+        },
+      };
+    }
+    return config;
+  },
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'images.pexels.com' },
