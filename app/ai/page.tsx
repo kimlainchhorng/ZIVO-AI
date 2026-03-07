@@ -481,6 +481,7 @@ function AIPageInner() {
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
   const [showPromptHistory, setShowPromptHistory] = useState(false);
   const promptHistoryRef = useRef<HTMLDivElement>(null);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [diffFiles, setDiffFiles] = useState<Array<{path: string; oldContent: string; newContent: string}>>([]);
   const [showDiff, setShowDiff] = useState(false);
   // Architecture plan from /api/plan
