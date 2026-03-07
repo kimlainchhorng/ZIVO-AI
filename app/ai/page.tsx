@@ -34,6 +34,13 @@ import type { FileSystemTree, WebContainerProcess } from "@webcontainer/api";
 import GeneratedAppAnalysis from "@/components/GeneratedAppAnalysis";
 import FileTree from "@/components/FileTree";
 import VoiceInput from "@/components/VoiceInput";
+import ChatPanel from "./ChatPanel";
+import SecurityModePanel from "./SecurityModePanel";
+import WebsiteBuilderPanel from "./WebsiteBuilderPanel";
+import MobileBuilderPanel from "./MobileBuilderPanel";
+import { CreatePageModal, GitHubPushModal } from "./BuilderModals";
+import CodeBuilderLeftPanel from "./CodeBuilderLeftPanel";
+import CodeBuilderRightPanel from "./CodeBuilderRightPanel";
 
 interface SecurityIssue {
   id: string;
@@ -73,21 +80,7 @@ interface DeployResult {
   deploymentId: string;
 }
 
-const COLORS = {
-  bg: "#0a0b14",
-  bgPanel: "#0f1120",
-  bgCard: "rgba(255,255,255,0.04)",
-  border: "rgba(255,255,255,0.08)",
-  borderHover: "rgba(255,255,255,0.16)",
-  accent: "#6366f1",
-  accentGradient: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-  success: "#10b981",
-  warning: "#f59e0b",
-  error: "#ef4444",
-  textPrimary: "#f1f5f9",
-  textSecondary: "#94a3b8",
-  textMuted: "#475569",
-};
+import { COLORS } from "./colors";
 
 /** Maximum characters to display per chat bubble in the build history sidebar. */
 const MAX_CHAT_HISTORY_DISPLAY_LENGTH = 120;
@@ -2400,1190 +2393,147 @@ function AIPageInner() {
               </div>
 
               {/* ── Code Builder Mode ── */}
-              {mode === "code" && (<>
-
-              {/* Header */}
-              <div style={{ marginBottom: "1.25rem", textAlign: "center" }}>
-                <h1 style={{ fontSize: "1.375rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>What will you build today?</h1>
-                <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 0.75rem" }}>Describe what to build — ZIVO AI generates the full code instantly</p>
-                <ModelSelector task="code" value={model} onChange={setModel} />
-              </div>
-
-              {/* Left Panel Tabs */}
-              <div style={{ display: "flex", gap: "3px", marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", padding: "3px", flexWrap: "wrap" }}>
-                {([
-                  ["prompt", "Prompt", <svg key="p" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>],
-                  ["plan", "Plan", <svg key="pl" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>],
-                  ["templates", "Templates", <svg key="t" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>],
-                  ["workflows", "Workflows", <svg key="w" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>],
-                  ["generate", "Generate", <svg key="g" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>],
-                  ["blueprint", "Blueprint", <svg key="b" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>],
-                  ["projects", "Projects", <svg key="pr" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>],
-                ] as const).map(([tab, label, icon]) => (
-                  <button
-                    key={tab}
-                    className="zivo-btn"
-                    onClick={() => setActiveLeftTab(tab)}
-                    title={label}
-                    style={{ flex: 1, minWidth: "28px", padding: "0.35rem 0.4rem", borderRadius: "6px", border: "none", background: activeLeftTab === tab ? COLORS.accentGradient : "transparent", color: activeLeftTab === tab ? "#fff" : COLORS.textSecondary, cursor: "pointer", fontSize: "0.7rem", fontWeight: activeLeftTab === tab ? 600 : 400, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", transition: "background 0.15s, color 0.15s" }}
-                  >
-                    {icon}
-                    <span style={{ display: leftPanelWidth > 320 ? "inline" : "none" }}>{label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Plan Viewer (structured ArchitecturePlan) */}
-              {activeLeftTab === "plan" && (
-                <div style={{ animation: "fadeIn 0.3s ease" }}>
-                  {(isPlanLoading || planLoading) && (
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "1rem", color: COLORS.textSecondary, fontSize: "0.8125rem" }}>
-                      <span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(139,92,246,0.3)", borderTop: "2px solid #8b5cf6", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                      Generating architecture plan…
-                    </div>
-                  )}
-                  {planData && !isPlanLoading && !planLoading && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {/* Project type badge */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <span style={{ padding: "0.25rem 0.75rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.8125rem", fontWeight: 700, color: COLORS.accent }}>{planData.projectType}</span>
-                        <span style={{ padding: "0.2rem 0.6rem", background: planData.complexity === "complex" ? "rgba(239,68,68,0.12)" : planData.complexity === "medium" ? "rgba(245,158,11,0.12)" : "rgba(16,185,129,0.12)", border: `1px solid ${planData.complexity === "complex" ? "rgba(239,68,68,0.3)" : planData.complexity === "medium" ? "rgba(245,158,11,0.3)" : "rgba(16,185,129,0.3)"}`, borderRadius: "20px", fontSize: "0.75rem", fontWeight: 600, color: planData.complexity === "complex" ? COLORS.error : planData.complexity === "medium" ? COLORS.warning : COLORS.success, textTransform: "capitalize" }}>{planData.complexity}</span>
-                        <span style={{ fontSize: "0.75rem", color: COLORS.textMuted }}>~{planData.estimatedFiles} files</span>
-                      </div>
-
-                      {/* Tech stack */}
-                      {planData.techStack.length > 0 && (
-                        <div>
-                          <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.35rem" }}>Tech Stack</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-                            {planData.techStack.map((t, i) => (
-                              <span key={i} title={t.purpose} style={{ padding: "0.2rem 0.55rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px", fontSize: "0.75rem", color: COLORS.textSecondary }}>{t.name}</span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Pages */}
-                      {planData.pages.length > 0 && (
-                        <div>
-                          <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.35rem" }}>Pages ({planData.pages.length})</div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                            {planData.pages.map((p, i) => (
-                              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", padding: "0.35rem 0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "6px" }}>
-                                <code style={{ fontSize: "0.7rem", color: COLORS.accent, fontFamily: "monospace", flexShrink: 0, marginTop: "1px" }}>{p.path}</code>
-                                <span style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{p.description}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Auth */}
-                      {planData.auth.required && (
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.6rem", background: "rgba(99,102,241,0.06)", border: `1px solid rgba(99,102,241,0.15)`, borderRadius: "6px", fontSize: "0.75rem" }}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                          <span style={{ color: COLORS.textSecondary }}>Auth: <strong style={{ color: COLORS.textPrimary }}>{planData.auth.provider}</strong></span>
-                          {planData.auth.methods.map((m) => <span key={m} style={{ padding: "0 5px", background: "rgba(255,255,255,0.06)", borderRadius: "4px", color: COLORS.textMuted }}>{m}</span>)}
-                        </div>
-                      )}
-
-                      {/* Third-party services */}
-                      {planData.thirdPartyServices.length > 0 && (
-                        <div>
-                          <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.35rem" }}>Services</div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-                            {planData.thirdPartyServices.map((s, i) => (
-                              <span key={i} style={{ padding: "0.2rem 0.55rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.success }}>{s}</span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Build This Plan button */}
-                      <button
-                        className="zivo-btn"
-                        onClick={() => { setActiveLeftTab("prompt"); handleBuild(); }}
-                        disabled={loading}
-                        style={{ width: "100%", padding: "0.55rem", background: COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: loading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.875rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", marginTop: "0.25rem" }}
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                        Build This Plan ▶
-                      </button>
-                    </div>
-                  )}
-                  {!planData && !isPlanLoading && !planLoading && (
-                    <div style={{ textAlign: "center", padding: "1.5rem", color: COLORS.textMuted, fontSize: "0.8125rem" }}>
-                      Click <strong style={{ color: COLORS.textSecondary }}>Plan</strong> to generate an architecture plan for your project.
-                    </div>
-                  )}
-                  {/* Legacy PlanViewer fallback for older plan type */}
-                  {!planData && !isPlanLoading && !planLoading && plan && <PlanViewer plan={plan} isLoading={isPlanLoading} />}
-                </div>
-              )}
-
-              {/* Templates Tab */}
-              {activeLeftTab === "templates" && (
-                <div style={{ animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>Quick Start Templates</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    {TEMPLATE_CARDS.map((tpl) => (
-                      <div
-                        key={tpl.label}
-                        className="zivo-file"
-                        style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", cursor: "pointer", transition: "border-color 0.15s, background 0.15s" }}
-                        onClick={() => { setPrompt(tpl.prompt); setActiveLeftTab("prompt"); }}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPrompt(tpl.prompt); setActiveLeftTab("prompt"); } }}
-                        aria-label={`Use template: ${tpl.label}`}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                          <span style={{ display: "inline-flex", alignItems: "center", color: COLORS.accent }}><Icon name={tpl.iconName} size={16} /></span>
-                          <span style={{ fontWeight: 600, fontSize: "0.875rem", color: COLORS.textPrimary }}>{tpl.label}</span>
-                        </div>
-                        <p style={{ margin: 0, fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.5 }}>{tpl.description}</p>
-                        <div style={{ marginTop: "0.5rem", display: "flex", gap: "0.35rem" }}>
-                          <button
-                            className="zivo-btn"
-                            onClick={(e) => { e.stopPropagation(); setPrompt(tpl.prompt); setActiveLeftTab("prompt"); }}
-                            style={{ padding: "0.25rem 0.6rem", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "20px", color: COLORS.accent, cursor: "pointer", fontSize: "0.7rem", fontWeight: 600 }}
-                          >
-                            Use Template
-                          </button>
-                          <button
-                            className="zivo-btn"
-                            onClick={(e) => { e.stopPropagation(); setPrompt(tpl.prompt); setActiveLeftTab("prompt"); handleBuild(tpl.prompt); }}
-                            style={{ padding: "0.25rem 0.6rem", background: COLORS.accentGradient, border: "none", borderRadius: "20px", color: "#fff", cursor: "pointer", fontSize: "0.7rem", fontWeight: 600 }}
-                          >
-                            Build Now
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: "1rem", textAlign: "center" }}>
-                    <a href="/component-library" style={{ fontSize: "0.75rem", color: COLORS.accent, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-                      Browse Component Library →
-                    </a>
-                  </div>
-                </div>
-              )}
-
-              {/* Workflows Tab */}
-              {activeLeftTab === "workflows" && (
-                <div style={{ animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>Automated Workflows</div>
-                  <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "12px", padding: "1.25rem", textAlign: "center" }}>
-                    <div style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>⚡</div>
-                    <div style={{ fontWeight: 600, color: COLORS.textPrimary, marginBottom: "0.4rem", fontSize: "0.9375rem" }}>Visual Workflow Builder</div>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: "0 0 1rem", lineHeight: 1.6 }}>
-                      Chain AI actions, set triggers, and automate your build pipeline with a drag-and-drop workflow editor.
-                    </p>
-                    <a
-                      href="/workflow"
-                      className="zivo-btn"
-                      style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem", padding: "0.5rem 1.25rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", textDecoration: "none", fontSize: "0.8125rem", fontWeight: 600 }}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                      Open Workflow Builder
-                    </a>
-                  </div>
-                </div>
-              )}
-
-              {/* Generate Tab — quick-generate buttons */}
-              {activeLeftTab === "generate" && (
-                <div style={{ animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>Quick Generate</div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                    {([
-                      { icon: "🏗️", label: "Full App", description: "Generate all pages, auth, db, and deployment config", action: () => setFullAppModalOpen(true) },
-                      { icon: "🔐", label: "Add Auth", description: "Login, signup, forgot password + middleware", action: () => { setPrompt("Add complete authentication system with login, signup, forgot-password pages, Supabase auth integration, and middleware to protect private routes."); setActiveLeftTab("prompt"); } },
-                      { icon: "🗄️", label: "Add Database", description: "Supabase schema, types, and CRUD helpers", action: () => { setPrompt("Add a Supabase database layer with SQL schema migrations, TypeScript types, RLS policies, and CRUD helper functions for the app."); setActiveLeftTab("prompt"); } },
-                      { icon: "🧩", label: "Component Library", description: "Button, Card, Modal, Table, and 10+ more", action: () => { setPrompt("Generate a complete shadcn/ui-compatible component library with Button, Card, Input, Badge, Modal, Table, Dropdown, Toast, Avatar, and Tabs components using Tailwind CSS."); setActiveLeftTab("prompt"); } },
-                      { icon: "🚀", label: "Deploy Config", description: "Vercel, Docker, GitHub Actions, Cloudflare, Netlify", action: () => { setPrompt("Generate deployment configuration files for Vercel, Docker (multi-stage), GitHub Actions CI/CD pipeline, Cloudflare Pages, and Netlify."); setActiveLeftTab("prompt"); } },
-                      { icon: "🎨", label: "Design System", description: "Theme tokens, Tailwind config, CSS variables", action: () => { setPrompt("Generate a complete design system with Tailwind config tokens, CSS custom properties, design tokens JSON, and a ThemeProvider component with dark mode toggle."); setActiveLeftTab("prompt"); } },
-                    ] as const).map(({ icon, label, description, action }) => (
-                      <button
-                        key={label}
-                        className="zivo-file"
-                        onClick={action}
-                        disabled={loading}
-                        style={{ width: "100%", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem", cursor: loading ? "not-allowed" : "pointer", textAlign: "left", opacity: loading ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
-                          <span style={{ fontSize: "1.125rem", lineHeight: 1 }}>{icon}</span>
-                          <span style={{ fontWeight: 600, fontSize: "0.875rem", color: COLORS.textPrimary }}>{label}</span>
-                        </div>
-                        <p style={{ margin: 0, fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.5 }}>{description}</p>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Blueprint Panel */}
-              {activeLeftTab === "blueprint" && (
-                <div style={{ animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>App Blueprint</div>
-                  <BlueprintPanel prompt={prompt} />
-                </div>
-              )}
-
-              {/* Projects Tab — My Saved Projects */}
-              {activeLeftTab === "projects" && (
-                <div style={{ animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.75rem" }}>My Projects</div>
-                  {savedProjectId ? (
-                    <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "10px", padding: "0.875rem", marginBottom: "0.875rem" }}>
-                      <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, marginBottom: "0.35rem" }}>Current Project (saved)</div>
-                      <div style={{ fontSize: "0.8125rem", color: COLORS.accent, fontFamily: "monospace", wordBreak: "break-all", marginBottom: "0.5rem" }}>{savedProjectId}</div>
-                      <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>
-                        This project is persisted in Supabase. Use the <strong style={{ color: COLORS.textPrimary }}>Continue Building</strong> input below the output to add features.
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "1rem", marginBottom: "0.875rem", textAlign: "center" }}>
-                      <div style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, marginBottom: "0.35rem" }}>No active saved project</div>
-                      <div style={{ fontSize: "0.75rem", color: COLORS.textMuted }}>Build a project while authenticated to save it here.</div>
-                    </div>
-                  )}
-                  <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "1rem" }}>
-                    <div style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textPrimary, marginBottom: "0.35rem" }}>How It Works</div>
-                    <ul style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.75rem", color: COLORS.textSecondary, lineHeight: 1.8 }}>
-                      <li>Sign in with Supabase to enable project persistence.</li>
-                      <li>After each build, your project files are saved automatically.</li>
-                      <li>Use <strong style={{ color: COLORS.textPrimary }}>Continue Building</strong> to patch the project iteratively.</li>
-                      <li>All projects default to <strong style={{ color: COLORS.textPrimary }}>public</strong> visibility.</li>
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              {/* Conversation History Chat Bubbles */}
-              {activeLeftTab === "prompt" && conversationHistory.length > 0 && (
-                <div style={{ marginBottom: "0.875rem", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Build History</div>
-                  {conversationHistory.map((msg, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: msg.role === "user" ? "flex-end" : "flex-start",
-                        animation: "fadeIn 0.3s ease",
-                      }}
-                    >
-                      <div
-                        style={{
-                          maxWidth: "88%",
-                          padding: "0.5rem 0.75rem",
-                          borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
-                          background: msg.role === "user" ? "rgba(99,102,241,0.2)" : COLORS.bgCard,
-                          border: `1px solid ${msg.role === "user" ? "rgba(99,102,241,0.35)" : COLORS.border}`,
-                          fontSize: "0.8rem",
-                          color: msg.role === "user" ? COLORS.textPrimary : COLORS.textSecondary,
-                          lineHeight: 1.5,
-                          wordBreak: "break-word",
-                        }}
-                      >
-                        {msg.content.length > MAX_CHAT_HISTORY_DISPLAY_LENGTH ? msg.content.slice(0, MAX_CHAT_HISTORY_DISPLAY_LENGTH) + "…" : msg.content}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Continue Building section header */}
-              {activeLeftTab === "prompt" && buildIterationCount > 0 && (
-                <div style={{ marginBottom: "0.625rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
-                  <span style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Building</span>
-                  <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
-                </div>
-              )}
-
-              {/* Unified Prompt Box */}
-              {activeLeftTab === "prompt" && (
-              <div style={{ marginBottom: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "14px", overflow: "visible", position: "relative" }}>
-                {/* Textarea */}
-                <textarea
-                  className="zivo-textarea"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                      e.preventDefault();
-                      handleBuild();
-                    }
-                  }}
-                  placeholder="Build a complete e-commerce app with product listings, cart, and Stripe checkout…"
-                  maxLength={2000}
-                  style={{ width: "100%", minHeight: "100px", background: "transparent", border: "none", borderRadius: 0, padding: "0.875rem 0.875rem 0.25rem", resize: "none", color: COLORS.textPrimary, fontSize: "0.875rem", lineHeight: 1.6, outline: "none", boxSizing: "border-box" }}
-                />
-                {/* Char count + shortcut hint */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.1rem 0.875rem 0.3rem", pointerEvents: "none" }}>
-                  <span style={{ fontSize: "0.65rem", color: prompt.length > 1800 ? COLORS.warning : COLORS.textMuted }}>{prompt.length}/2000</span>
-                  <span style={{ fontSize: "0.65rem", color: COLORS.textMuted }}>
-                    <kbd style={{ padding: "1px 4px", background: "rgba(255,255,255,0.06)", borderRadius: "3px", border: `1px solid ${COLORS.border}`, fontSize: "0.6rem" }}>⌘↵</kbd>
-                    {" to generate"}
-                  </span>
-                </div>
-                {/* Toolbar row */}
-                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.5rem 0.625rem 0.625rem", borderTop: `1px solid ${COLORS.border}` }}>
-                  {/* Attachment button */}
-                  <button
-                    className="zivo-btn"
-                    title="Attach file (coming soon)"
-                    style={{ width: "30px", height: "30px", borderRadius: "7px", background: "transparent", border: `1px solid ${COLORS.border}`, color: COLORS.textMuted, cursor: "default", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "1rem" }}
-                  >
-                    +
-                  </button>
-                  {/* History button */}
-                  {promptHistory.length > 0 && (
-                    <div style={{ position: "relative", flexShrink: 0 }} ref={promptHistoryRef}>
-                      <button
-                        className="zivo-btn"
-                        title="Recent prompts"
-                        onClick={() => setShowPromptHistory((v) => !v)}
-                        style={{ width: "30px", height: "30px", borderRadius: "7px", background: showPromptHistory ? "rgba(99,102,241,0.15)" : "transparent", border: `1px solid ${showPromptHistory ? "rgba(99,102,241,0.4)" : COLORS.border}`, color: showPromptHistory ? COLORS.accent : COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                      </button>
-                      {showPromptHistory && (
-                        <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, width: "280px", background: COLORS.bgPanel, border: `1px solid ${COLORS.border}`, borderRadius: "10px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 999, overflow: "hidden", animation: "fadeIn 0.15s ease" }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.5rem 0.75rem", borderBottom: `1px solid ${COLORS.border}` }}>
-                            <span style={{ fontSize: "0.7rem", fontWeight: 700, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recent Prompts</span>
-                            <button onClick={() => { setPromptHistory([]); setShowPromptHistory(false); }} style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.7rem" }}>Clear</button>
-                          </div>
-                          <div style={{ maxHeight: "220px", overflowY: "auto" }}>
-                            {promptHistory.map((p, i) => (
-                              <button
-                                key={i}
-                                onClick={() => { setPrompt(p); setShowPromptHistory(false); }}
-                                className="zivo-file"
-                                style={{ width: "100%", padding: "0.5rem 0.75rem", background: "transparent", border: "none", borderBottom: i < promptHistory.length - 1 ? `1px solid ${COLORS.border}` : "none", color: COLORS.textSecondary, cursor: "pointer", textAlign: "left", fontSize: "0.75rem", lineHeight: 1.4, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                                title={p}
-                              >
-                                {p.length > 70 ? p.slice(0, 70) + "…" : p}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {/* Model selector — styled ModelBadge */}
-                  <div style={{ position: "relative", flexShrink: 0 }}>
-                    <select
-                      className="zivo-select"
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      style={{ appearance: "none", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", borderRadius: "20px", color: COLORS.accent, padding: "0.25rem 1.75rem 0.25rem 0.75rem", fontSize: "0.75rem", fontWeight: 600, cursor: "pointer" }}
-                    >
-                      {MODELS.map((m) => (
-                        <option key={m.value} value={m.value} style={{ background: COLORS.bgPanel }}>{m.label}</option>
-                      ))}
-                    </select>
-                    {/* Live green dot indicator */}
-                    <span style={{ position: "absolute", left: "0.55rem", top: "50%", transform: "translateY(-50%)", width: "6px", height: "6px", borderRadius: "50%", background: COLORS.success, pointerEvents: "none" }} />
-                    <span style={{ position: "absolute", right: "0.45rem", top: "50%", transform: "translateY(-50%)", pointerEvents: "none", fontSize: "0.6rem", color: COLORS.accent }}>▾</span>
-                  </div>
-                  {/* Voice input (Web Speech API) */}
-                  <button
-                    className="zivo-btn"
-                    onClick={handleVoiceInput}
-                    title={isRecording ? "Stop recording" : "Voice input"}
-                    style={{ width: "30px", height: "30px", borderRadius: "7px", background: isRecording ? "rgba(239,68,68,0.15)" : "transparent", border: `1px solid ${isRecording ? "rgba(239,68,68,0.4)" : COLORS.border}`, color: isRecording ? "#ef4444" : COLORS.textMuted, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", animation: isRecording ? "recordPulse 1.5s infinite" : "none", flexShrink: 0 }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
-                  </button>
-                  {/* Voice input (AI transcription) */}
-                  <VoiceInput
-                    onTranscription={(text) => { setPrompt((prev) => prev ? `${prev} ${text}` : text); }}
-                  />
-                  <div style={{ flex: 1 }} />
-                  {/* Char count */}
-                  <span style={{ fontSize: "0.68rem", color: COLORS.textMuted, flexShrink: 0 }}>{prompt.length}/2000</span>
-                  {/* Plan button */}
-                  <button
-                    className="zivo-btn"
-                    onClick={handlePlan}
-                    disabled={planLoading || !prompt.trim()}
-                    title="Generate a plan before building"
-                    style={{ padding: "0.3rem 0.65rem", borderRadius: "20px", background: planLoading ? "rgba(139,92,246,0.2)" : "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)", color: "#8b5cf6", cursor: planLoading || !prompt.trim() ? "not-allowed" : "pointer", fontSize: "0.75rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}
-                  >
-                    {planLoading ? (
-                      <span style={{ display: "inline-block", width: "11px", height: "11px", border: "2px solid rgba(139,92,246,0.3)", borderTop: "2px solid #8b5cf6", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    ) : (
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-                    )}
-                    Plan
-                  </button>
-                  {/* Build Now button */}
-                  <button
-                    className="zivo-btn"
-                    onClick={() => handleBuild()}
-                    disabled={loading || !prompt.trim()}
-                    style={{ padding: "0.3rem 0.875rem", borderRadius: "20px", background: loading || !prompt.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, color: "#fff", border: "none", cursor: loading || !prompt.trim() ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}
-                  >
-                    {loading ? (
-                      <span style={{ display: "inline-block", width: "11px", height: "11px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                    ) : (
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    )}
-                    {loading ? "Building…" : buildIterationCount > 0 ? `Update ▶ (iter. ${buildIterationCount + 1})` : "Build now ▶"}
-                  </button>
-                  {/* Build Full App button */}
-                  <button
-                    className="zivo-btn"
-                    onClick={() => setFullAppModalOpen(true)}
-                    disabled={loading}
-                    title="Generate a complete multi-page app"
-                    style={{ padding: "0.3rem 0.875rem", borderRadius: "20px", background: "linear-gradient(135deg, #f59e0b, #ef4444)", color: "#fff", border: "none", cursor: loading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.75rem", display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0, opacity: loading ? 0.5 : 1 }}
-                  >
-                    <span>⚡</span>
-                    Full App
-                  </button>
-                </div>
-              </div>
-              )}
-              {/* or start from row + Start Fresh */}
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.875rem", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, flexShrink: 0 }}>or start from</span>
-                {[
-                  { emoji: "🎨", label: "Figma" },
-                  { emoji: "🐙", label: "GitHub" },
-                  { emoji: "📋", label: "Team template" },
-                ].map((item) => (
-                  <button
-                    key={item.label}
-                    className="zivo-chip"
-                    title={`${item.label} import (coming soon)`}
-                    style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.25rem 0.6rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textSecondary, cursor: "default", fontSize: "0.75rem" }}
-                  >
-                    {item.emoji} {item.label}
-                  </button>
-                ))}
-                {buildIterationCount > 0 && (
-                  <span style={{ marginLeft: "auto", padding: "0.2rem 0.55rem", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", fontSize: "0.7rem", fontWeight: 700, color: COLORS.success }}>
-                    Iteration {buildIterationCount}
-                  </span>
-                )}
-                <button
-                  className="zivo-btn"
-                  onClick={handleStartFresh}
-                  title="Clear project memory and start a new project"
-                  style={{ marginLeft: buildIterationCount > 0 ? "0" : "auto", padding: "0.25rem 0.6rem", background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: "20px", color: "#ef4444", cursor: "pointer", fontSize: "0.7rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", flexShrink: 0 }}
-                >
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                  Start Fresh
-                </button>
-              </div>
-
-              {/* Prompt Suggestions */}
-              {(suggestions.length > 0 || suggestLoading) && (
-                <div style={{ marginBottom: "0.75rem", display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
-                  {suggestLoading && <span style={{ fontSize: "0.75rem", color: COLORS.textMuted, display: "flex", alignItems: "center", gap: "0.3rem" }}><span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid rgba(255,255,255,0.1)", borderTop: "2px solid " + COLORS.accent, borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Suggesting…</span>}
-                  {suggestions.map((s, i) => (
-                    <button
-                      key={i}
-                      className="zivo-chip"
-                      onClick={() => setPrompt(s)}
-                      style={{ padding: "0.3rem 0.65rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "20px", color: COLORS.accent, cursor: "pointer", fontSize: "0.75rem", maxWidth: "240px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", transition: "background 0.15s" }}
-                      title={s}
-                    >
-                      ✦ {s.length > 60 ? s.slice(0, 60) + "…" : s}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Quick Prompts — Lovable-style text chips with "+" prefix */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem", marginBottom: "0.875rem" }}>
-                {PROMPT_SUGGESTIONS.map((ps, i) => (
-                  <button
-                    key={i}
-                    className="zivo-chip"
-                    onClick={() => setPrompt(ps)}
-                    style={{ display: "flex", alignItems: "flex-start", gap: "0.35rem", padding: "0.35rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.72rem", transition: "background 0.15s, border-color 0.15s", textAlign: "left", lineHeight: 1.4 }}
-                    title={ps}
-                  >
-                    <span style={{ color: COLORS.accent, fontWeight: 700, flexShrink: 0 }}>+</span>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical" as const }}>
-                      {ps.length > MAX_PROMPT_SUGGESTION_LENGTH ? ps.slice(0, MAX_PROMPT_SUGGESTION_LENGTH) + "…" : ps}
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Quick Prompt icon chips */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", marginBottom: "0.875rem" }}>
-                {QUICK_PROMPTS.map((qp) => (
-                  <button
-                    key={qp.label}
-                    className="zivo-chip"
-                    onClick={() => setPrompt(qp.prompt)}
-                    style={{ display: "flex", alignItems: "center", gap: "0.35rem", padding: "0.3rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "20px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", transition: "background 0.15s, border-color 0.15s" }}
-                  >
-                    {qp.icon}
-                    <span>{qp.label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Template Shortcuts grid */}
-              {!prompt.trim() && (
-                <div style={{ marginBottom: "1rem" }}>
-                  <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600, marginBottom: "0.5rem" }}>Templates</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.35rem" }}>
-                    {TEMPLATE_SHORTCUTS.map((t) => (
-                      <button
-                        key={t.label}
-                        className="zivo-chip"
-                        onClick={() => setPrompt(t.prompt)}
-                        title={t.prompt}
-                        style={{ display: "flex", alignItems: "center", gap: "0.4rem", padding: "0.4rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", transition: "background 0.15s, border-color 0.15s", textAlign: "left" }}
-                      >
-                        <span style={{ fontSize: "0.875rem", flexShrink: 0 }}>{t.icon}</span>
-                        <span style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Full Template Selector — shown when prompt is empty */}
-              {!prompt.trim() && (
-                <div style={{ marginBottom: "1rem" }}>
-                  <TemplateSelector
-                    onSelect={(p) => setPrompt(p)}
-                    onSubmit={(p) => { setPrompt(p); handleBuild(p); }}
-                  />
-                </div>
-              )}
-
-              {/* Plan Panel */}
-              {planOpen && (
-                <div style={{ marginBottom: "1rem", background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.65rem 0.875rem", borderBottom: "1px solid rgba(139,92,246,0.15)" }}>
-                    <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#8b5cf6", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-                      Build Plan
-                    </span>
-                    <button
-                      className="zivo-btn"
-                      onClick={() => setPlanOpen(false)}
-                      style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "0.8rem", padding: "0 0.25rem" }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div style={{ padding: "0.875rem" }}>
-                    {planLoading ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: COLORS.textSecondary, fontSize: "0.8125rem" }}>
-                        <span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(139,92,246,0.3)", borderTop: "2px solid #8b5cf6", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-                        Generating plan…
-                      </div>
-                    ) : planResult ? (
-                      <>
-                        <div style={{ fontSize: "0.8125rem", color: COLORS.textPrimary, lineHeight: 1.75 }}>
-                          {planResult.split("\n").map((line, i) => {
-                            const trimmed = line.trimStart();
-                            const indent = line.length - trimmed.length;
-                            const bold = trimmed.replace(/\*\*(.+?)\*\*/g, "$1");
-                            const isHeading = /^\*\*.*\*\*$/.test(trimmed) || trimmed.startsWith("##") || trimmed.startsWith("#");
-                            const displayLine = bold.replace(/^#+\s*/, "");
-                            return (
-                              <div key={i} style={{ paddingLeft: `${indent * 0.35}rem`, fontWeight: isHeading ? 700 : 400, color: isHeading ? COLORS.textPrimary : COLORS.textSecondary, marginBottom: isHeading ? "0.15rem" : 0 }}>
-                                {displayLine || "\u00A0"}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <button
-                          className="zivo-btn"
-                          onClick={() => { setPlanOpen(false); handleBuild(); }}
-                          disabled={loading}
-                          style={{ marginTop: "0.875rem", width: "100%", padding: "0.55rem", background: COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: loading ? "not-allowed" : "pointer", fontWeight: 600, fontSize: "0.875rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                          Build from Plan ▶
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              )}
-
-              {/* Connected Project Panel */}
-              <div style={{ marginBottom: "1rem" }}>
-                {connectedGithubRepo ? (
-                  <div style={{ background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px", padding: "0.75rem 1rem" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.textSecondary, display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                        Connected Project
-                      </span>
-                      <a href="/connectors" style={{ fontSize: "0.7rem", color: COLORS.accent, textDecoration: "none" }}>Change</a>
-                    </div>
-                    <div style={{ fontSize: "0.8125rem", color: COLORS.textPrimary, fontWeight: 500, marginBottom: "0.5rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{connectedGithubRepo}</div>
-                    <button
-                      className="zivo-btn"
-                      onClick={handleGithubPush}
-                      disabled={githubPushing || !output?.files?.length}
-                      style={{ width: "100%", padding: "0.4rem 0.75rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.35)", borderRadius: "6px", color: COLORS.accent, cursor: githubPushing || !output?.files?.length ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 500, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", opacity: !output?.files?.length ? 0.5 : 1 }}
-                    >
-                      {githubPushing ? (
-                        <><span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(99,102,241,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Pushing…</>
-                      ) : (
-                        <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" x2="12" y1="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Push to GitHub</>
-                      )}
-                    </button>
-                    {githubPushResult && (
-                      <div style={{ marginTop: "0.5rem", fontSize: "0.775rem", color: COLORS.success, display: "flex", alignItems: "center", gap: "0.3rem" }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                        Pushed!{" "}<a href={githubPushResult} target="_blank" rel="noreferrer" style={{ color: COLORS.success }}>View repo</a>
-                      </div>
-                    )}
-                    {githubPushError && (
-                      <div style={{ marginTop: "0.5rem", fontSize: "0.775rem", color: COLORS.error }}>{githubPushError}</div>
-                    )}
-                  </div>
-                ) : (
-                  <a href="/connectors" style={{ fontSize: "0.8125rem", color: COLORS.textMuted, textDecoration: "none", display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                    Connect a GitHub repo →
-                  </a>
-                )}
-              </div>
-
-              {/* Enhance Button */}
-              {hasFiles && (
-                <button
-                  className="zivo-btn"
-                  onClick={handleEnhance}
-                  disabled={enhancing || loading}
-                  style={{ width: "100%", padding: "0.55rem", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textSecondary, cursor: enhancing || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", marginBottom: "0.75rem" }}
-                >
-                  {enhancing ? (
-                    <><span style={{ display: "inline-block", width: "12px", height: "12px", border: "2px solid rgba(255,255,255,0.2)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Enhancing…</>
-                  ) : (
-                    <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="6" r="3"/></svg> Enhance with AI</>
-                  )}
-                </button>
-              )}
-
-              {/* Notifications */}
-              {deployResult && (
-                <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", animation: "fadeIn 0.3s ease", fontSize: "0.875rem" }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>{" "}Deployed:{" "}
-                  <a href={deployResult.url} target="_blank" rel="noreferrer" style={{ color: COLORS.success }}>
-                    {deployResult.url}
-                  </a>
-                </div>
-              )}
-              {deployError && (
-                <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{deployError}</>
-                </div>
-              )}
-              {downloadError && (
-                <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{downloadError}</>
-                </div>
-              )}
-              {githubPushResult && !connectedGithubRepo && (
-                <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)", padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", animation: "fadeIn 0.3s ease", fontSize: "0.875rem" }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>{" "}Pushed:{" "}
-                  <a href={githubPushResult} target="_blank" rel="noreferrer" style={{ color: COLORS.success }}>{githubPushResult}</a>
-                </div>
-              )}
-              {githubPushError && !connectedGithubRepo && (
-                <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{githubPushError}</>
-                </div>
-              )}
-              {output?.error && (
-                <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: COLORS.error, padding: "0.75rem", borderRadius: "8px", marginBottom: "0.75rem", fontSize: "0.875rem" }}>
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{display:"inline-block",marginRight:"4px",verticalAlign:"middle"}}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>{output.error}</>
-                </div>
-              )}
-              {/* ── Build Summary Card (Lovable-style) ── */}
-              {hasFiles && !loading && output?.summary && (() => {
-                const buildFiles = output?.files ?? [];
-                const routeCount = buildFiles.filter(f => f.path.includes("/app/") || f.path.includes("/pages/") || f.path.match(/page\.(tsx?|jsx?)$/)).length;
-                const componentCount = buildFiles.filter(f => f.path.includes("/components/") || (f.path.match(/\.(tsx?)$/) && !f.path.includes("/api/") && !f.path.match(/page\.(tsx?|jsx?)$/))).length;
-                return (
-                <div style={{ marginBottom: "0.875rem", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.4s ease" }}>
-                  {/* Header */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.625rem 0.875rem", borderBottom: "1px solid rgba(16,185,129,0.12)", background: "rgba(16,185,129,0.04)" }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={COLORS.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: COLORS.success }}>Build complete</span>
-                    <div style={{ flex: 1 }} />
-                    <span style={{ fontSize: "0.65rem", padding: "1px 6px", background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: "20px", color: COLORS.success, fontWeight: 700 }}>
-                      {buildFiles.length} files
-                    </span>
-                  </div>
-                  {/* Summary text */}
-                  <div style={{ padding: "0.625rem 0.875rem", fontSize: "0.8125rem", color: COLORS.textSecondary, lineHeight: 1.55 }}>
-                    {output.summary}
-                  </div>
-                  {/* Stats row */}
-                  <div style={{ padding: "0 0.875rem 0.625rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                    {[
-                      { label: "Files", value: buildFiles.length, color: COLORS.accent },
-                      { label: "Routes", value: routeCount, color: "#8b5cf6" },
-                      { label: "Components", value: componentCount, color: COLORS.warning },
-                    ].map(({ label, value, color }) => value > 0 && (
-                      <div key={label} style={{ display: "flex", alignItems: "center", gap: "0.3rem", padding: "0.2rem 0.6rem", background: "rgba(255,255,255,0.04)", border: `1px solid ${COLORS.border}`, borderRadius: "20px" }}>
-                        <span style={{ fontSize: "0.8rem", fontWeight: 700, color }}>{value}</span>
-                        <span style={{ fontSize: "0.7rem", color: COLORS.textMuted }}>{label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {/* View in Files link */}
-                  <button
-                    className="zivo-btn"
-                    onClick={() => setActiveRightTab("files")}
-                    style={{ width: "100%", padding: "0.45rem", background: "transparent", border: "none", borderTop: "1px solid rgba(16,185,129,0.12)", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem" }}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                    <span>View in Files panel →</span>
-                  </button>
-                </div>
-                );
-              })()}
-              {/* File count hint (files are in the right panel) — shown only when no summary */}
-              {hasFiles && !loading && !output?.summary && (
-                <div style={{ marginBottom: "0.5rem", padding: "0.5rem 0.625rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.75rem", color: COLORS.textSecondary, animation: "fadeIn 0.3s ease" }}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                  <span><strong style={{ color: COLORS.accent }}>{output?.files?.length ?? 0} files</strong> generated — view in the <strong style={{ color: COLORS.textPrimary }}>Files</strong> panel →</span>
-                </div>
-              )}
-
-              {/* ── Saved Project ID badge ── */}
-              {savedProjectId && !loading && (
-                <div style={{ marginBottom: "0.75rem", padding: "0.625rem 0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: "8px", animation: "fadeIn 0.3s ease" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.25rem" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={COLORS.success} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 600, color: COLORS.success }}>Saved ✓</span>
-                    </div>
-                    {supabaseToken && (
-                      <button
-                        className="zivo-btn"
-                        onClick={handleShare}
-                        disabled={sharing}
-                        style={{ padding: "0.2rem 0.55rem", background: sharing ? "rgba(99,102,241,0.1)" : "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.35)", borderRadius: "5px", color: COLORS.accent, cursor: sharing ? "not-allowed" : "pointer", fontSize: "0.7rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem" }}
-                      >
-                        {sharing ? (
-                          <><span style={{ width: "10px", height: "10px", border: "2px solid rgba(99,102,241,0.3)", borderTopColor: COLORS.accent, borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /></>
-                        ) : (
-                          <><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg> Share</>
-                        )}
-                      </button>
-                    )}
-                  </div>
-                  {shareUrl ? (
-                    <div style={{ fontSize: "0.7rem", color: COLORS.success, wordBreak: "break-all" }}>
-                      Link copied! <a href={shareUrl} target="_blank" rel="noreferrer" style={{ color: COLORS.success, fontWeight: 600 }}>{shareUrl}</a>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", wordBreak: "break-all" }}>ID: {savedProjectId}</div>
-                  )}
-                </div>
-              )}
-              {/* Continue Building in left sidebar (code mode) */}
-              {hasFiles && !loading && mode === "code" && (
-                <div style={{ marginBottom: "0.875rem", background: "rgba(99,102,241,0.05)", border: `1px solid rgba(99,102,241,0.18)`, borderRadius: "12px", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
-                  {/* Card header */}
-                  <div style={{ padding: "0.5rem 0.75rem 0.4rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={COLORS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-                    <span style={{ fontSize: "0.7rem", color: COLORS.accent, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase" }}>Continue Building</span>
-                    {buildIterationCount > 0 && (
-                      <span style={{ marginLeft: "auto", fontSize: "0.65rem", padding: "1px 6px", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", color: COLORS.accent, fontWeight: 700 }}>
-                        iter. {buildIterationCount}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ padding: "0 0.625rem 0.625rem" }}>
-                    <textarea
-                      className="zivo-textarea"
-                      value={continueInstruction}
-                      onChange={(e) => setContinueInstruction(e.target.value)}
-                      onKeyDown={(e) => {
-                        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                          e.preventDefault();
-                          if (continueInstruction.trim()) {
-                            const instruction = continueInstruction;
-                            setContinueInstruction("");
-                            handleBuild(instruction);
-                          }
-                        }
-                      }}
-                      placeholder="Add dark mode… Add auth with Supabase… Add a dashboard page…"
-                      maxLength={1000}
-                      style={{ width: "100%", minHeight: "56px", resize: "none", background: "rgba(255,255,255,0.03)", border: `1px solid rgba(99,102,241,0.15)`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", lineHeight: 1.5, outline: "none", boxSizing: "border-box", padding: "0.5rem 0.625rem", marginBottom: "0.4rem" }}
-                    />
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                      <span style={{ fontSize: "0.68rem", color: COLORS.textMuted }}>{continueInstruction.length}/1000</span>
-                      <div style={{ flex: 1 }} />
-                      <button
-                        className="zivo-btn"
-                        disabled={!continueInstruction.trim() || loading}
-                        onClick={() => {
-                          if (continueInstruction.trim()) {
-                            const instruction = continueInstruction;
-                            setContinueInstruction("");
-                            handleBuild(instruction);
-                          }
-                        }}
-                        style={{ padding: "0.35rem 0.875rem", background: continueInstruction.trim() ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: !continueInstruction.trim() || loading ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: !continueInstruction.trim() || loading ? 0.5 : 1 }}
-                      >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                        Send
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-              </>)}
+              {mode === "code" && <CodeBuilderLeftPanel
+                model={model}
+                setModel={setModel}
+                activeLeftTab={activeLeftTab}
+                setActiveLeftTab={setActiveLeftTab}
+                leftPanelWidth={leftPanelWidth}
+                isPlanLoading={isPlanLoading}
+                planLoading={planLoading}
+                planData={planData}
+                plan={plan}
+                loading={loading}
+                handleBuild={handleBuild}
+                prompt={prompt}
+                setPrompt={setPrompt}
+                setFullAppModalOpen={setFullAppModalOpen}
+                promptRef={promptRef}
+                isEnhancing={isEnhancing}
+                handleEnhancePrompt={handleEnhancePrompt}
+                isPlanRequested={isPlanRequested}
+                handlePlanGenerate={handlePlanGenerate}
+                conversationHistory={conversationHistory}
+                setConversationHistory={setConversationHistory}
+                suggestions={suggestions}
+                handleVoiceInput={handleVoiceInput}
+                savedProjectId={savedProjectId}
+                savedProjectName={savedProjectName}
+                handleSaveProject={handleSaveProject}
+                isSavingProject={isSavingProject}
+                connectedProjectId={connectedProjectId}
+                connectedProjectName={connectedProjectName}
+                setConnectedProjectId={setConnectedProjectId}
+                setConnectedProjectName={setConnectedProjectName}
+                buildSummary={buildSummary}
+                continueInstruction={continueInstruction}
+                setContinueInstruction={setContinueInstruction}
+                notifications={notifications}
+                dismissNotification={dismissNotification}
+                blueprintData={blueprintData}
+                setBlueprintData={setBlueprintData}
+                projects={projects}
+                projectsLoading={projectsLoading}
+                loadProject={loadProject}
+                handleGenerateFullStack={handleGenerateFullStack}
+                handleGenerateComponents={handleGenerateComponents}
+                handleGenerateAPI={handleGenerateAPI}
+                handleGenerateDatabase={handleGenerateDatabase}
+                handleGenerateAuth={handleGenerateAuth}
+                buildIterationCount={buildIterationCount}
+                isRecording={isRecording}
+                promptHistory={promptHistory}
+                setPromptHistory={setPromptHistory}
+                showPromptHistory={showPromptHistory}
+                setShowPromptHistory={setShowPromptHistory}
+                promptHistoryRef={promptHistoryRef}
+                suggestLoading={suggestLoading}
+                planOpen={planOpen}
+                setPlanOpen={setPlanOpen}
+                planResult={planResult}
+                handlePlan={handlePlan}
+                handleStartFresh={handleStartFresh}
+                hasFiles={hasFiles}
+                output={output}
+                setActiveRightTab={setActiveRightTab}
+                deployResult={deployResult}
+                deployError={deployError}
+                downloadError={downloadError}
+                connectedGithubRepo={connectedGithubRepo}
+                handleGithubPush={handleGithubPush}
+                githubPushing={githubPushing}
+                githubPushResult={githubPushResult}
+                githubPushError={githubPushError}
+                handleEnhance={handleEnhance}
+                enhancing={enhancing}
+                supabaseToken={supabaseToken}
+                handleShare={handleShare}
+                sharing={sharing}
+                shareUrl={shareUrl}
+              />
 
               {/* ── Security Mode ── */}
               {mode === "security" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                      <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: 0, letterSpacing: "-0.02em" }}>Security Scanner</h2>
-                    </div>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Paste code → scan → auto-fix vulnerabilities</p>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Language</label>
-                    <select
-                      className="zivo-select"
-                      value={securityLanguage}
-                      onChange={(e) => setSecurityLanguage(e.target.value)}
-                      style={{ width: "100%", padding: "0.45rem 0.65rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.8125rem", cursor: "pointer" }}
-                    >
-                      {["typescript", "javascript", "python", "go", "rust", "java", "php", "other"].map((lang) => (
-                        <option key={lang} value={lang} style={{ background: COLORS.bgPanel }}>{lang.charAt(0).toUpperCase() + lang.slice(1)}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Code</label>
-                    <textarea
-                      className="zivo-textarea"
-                      value={securityCode}
-                      onChange={(e) => setSecurityCode(e.target.value)}
-                      placeholder="Paste your code here to scan for vulnerabilities..."
-                      style={{ width: "100%", minHeight: "160px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.8125rem", fontFamily: "'JetBrains Mono','Fira Code',monospace" }}
-                    />
-                  </div>
-                  {securityError && (
-                    <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{securityError}</div>
-                  )}
-                  <button
-                    className="zivo-btn"
-                    onClick={handleSecurityScan}
-                    disabled={securityScanning || !securityCode.trim()}
-                    style={{ width: "100%", padding: "0.65rem", background: securityScanning || !securityCode.trim() ? "rgba(249,115,22,0.3)" : "linear-gradient(135deg,#f97316,#ef4444)", color: "#fff", borderRadius: "8px", border: "none", cursor: securityScanning || !securityCode.trim() ? "not-allowed" : "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
-                  >
-                    {securityScanning ? (
-                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Scanning…</>
-                    ) : (
-                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> Scan for Vulnerabilities</>
-                    )}
-                  </button>
-                  {securityScanResult && (
-                    <>
-                      <div style={{ padding: "0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px" }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                          <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: COLORS.textPrimary }}>Security Score</span>
-                          <span style={{ fontSize: "0.875rem", fontWeight: 700, color: securityScanResult.score >= 90 ? COLORS.success : securityScanResult.score >= 70 ? "#3b82f6" : securityScanResult.score >= 40 ? COLORS.warning : COLORS.error }}>{securityScanResult.score}/100</span>
-                        </div>
-                        <div style={{ height: "6px", background: COLORS.border, borderRadius: "3px", overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${securityScanResult.score}%`, borderRadius: "3px", background: securityScanResult.score >= 90 ? COLORS.success : securityScanResult.score >= 70 ? "#3b82f6" : securityScanResult.score >= 40 ? COLORS.warning : COLORS.error, transition: "width 0.6s ease" }} />
-                        </div>
-                        <div style={{ marginTop: "0.5rem", display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-                          {(["critical","high","medium","low","info"] as const).map((sev) => {
-                            const count = securityScanResult.issues.filter((i) => i.severity === sev).length;
-                            if (!count) return null;
-                            const sevColors: Record<string,string> = { critical:"#ef4444", high:"#f97316", medium:"#f59e0b", low:"#3b82f6", info:"#94a3b8" };
-                            return <span key={sev} style={{ fontSize: "0.75rem", padding: "1px 6px", borderRadius: "4px", background: `${sevColors[sev]}22`, color: sevColors[sev], fontWeight: 600 }}>{count} {sev}</span>;
-                          })}
-                        </div>
-                      </div>
-                      <button
-                        className="zivo-btn"
-                        onClick={handleSecurityFix}
-                        disabled={securityFixing}
-                        style={{ width: "100%", padding: "0.65rem", background: securityFixing ? "rgba(16,185,129,0.3)" : "linear-gradient(135deg,#10b981,#059669)", color: "#fff", borderRadius: "8px", border: "none", cursor: securityFixing ? "not-allowed" : "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
-                      >
-                        {securityFixing ? (
-                          <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Fixing…</>
-                        ) : (
-                          <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Auto-Fix All Issues</>
-                        )}
-                      </button>
-                    </>
-                  )}
-                </div>
+                <SecurityModePanel
+                  securityCode={securityCode}
+                  setSecurityCode={setSecurityCode}
+                  securityLanguage={securityLanguage}
+                  setSecurityLanguage={setSecurityLanguage}
+                  securityScanning={securityScanning}
+                  securityFixing={securityFixing}
+                  securityError={securityError}
+                  securityScanResult={securityScanResult}
+                  onScan={handleSecurityScan}
+                  onFix={handleSecurityFix}
+                />
               )}
 
               {/* ── Website Mode ── */}
               {mode === "website" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
-                  <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Website Builder v2</h2>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your website — ZIVO builds a real Next.js multi-page site with design tokens and multi-pass quality</p>
-                  </div>
-                  {/* Quick-start prompts */}
-                  <div style={{ marginBottom: "0.75rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.4rem" }}>Quick Start</label>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem" }}>
-                      {[
-                        "SaaS landing page",
-                        "Portfolio site",
-                        "Agency website",
-                        "Blog with dark theme",
-                        "E-commerce store",
-                        "Restaurant site",
-                      ].map((q) => (
-                        <button
-                          key={q}
-                          className="zivo-btn"
-                          onClick={() => setWebsitePrompt(q)}
-                          style={{ padding: "0.2rem 0.55rem", borderRadius: "20px", border: `1px solid ${websitePrompt === q ? "rgba(99,102,241,0.5)" : COLORS.border}`, background: websitePrompt === q ? "rgba(99,102,241,0.12)" : COLORS.bgCard, color: websitePrompt === q ? COLORS.accent : COLORS.textSecondary, cursor: "pointer", fontSize: "0.7rem", fontWeight: 500, transition: "border-color 0.15s, color 0.15s" }}
-                        >
-                          {q}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div style={{ marginBottom: "0.75rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Describe your website</label>
-                    <textarea
-                      className="zivo-textarea"
-                      value={websitePrompt}
-                      onChange={(e) => setWebsitePrompt(e.target.value)}
-                      onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); handleWebsiteGenerate(); } }}
-                      placeholder="A portfolio website for a designer with a dark theme, project gallery, and contact form..."
-                      style={{ width: "100%", minHeight: "100px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit" }}
-                    />
-                    <div style={{ fontSize: "0.65rem", color: COLORS.textMuted, marginTop: "0.25rem", textAlign: "right" }}>{websitePrompt.length}/1000</div>
-                  </div>
-
-                  <div style={{ marginBottom: "0.75rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.4rem" }}>Visual Style</label>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
-                      {[
-                        { value: "modern", label: "Modern", color: "#3b82f6" },
-                        { value: "bold", label: "Bold", color: "#f59e0b" },
-                        { value: "corporate", label: "Corporate", color: "#64748b" },
-                        { value: "creative", label: "Creative", color: "#ec4899" },
-                        { value: "dark", label: "Dark", color: "#1e293b" },
-                        { value: "glassmorphism", label: "Glass", color: "#06b6d4" },
-                        { value: "brutalist", label: "Brutalist", color: "#ef4444" },
-                        { value: "retro", label: "Retro", color: "#84cc16" },
-                      ].map((s) => (
-                        <button
-                          key={s.value}
-                          className="zivo-btn"
-                          onClick={() => setWebsiteStyle(s.value)}
-                          title={s.label}
-                          style={{ padding: "0.3rem 0.65rem", borderRadius: "6px", border: `1.5px solid ${websiteStyle === s.value ? s.color : COLORS.border}`, background: websiteStyle === s.value ? `${s.color}22` : COLORS.bgCard, color: websiteStyle === s.value ? s.color : COLORS.textSecondary, cursor: "pointer", fontSize: "0.75rem", fontWeight: websiteStyle === s.value ? 600 : 400, display: "flex", alignItems: "center", gap: "0.35rem", transition: "all 0.15s" }}
-                        >
-                          <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: s.color, flexShrink: 0 }} />
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <button
-                    className="zivo-btn"
-                    onClick={handleWebsiteGenerate}
-                    disabled={websiteLoading || !websitePrompt.trim()}
-                    style={{ width: "100%", padding: "0.65rem", background: websiteLoading || !websitePrompt.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: websiteLoading || !websitePrompt.trim() ? "not-allowed" : "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
-                  >
-                    {websiteLoading ? (
-                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
-                    ) : (
-                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg> Build Website  <kbd style={{ fontSize: "0.6rem", opacity: 0.7, background: "rgba(255,255,255,0.15)", borderRadius: "3px", padding: "0 4px" }}>⌘↵</kbd></>
-                    )}
-                  </button>
-                  {websiteLoading && websitePassMessage && (
-                    <div style={{ padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px", fontSize: "0.8125rem", color: COLORS.accent }}>{websitePassMessage}</div>
-                  )}
-                  {websiteError && (
-                    <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{websiteError}</div>
-                  )}
-                  {websiteResult && (
-                    <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.35rem" }}>
-                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600 }}>Website generated</div>
-                        {websiteIteration > 1 && (
-                          <span style={{ padding: "0.1rem 0.4rem", background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: "20px", fontSize: "0.65rem", fontWeight: 700, color: COLORS.accent }}>iteration {websiteIteration}</span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{websiteResult.summary}</div>
-                      <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{websiteResult.files.length} file(s) generated</div>
-                      <button
-                        className="zivo-btn"
-                        onClick={() => { setMode("code"); setActiveRightTab("files"); }}
-                        style={{ marginTop: "0.6rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: "pointer" }}
-                      >
-                        Open in Code Builder
-                      </button>
-                      <button
-                        className="zivo-btn"
-                        onClick={() => void startWebsiteLivePreview(websiteResult.files)}
-                        disabled={websiteLivePreviewRunning && !websiteLivePreviewError}
-                        style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: `1px solid ${COLORS.border}`, background: COLORS.bgCard, color: COLORS.textPrimary, cursor: (websiteLivePreviewRunning && !websiteLivePreviewError) ? "not-allowed" : "pointer", opacity: (websiteLivePreviewRunning && !websiteLivePreviewError) ? 0.6 : 1 }}
-                      >
-                        {websiteLivePreviewRunning ? "Starting live runtime…" : websiteLivePreviewUrl ? "Restart Live Preview" : "Start Live Preview"}
-                      </button>
-                      {websiteLivePreviewStatus && (
-                        <div style={{ marginTop: "0.45rem", fontSize: "0.72rem", color: COLORS.textSecondary }}>{websiteLivePreviewStatus}</div>
-                      )}
-                      {/* Remote preview shortcut — only shown when project is saved */}
-                      {websiteProjectId && (
-                        <button
-                          className="zivo-btn"
-                          onClick={() => setWebsitePreviewTab("remote")}
-                          style={{ marginTop: "0.45rem", padding: "0.35rem 0.6rem", fontSize: "0.75rem", borderRadius: "6px", border: "1px solid rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.08)", color: COLORS.accent, cursor: "pointer", display: "flex", alignItems: "center", gap: "0.35rem" }}
-                        >
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-                          {remotePreviewStatus === "running" ? "View Remote Preview" : "Remote Preview"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── Changed Files Summary ── */}
-                  {websiteChangedFiles && (
-                    <div style={{ padding: "0.75rem", background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px" }}>
-                      <div style={{ fontSize: "0.75rem", fontWeight: 700, color: COLORS.accent, marginBottom: "0.5rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Changed Files</div>
-                      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "0.5rem", flexWrap: "wrap" }}>
-                        {websiteChangedFiles.created.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(16,185,129,0.15)", color: COLORS.success, fontWeight: 600 }}>+{websiteChangedFiles.created.length} created</span>}
-                        {websiteChangedFiles.updated.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(245,158,11,0.15)", color: COLORS.warning, fontWeight: 600 }}>~{websiteChangedFiles.updated.length} updated</span>}
-                        {websiteChangedFiles.deleted.length > 0 && <span style={{ fontSize: "0.72rem", padding: "0.1rem 0.5rem", borderRadius: "20px", background: "rgba(239,68,68,0.15)", color: COLORS.error, fontWeight: 600 }}>-{websiteChangedFiles.deleted.length} deleted</span>}
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                        {websiteChangedFiles.created.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.success, fontFamily: "monospace" }}>+ {p}</div>)}
-                        {websiteChangedFiles.updated.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.warning, fontFamily: "monospace" }}>~ {p}</div>)}
-                        {websiteChangedFiles.deleted.map((p) => <div key={p} style={{ fontSize: "0.72rem", color: COLORS.error, fontFamily: "monospace" }}>- {p}</div>)}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Continue Build (requires saved project) ── */}
-                  {websiteProjectId && (
-                    <div style={{ padding: "0.875rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "10px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.625rem" }}>
-                        <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
-                        <span style={{ fontSize: "0.65rem", color: COLORS.accent, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 700, flexShrink: 0 }}>Continue Build</span>
-                        <div style={{ height: "1px", flex: 1, background: COLORS.border }} />
-                      </div>
-                      <div style={{ fontSize: "0.7rem", color: COLORS.textMuted, fontFamily: "monospace", marginBottom: "0.5rem", wordBreak: "break-all" }}>Project: {websiteProjectId}</div>
-                      <textarea
-                        className="zivo-textarea"
-                        value={websiteContinueInstruction}
-                        onChange={(e) => setWebsiteContinueInstruction(e.target.value)}
-                        onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); void handleContinueWebsiteBuild(); } }}
-                        placeholder="Add a dark mode toggle, improve the hero section, add an FAQ section…"
-                        maxLength={2000}
-                        style={{ width: "100%", minHeight: "80px", resize: "vertical", background: "rgba(255,255,255,0.03)", border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.8125rem", fontFamily: "inherit", boxSizing: "border-box" }}
-                      />
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "0.5rem" }}>
-                        <span style={{ fontSize: "0.68rem", color: COLORS.textMuted }}>{websiteContinueInstruction.length}/2000</span>
-                        <button
-                          className="zivo-btn"
-                          onClick={() => void handleContinueWebsiteBuild()}
-                          disabled={websiteContinueLoading || !websiteContinueInstruction.trim()}
-                          style={{ padding: "0.35rem 0.875rem", background: websiteContinueInstruction.trim() && !websiteContinueLoading ? COLORS.accentGradient : "rgba(99,102,241,0.15)", border: "none", borderRadius: "20px", color: "#fff", cursor: websiteContinueLoading || !websiteContinueInstruction.trim() ? "not-allowed" : "pointer", fontSize: "0.8rem", fontWeight: 600, display: "flex", alignItems: "center", gap: "0.3rem", opacity: websiteContinueLoading || !websiteContinueInstruction.trim() ? 0.5 : 1 }}
-                        >
-                          {websiteContinueLoading ? (
-                            <><span style={{ width: "11px", height: "11px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.8s linear infinite" }} /> Building…</>
-                          ) : "Continue Build ▶"}
-                        </button>
-                      </div>
-                      {websiteContinueLoading && websiteContinuePassMessage && (
-                        <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.625rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.accent }}>{websiteContinuePassMessage}</div>
-                      )}
-                      {websiteContinueError && (
-                        <div style={{ marginTop: "0.5rem", padding: "0.4rem 0.625rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "6px", fontSize: "0.75rem", color: COLORS.error }}>{websiteContinueError}</div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                <WebsiteBuilderPanel
+                  websitePrompt={websitePrompt}
+                  setWebsitePrompt={setWebsitePrompt}
+                  websiteStyle={websiteStyle}
+                  setWebsiteStyle={setWebsiteStyle}
+                  websiteLoading={websiteLoading}
+                  websiteError={websiteError}
+                  websitePassMessage={websitePassMessage}
+                  websiteResult={websiteResult}
+                  websiteIteration={websiteIteration}
+                  websiteLivePreviewRunning={websiteLivePreviewRunning}
+                  websiteLivePreviewError={websiteLivePreviewError}
+                  websiteLivePreviewUrl={websiteLivePreviewUrl}
+                  websiteLivePreviewStatus={websiteLivePreviewStatus}
+                  websiteProjectId={websiteProjectId}
+                  websitePreviewTab={websitePreviewTab}
+                  setWebsitePreviewTab={setWebsitePreviewTab}
+                  websiteChangedFiles={websiteChangedFiles}
+                  websiteContinueInstruction={websiteContinueInstruction}
+                  setWebsiteContinueInstruction={setWebsiteContinueInstruction}
+                  websiteContinueLoading={websiteContinueLoading}
+                  websiteContinueError={websiteContinueError}
+                  websiteContinuePassMessage={websiteContinuePassMessage}
+                  remotePreviewStatus={remotePreviewStatus}
+                  onGenerate={handleWebsiteGenerate}
+                  onStartLivePreview={(files) => void startWebsiteLivePreview(files)}
+                  onContinueBuild={() => void handleContinueWebsiteBuild()}
+                  onOpenInCodeBuilder={() => { setMode("code"); setActiveRightTab("files"); }}
+                />
               )}
 
               {/* ── Mobile App Mode ── */}
               {mode === "mobile" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "1rem", animation: "fadeIn 0.3s ease" }}>
-                  <div>
-                    <h2 style={{ fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem", letterSpacing: "-0.02em" }}>Mobile App Builder v2</h2>
-                    <p style={{ fontSize: "0.8125rem", color: COLORS.textSecondary, margin: 0 }}>Describe your app — ZIVO generates a real Expo Router app with navigation, mock data, and multi-pass quality</p>
-                  </div>
-                  <div style={{ marginBottom: "0.75rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Prompt</label>
-                    <textarea
-                      className="zivo-textarea"
-                      value={mobilePrompt}
-                      onChange={(e) => setMobilePrompt(e.target.value)}
-                      onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); handleMobileGenerate(); } }}
-                      placeholder="A fitness tracking app with a home screen, workout logger, and progress charts..."
-                      style={{ width: "100%", minHeight: "100px", resize: "vertical", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, padding: "0.6rem 0.75rem", fontSize: "0.875rem", fontFamily: "inherit" }}
-                    />
-                  </div>
-                  <div style={{ marginBottom: "0.75rem" }}>
-                    <label style={{ fontSize: "0.75rem", color: COLORS.textSecondary, display: "block", marginBottom: "0.35rem" }}>Framework</label>
-                    <select
-                      value={mobileFramework}
-                      onChange={(e) => setMobileFramework(e.target.value)}
-                      style={{ width: "100%", padding: "0.5rem 0.75rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, fontSize: "0.875rem" }}
-                    >
-                      <option value="react-native">React Native</option>
-                      <option value="expo">Expo (React Native)</option>
-                      <option value="flutter-web">Flutter (Web Preview)</option>
-                      <option value="ionic">Ionic / Capacitor</option>
-                    </select>
-                  </div>
-                  <button
-                    className="zivo-btn"
-                    onClick={handleMobileGenerate}
-                    disabled={mobileLoading || !mobilePrompt.trim()}
-                    style={{ width: "100%", padding: "0.65rem", background: COLORS.accentGradient, color: "#fff", borderRadius: "8px", border: "none", cursor: "pointer", fontSize: "0.875rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem" }}
-                  >
-                    {mobileLoading ? (
-                      <><span style={{ width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", display: "inline-block", animation: "spin 0.7s linear infinite" }} /> Generating...</>
-                    ) : (
-                      <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg> Build Mobile App</>
-                    )}
-                  </button>
-                  {mobileLoading && mobilePassMessage && (
-                    <div style={{ padding: "0.5rem 0.75rem", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "8px", fontSize: "0.8125rem", color: COLORS.accent }}>{mobilePassMessage}</div>
-                  )}
-                  {mobileError && (
-                    <div style={{ padding: "0.6rem 0.75rem", background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: "8px", color: COLORS.error, fontSize: "0.8125rem" }}>{mobileError}</div>
-                  )}
-                  {mobileResult && (
-                    <div>
-                      <div style={{ padding: "0.75rem", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "8px", marginBottom: "0.75rem" }}>
-                        <div style={{ fontSize: "0.8125rem", color: COLORS.success, fontWeight: 600, marginBottom: "0.35rem" }}>Mobile app generated</div>
-                        <div style={{ fontSize: "0.75rem", color: COLORS.textSecondary }}>{mobileResult.summary}</div>
-                        <div style={{ marginTop: "0.5rem", fontSize: "0.75rem", color: COLORS.textMuted }}>{mobileResult.files.length} file(s) generated</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <MobileBuilderPanel
+                  mobilePrompt={mobilePrompt}
+                  setMobilePrompt={setMobilePrompt}
+                  mobileFramework={mobileFramework}
+                  setMobileFramework={setMobileFramework}
+                  mobileLoading={mobileLoading}
+                  mobileError={mobileError}
+                  mobilePassMessage={mobilePassMessage}
+                  mobileResult={mobileResult}
+                  onGenerate={handleMobileGenerate}
+                />
               )}
 
               {/* ── Image Mode ── */}
@@ -5156,289 +4106,54 @@ function AIPageInner() {
           </div>
 
           {/* Right Panel — Files / Code / Diff / Actions (Code Builder only) */}
-          {mode === "code" && (
-            <div style={{ width: "280px", flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, overflow: "hidden" }}>
-              {/* Tab bar */}
-              <div style={{ display: "flex", alignItems: "center", gap: "2px", padding: "0 0.5rem", height: "48px", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
-                {([
-                  ["files", "Files", <svg key="f" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>],
-                  ["code", "Code", <svg key="c" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>],
-                  ["diff", "Diff", <svg key="d" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><path d="M5 12l7-7 7 7"/></svg>],
-                  ["actions", "Actions", <svg key="a" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>],
-                ] as const).map(([tab, label, icon]) => (
-                  <button
-                    key={tab}
-                    className="zivo-tab"
-                    onClick={() => setActiveRightTab(tab)}
-                    title={label}
-                    style={{ padding: "0.3rem 0.6rem", borderRadius: "6px", border: "none", background: activeRightTab === tab ? "rgba(99,102,241,0.15)" : "transparent", color: activeRightTab === tab ? COLORS.accent : COLORS.textMuted, cursor: "pointer", fontSize: "0.75rem", fontWeight: activeRightTab === tab ? 600 : 400, transition: "color 0.15s", display: "flex", alignItems: "center", gap: "0.25rem" }}
-                  >
-                    {icon}
-                    {tab === "files" && output?.files?.length ? (
-                      <><span>{label}</span><span style={{ background: loading ? "rgba(245,158,11,0.25)" : "rgba(99,102,241,0.25)", borderRadius: "10px", padding: "0px 5px", fontSize: "0.6rem", fontWeight: 700, color: loading ? COLORS.warning : COLORS.accent }}>{output.files.length}</span></>
-                    ) : <span>{label}</span>}
-                  </button>
-                ))}
-              </div>
-
-              {/* Files tab */}
-              {activeRightTab === "files" && (
-                <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", animation: "fadeIn 0.3s ease" }}>
-                  <FileTree
-                    files={(output?.files ?? []) as Array<{ path: string; content: string; action?: "create" | "update" | "delete" }>}
-                    activeFile={activeFile?.path ?? null}
-                    onFileSelect={(f) => { setActiveFile(f as { path: string; content: string; action: "create" | "update" | "delete" }); setEditedContent(f.content); setSaveStatus("idle"); setActiveRightTab("code"); }}
-                  />
-                </div>
-              )}
-
-              {/* Code tab */}
-              {activeRightTab === "code" && (
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
-                  {activeFile ? (
-                    <>
-                      {/* File header: path + action badge + Save/Copy buttons */}
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.4rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
-                        <span style={{ fontSize: "0.875rem" }}>{getFileIcon(activeFile.path)}</span>
-                        <code style={{ flex: 1, fontSize: "0.75rem", color: COLORS.textSecondary, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={activeFile.path}>{activeFile.path}</code>
-                        {/* Save button */}
-                        <button
-                          className="zivo-btn"
-                          onClick={handleFileSave}
-                          disabled={isSaving || loading || editedContent === activeFile.content}
-                          title={loading ? "Build in progress — editing disabled" : "Save file"}
-                          style={{
-                            padding: "0.2rem 0.55rem",
-                            background: saveStatus === "saved" ? "rgba(16,185,129,0.15)" : saveStatus === "error" ? "rgba(239,68,68,0.15)" : "rgba(99,102,241,0.15)",
-                            border: `1px solid ${saveStatus === "saved" ? "rgba(16,185,129,0.4)" : saveStatus === "error" ? "rgba(239,68,68,0.4)" : "rgba(99,102,241,0.3)"}`,
-                            borderRadius: "5px",
-                            color: saveStatus === "saved" ? COLORS.success : saveStatus === "error" ? COLORS.error : COLORS.accent,
-                            cursor: isSaving || loading || editedContent === activeFile.content ? "not-allowed" : "pointer",
-                            fontSize: "0.7rem",
-                            fontWeight: 600,
-                            flexShrink: 0,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "0.3rem",
-                            opacity: editedContent === activeFile.content ? 0.5 : 1,
-                          }}
-                        >
-                          {isSaving ? (
-                            <><span style={{ display: "inline-block", width: "10px", height: "10px", border: "2px solid rgba(99,102,241,0.3)", borderTop: "2px solid currentColor", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />Saving…</>
-                          ) : saveStatus === "saved" ? (
-                            <>✓ Saved</>
-                          ) : saveStatus === "error" ? (
-                            <>✕ Error</>
-                          ) : (
-                            <>
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                              Save
-                            </>
-                          )}
-                        </button>
-                        {/* Copy button */}
-                        <button
-                          className="zivo-btn"
-                          onClick={() => navigator.clipboard.writeText(editedContent ?? activeFile.content).then(() => {
-                            setCopyFileLabel("copied");
-                            setTimeout(() => setCopyFileLabel("copy"), 2000);
-                          }).catch(() => {})}
-                          style={{ padding: "0.2rem 0.5rem", background: COLORS.bgCard, border: `1px solid ${COLORS.border}`, borderRadius: "5px", color: COLORS.textSecondary, cursor: "pointer", fontSize: "0.7rem", flexShrink: 0 }}
-                        >
-                          {copyFileLabel === "copied" ? "✓" : "Copy"}
-                        </button>
-                      </div>
-                      {/* Editable textarea */}
-                      <textarea
-                        className="zivo-textarea"
-                        value={editedContent ?? activeFile.content}
-                        onChange={(e) => { setEditedContent(e.target.value); setSaveStatus("idle"); }}
-                        readOnly={loading}
-                        spellCheck={false}
-                        onKeyDown={(e) => {
-                          // Ctrl/Cmd+S to save
-                          if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-                            e.preventDefault();
-                            void handleFileSave();
-                          }
-                          // Tab key inserts spaces instead of leaving the field
-                          if (e.key === "Tab") {
-                            e.preventDefault();
-                            const el = e.currentTarget;
-                            const start = el.selectionStart;
-                            const end = el.selectionEnd;
-                            const val = el.value;
-                            const newVal = val.slice(0, start) + "  " + val.slice(end);
-                            setEditedContent(newVal);
-                            // Restore cursor position after React re-render
-                            requestAnimationFrame(() => {
-                              el.selectionStart = start + 2;
-                              el.selectionEnd = start + 2;
-                            });
-                          }
-                        }}
-                        style={{
-                          flex: 1,
-                          resize: "none",
-                          width: "100%",
-                          padding: "0.75rem",
-                          background: "transparent",
-                          border: "none",
-                          color: loading ? COLORS.textMuted : COLORS.textPrimary,
-                          fontSize: "0.75rem",
-                          lineHeight: 1.7,
-                          fontFamily: "'JetBrains Mono', 'Fira Code', 'Courier New', monospace",
-                          outline: "none",
-                          boxSizing: "border-box",
-                          cursor: loading ? "not-allowed" : "text",
-                        }}
-                        title={loading ? "Build in progress — editing will resume when build completes" : undefined}
-                      />
-                      {/* Unsaved changes indicator */}
-                      {editedContent !== null && editedContent !== activeFile.content && saveStatus === "idle" && (
-                        <div style={{ padding: "0.3rem 0.75rem", borderTop: `1px solid ${COLORS.border}`, flexShrink: 0, display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.7rem", color: COLORS.warning }}>
-                          <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: COLORS.warning, flexShrink: 0 }} />
-                          Unsaved changes — press <kbd style={{ padding: "0 4px", background: "rgba(255,255,255,0.08)", borderRadius: "3px", fontSize: "0.65rem" }}>⌘S</kbd> or click Save
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.8125rem", textAlign: "center", padding: "2rem" }}>
-                      Select a file from the Files tab to view and edit its code.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Diff tab */}
-              {activeRightTab === "diff" && (
-                <div style={{ flex: 1, overflow: "hidden", animation: "fadeIn 0.3s ease" }}>
-                  {showDiff && diffFiles.length > 0 ? (
-                    <DiffViewer files={diffFiles} />
-                  ) : (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: COLORS.textMuted, fontSize: "0.8125rem", textAlign: "center", padding: "2rem" }}>
-                      No diff available. Build a project to see changes.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Actions tab */}
-              {activeRightTab === "actions" && (
-                <div style={{ flex: 1, overflowY: "auto", padding: "0.875rem", animation: "fadeIn 0.3s ease", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-                  <div style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700, marginBottom: "0.25rem" }}>Export &amp; Deploy</div>
-                  {[
-                    { label: "Download ZIP", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>, action: () => handleDownload(), disabled: !output?.files?.length },
-                    { label: "Copy All Files", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>, action: () => { if (output?.files?.length) { const all = output.files.map((f) => `// === ${f.path} ===\n${f.content}`).join("\n\n"); navigator.clipboard.writeText(all).catch(() => {}); setCopyLabel("saved"); setTimeout(() => setCopyLabel("save"), 2000); } }, disabled: !output?.files?.length },
-                    { label: "Push to GitHub", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>, action: () => setGithubModalOpen(true), disabled: !output?.files?.length },
-                    { label: "Deploy to Vercel", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M24 22.525H0l12-21.05 12 21.05z"/></svg>, action: () => { setShowVercelTokenInput(true); }, disabled: !output?.files?.length },
-                  ].map(({ label, icon, action, disabled }) => (
-                    <button
-                      key={label}
-                      className="zivo-btn"
-                      onClick={action}
-                      disabled={disabled || loading}
-                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: disabled ? COLORS.textMuted : COLORS.textPrimary, cursor: disabled || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: disabled ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
-                    >
-                      <span style={{ color: COLORS.accent, flexShrink: 0 }}>{icon}</span>
-                      {label}
-                    </button>
-                  ))}
-
-                  <div style={{ height: "1px", background: COLORS.border, margin: "0.25rem 0" }} />
-                  <div style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700, marginBottom: "0.25rem" }}>Analysis</div>
-                  {[
-                    { label: "SEO Analyzer", action: () => { setAnalysisTab("seo"); setAnalysisPanelOpen(true); }, icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg> },
-                    { label: "Accessibility", action: () => { setAnalysisTab("a11y"); setAnalysisPanelOpen(true); }, icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg> },
-                    { label: "Performance", action: () => { setAnalysisTab("perf"); setAnalysisPanelOpen(true); }, icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" x2="12" y1="20" y2="10"/><line x1="18" x2="18" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="16"/></svg> },
-                    { label: "Generate Docs", action: () => { setAnalysisTab("docs"); setAnalysisPanelOpen(true); }, icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg> },
-                  ].map(({ label, action, icon }) => (
-                    <button
-                      key={label}
-                      className="zivo-btn"
-                      onClick={action}
-                      disabled={!output?.files?.length || loading}
-                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: !output?.files?.length || loading ? "not-allowed" : "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", opacity: !output?.files?.length ? 0.5 : 1, transition: "border-color 0.15s, background 0.15s" }}
-                    >
-                      <span style={{ color: COLORS.success, flexShrink: 0 }}>{icon}</span>
-                      {label}
-                    </button>
-                  ))}
-
-                  <div style={{ height: "1px", background: COLORS.border, margin: "0.25rem 0" }} />
-                  <div style={{ fontSize: "0.65rem", color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700, marginBottom: "0.25rem" }}>Design</div>
-                  {[
-                    { label: "Design System", action: () => setDesignSystemOpen(true), icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="10.5" r="2.5"/><circle cx="8.5" cy="7.5" r="2.5"/><circle cx="6.5" cy="12.5" r="2.5"/></svg> },
-                    { label: "Theme Editor", action: () => setDesignPanelOpen((o) => !o), icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"/></svg> },
-                  ].map(({ label, action, icon }) => (
-                    <button
-                      key={label}
-                      className="zivo-btn"
-                      onClick={action}
-                      style={{ width: "100%", padding: "0.55rem 0.75rem", background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", color: COLORS.textPrimary, cursor: "pointer", fontSize: "0.8125rem", display: "flex", alignItems: "center", gap: "0.5rem", transition: "border-color 0.15s, background 0.15s" }}
-                    >
-                      <span style={{ color: COLORS.warning, flexShrink: 0 }}>{icon}</span>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {mode === "code" && <CodeBuilderRightPanel
+            activeRightTab={activeRightTab}
+            setActiveRightTab={setActiveRightTab}
+            output={output}
+            loading={loading}
+            activeFile={activeFile}
+            setActiveFile={setActiveFile}
+            editedContent={editedContent}
+            setEditedContent={setEditedContent}
+            saveStatus={saveStatus}
+            setSaveStatus={setSaveStatus}
+            isSaving={isSaving}
+            handleFileSave={handleFileSave}
+            showDiff={showDiff}
+            diffFiles={diffFiles}
+            handleDownload={handleDownload}
+            setCopyLabel={setCopyLabel}
+            copyLabel={copyLabel}
+            copyFileLabel={copyFileLabel}
+            setCopyFileLabel={setCopyFileLabel}
+            setGithubModalOpen={setGithubModalOpen}
+            setShowVercelTokenInput={setShowVercelTokenInput}
+            setAnalysisTab={setAnalysisTab}
+            setAnalysisPanelOpen={setAnalysisPanelOpen}
+            setDesignSystemOpen={setDesignSystemOpen}
+            setDesignPanelOpen={setDesignPanelOpen}
+            getFileIcon={getFileIcon}
+          />}
 
         </div>
 
         {/* Chat Panel Overlay */}
         {chatOpen && (
-          <div style={{ position: "fixed", top: "52px", right: 0, bottom: "28px", width: "340px", background: COLORS.bgPanel, borderLeft: \`1px solid ${COLORS.border}`, display: "flex", flexDirection: "column", zIndex: 40, animation: "fadeIn 0.2s ease" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", borderBottom: \`1px solid ${COLORS.border}`, flexShrink: 0 }}>
-              <span style={{ fontWeight: 600, fontSize: "0.9375rem" }}>AI Chat</span>
-              <button onClick={() => setChatOpen(false)} style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1.25rem" }}>×</button>
-            </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              {chatMessages.length === 0 && (
-                <div style={{ textAlign: "center", color: COLORS.textMuted, fontSize: "0.8125rem", padding: "2rem 0" }}>Ask the AI anything about your project…</div>
-              )}
-              {chatMessages.map((msg, i) => (
-                <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start", gap: "0.25rem" }}>
-                  <div style={{ maxWidth: "85%", padding: "0.5rem 0.75rem", borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px", background: msg.role === "user" ? COLORS.accentGradient : COLORS.bgCard, border: \`1px solid ${COLORS.border}`, fontSize: "0.8125rem", color: COLORS.textPrimary, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{msg.content || (msg.role === "assistant" && chatLoading ? "…" : "")}</div>
-                  {msg.role === "assistant" && msg.content && (
-                    <button
-                      onClick={() => setPrompt((prev) => prev ? prev + "\n\n" + msg.content : msg.content)}
-                      style={{ fontSize: "0.7rem", color: COLORS.accent, background: "transparent", border: "none", cursor: "pointer", padding: "0 0.25rem" }}
-                    >
-                      Use in prompt ↑
-                    </button>
-                  )}
-                </div>
-              ))}
-              <div ref={chatEndRef} />
-            </div>
-            <div style={{ padding: "0.75rem", borderTop: \`1px solid ${COLORS.border}`, flexShrink: 0 }}>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <input
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
-                  placeholder="Ask something…"
-                  style={{ flex: 1, background: COLORS.bgCard, border: \`1px solid ${COLORS.border}`, borderRadius: "8px", padding: "0.45rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.8125rem", outline: "none" }}
-                />
-                <button
-                  onClick={handleChatSend}
-                  disabled={chatLoading || !chatInput.trim()}
-                  style={{ padding: "0.45rem 0.75rem", background: chatLoading || !chatInput.trim() ? "rgba(99,102,241,0.3)" : COLORS.accentGradient, border: "none", borderRadius: "8px", color: "#fff", cursor: chatLoading || !chatInput.trim() ? "not-allowed" : "pointer", fontSize: "0.8125rem", fontWeight: 600 }}
-                >
-                  {chatLoading ? "…" : "→"}
-                </button>
-              </div>
-            </div>
-          </div>
+          <ChatPanel
+            chatMessages={chatMessages}
+            chatInput={chatInput}
+            chatLoading={chatLoading}
+            onClose={() => setChatOpen(false)}
+            onInputChange={setChatInput}
+            onSend={handleChatSend}
+            onUseInPrompt={(content) => setPrompt((prev) => prev ? prev + "\n\n" + content : content)}
+          />
         )}
 
         {/* Analysis Panel */}
         {analysisPanelOpen && (
-          <div style={{ borderTop: \`1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "1rem" }}>
-            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", borderBottom: \`1px solid ${COLORS.border}`, paddingBottom: "0.5rem" }}>
+          <div style={{ borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, padding: "1rem" }}>
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem", borderBottom: `1px solid ${COLORS.border}`, paddingBottom: "0.5rem" }}>
               {(["seo", "a11y", "perf", "docs", "agents"] as const).map((tab) => (
                 <button
                   key={tab}
@@ -5469,12 +4184,12 @@ function AIPageInner() {
         )}
 
         {/* Status Bar */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "28px", borderTop: \`1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0, fontSize: "0.7rem" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 1.5rem", height: "28px", borderTop: `1px solid ${COLORS.border}`, background: COLORS.bgPanel, flexShrink: 0, fontSize: "0.7rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
             <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: loading ? COLORS.warning : COLORS.success, animation: "statusBlink 2s infinite" }} />
             <span style={{ color: COLORS.textMuted }}>{loading ? "Building…" : "Ready to build"}</span>
           </div>
-          <span style={{ color: COLORS.textMuted }}>{buildTime ? \`Last build: ${buildTime}` : "No builds yet"}</span>
+          <span style={{ color: COLORS.textMuted }}>{buildTime ? `Last build: ${buildTime}` : "No builds yet"}</span>
           <span style={{ color: COLORS.textMuted }}>{model} · {prompt.length} chars</span>
         </div>
       </div>
@@ -5521,275 +4236,47 @@ function AIPageInner() {
       <button
         onClick={() => setCreatePageModalOpen(true)}
         title="Create Page (Ctrl+T)"
-        style={{
-          position: "fixed",
-          bottom: "2rem",
-          right: "2rem",
-          width: "48px",
-          height: "48px",
-          borderRadius: "50%",
-          background: "linear-gradient(135deg, #6366f1, #8b5cf6)",
-          border: "none",
-          color: "#fff",
-          fontSize: "1.25rem",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          boxShadow: "0 4px 20px rgba(99,102,241,0.5)",
-          zIndex: 900,
-          transition: "transform 0.15s, box-shadow 0.15s",
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.transform = "scale(1.1)";
-          (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 6px 28px rgba(99,102,241,0.65)";
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)";
-          (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 4px 20px rgba(99,102,241,0.5)";
-        }}
+        style={{ position: "fixed", bottom: "2rem", right: "2rem", width: "48px", height: "48px", borderRadius: "50%", background: "linear-gradient(135deg, #6366f1, #8b5cf6)", border: "none", color: "#fff", fontSize: "1.25rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(99,102,241,0.5)", zIndex: 900, transition: "transform 0.15s, box-shadow 0.15s" }}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1.1)"; (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 6px 28px rgba(99,102,241,0.65)"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 4px 20px rgba(99,102,241,0.5)"; }}
       >
         +
       </button>
 
-      {/* Create Page Modal */}
-      {createPageModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "1rem",
-          }}
-          onClick={(e) => { if (e.target === e.currentTarget) setCreatePageModalOpen(false); }}
-        >
-          <div
-            style={{
-              background: "#0f1120",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 14,
-              padding: "1.5rem",
-              width: "100%",
-              maxWidth: 440,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
-              <span style={{ fontSize: "1rem", fontWeight: 700, color: "#f1f5f9" }}>📄 Create Page</span>
-              <button
-                onClick={() => setCreatePageModalOpen(false)}
-                style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "1.1rem", padding: "0 0.25rem" }}
-              >
-                ✕
-              </button>
-            </div>
+      <CreatePageModal
+        isOpen={createPageModalOpen}
+        createPageName={createPageName}
+        setCreatePageName={setCreatePageName}
+        createPageRoute={createPageRoute}
+        setCreatePageRoute={setCreatePageRoute}
+        createPageDescription={createPageDescription}
+        setCreatePageDescription={setCreatePageDescription}
+        onClose={() => setCreatePageModalOpen(false)}
+        onGenerate={(pagePrompt) => {
+          setPrompt(pagePrompt);
+          setCreatePageModalOpen(false);
+          setCreatePageName("");
+          setCreatePageRoute("");
+          setCreatePageDescription("");
+          handleBuild(pagePrompt);
+        }}
+      />
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.875rem" }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Page Name</span>
-                <input
-                  type="text"
-                  value={createPageName}
-                  onChange={(e) => setCreatePageName(e.target.value)}
-                  placeholder="e.g. Settings, Profile, Pricing"
-                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.6rem 0.75rem", color: "#f1f5f9", fontSize: "0.875rem", outline: "none", width: "100%", boxSizing: "border-box" }}
-                />
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Route</span>
-                <input
-                  type="text"
-                  value={createPageRoute}
-                  onChange={(e) => setCreatePageRoute(e.target.value)}
-                  placeholder="e.g. /settings, /profile"
-                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.6rem 0.75rem", color: "#f1f5f9", fontSize: "0.875rem", fontFamily: "monospace", outline: "none", width: "100%", boxSizing: "border-box" }}
-                />
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                <span style={{ fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Description</span>
-                <textarea
-                  value={createPageDescription}
-                  onChange={(e) => setCreatePageDescription(e.target.value)}
-                  placeholder="Describe what this page should do and look like…"
-                  rows={3}
-                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.6rem 0.75rem", color: "#f1f5f9", fontSize: "0.875rem", outline: "none", width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" }}
-                />
-              </label>
-            </div>
-
-            <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.25rem" }}>
-              <button
-                onClick={() => setCreatePageModalOpen(false)}
-                style={{ flex: 1, padding: "0.6rem", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: "#94a3b8", fontSize: "0.875rem", cursor: "pointer", fontWeight: 600 }}
-              >
-                Cancel
-              </button>
-              <button
-                disabled={!createPageName.trim()}
-                onClick={() => {
-                  const pagePrompt = \`Generate a ${createPageName} page${createPageRoute ? ` at route ${createPageRoute}` : ""}. ${createPageDescription || "Make it look polished and consistent with the rest of the app."}`;
-                  setPrompt(pagePrompt);
-                  setCreatePageModalOpen(false);
-                  setCreatePageName("");
-                  setCreatePageRoute("");
-                  setCreatePageDescription("");
-                  handleBuild(pagePrompt);
-                }}
-                style={{
-                  flex: 2,
-                  padding: "0.6rem",
-                  background: !createPageName.trim() ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
-                  border: "none",
-                  borderRadius: 8,
-                  color: "#fff",
-                  fontSize: "0.875rem",
-                  cursor: !createPageName.trim() ? "not-allowed" : "pointer",
-                  fontWeight: 700,
-                }}
-              >
-                Generate Page ▶
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* GitHub Push Modal */}
-      {githubModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1001,
-            padding: "1rem",
-          }}
-          onClick={(e) => { if (e.target === e.currentTarget) setGithubModalOpen(false); }}
-        >
-          <div
-            style={{
-              background: "#0f1120",
-              border: "1px solid rgba(255,255,255,0.12)",
-              borderRadius: 14,
-              padding: "1.5rem",
-              width: "100%",
-              maxWidth: 460,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
-              animation: "fadeIn 0.2s ease",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill={COLORS.textPrimary}><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
-                <span style={{ fontSize: "1rem", fontWeight: 700, color: COLORS.textPrimary }}>Push to GitHub</span>
-              </div>
-              <button
-                onClick={() => setGithubModalOpen(false)}
-                style={{ background: "none", border: "none", color: COLORS.textMuted, cursor: "pointer", fontSize: "1.1rem", padding: "0 0.25rem" }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Owner</span>
-                  <input
-                    type="text"
-                    value={githubModalOwner}
-                    onChange={(e) => setGithubModalOwner(e.target.value)}
-                    placeholder="your-username"
-                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
-                  />
-                </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Repository</span>
-                  <input
-                    type="text"
-                    value={githubModalRepo}
-                    onChange={(e) => setGithubModalRepo(e.target.value)}
-                    placeholder="my-app"
-                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", outline: "none" }}
-                  />
-                </label>
-              </div>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>Branch</span>
-                <input
-                  type="text"
-                  value={githubModalBranch}
-                  onChange={(e) => setGithubModalBranch(e.target.value)}
-                  placeholder="main"
-                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", fontFamily: "monospace", outline: "none" }}
-                />
-              </label>
-
-              <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                <span style={{ fontSize: "0.7rem", fontWeight: 600, color: COLORS.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                  GitHub Token{" "}
-                  <a href="https://github.com/settings/tokens" target="_blank" rel="noreferrer" style={{ color: COLORS.accent, textTransform: "none", fontWeight: 400 }}>(generate)</a>
-                </span>
-                <input
-                  type="password"
-                  value={githubModalToken}
-                  onChange={(e) => setGithubModalToken(e.target.value)}
-                  placeholder="ghp_... (leave blank to use saved token)"
-                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "0.5rem 0.65rem", color: COLORS.textPrimary, fontSize: "0.875rem", fontFamily: "monospace", outline: "none" }}
-                />
-              </label>
-
-              <div style={{ fontSize: "0.75rem", color: COLORS.textMuted, background: "rgba(255,255,255,0.03)", border: \`1px solid ${COLORS.border}`, borderRadius: 6, padding: "0.5rem 0.65rem" }}>
-                Pushing <strong style={{ color: COLORS.textSecondary }}>{output?.files?.length ?? 0} files</strong> to GitHub. Token is saved locally for future pushes.
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: "0.625rem", marginTop: "1.25rem" }}>
-              <button
-                onClick={() => setGithubModalOpen(false)}
-                style={{ flex: 1, padding: "0.6rem", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, color: COLORS.textMuted, fontSize: "0.875rem", cursor: "pointer", fontWeight: 600 }}
-              >
-                Cancel
-              </button>
-              <button
-                disabled={githubPushing}
-                onClick={handleGithubModalPush}
-                style={{
-                  flex: 2,
-                  padding: "0.6rem",
-                  background: githubPushing ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg, #6366f1, #8b5cf6)",
-                  border: "none",
-                  borderRadius: 8,
-                  color: "#fff",
-                  fontSize: "0.875rem",
-                  cursor: githubPushing ? "not-allowed" : "pointer",
-                  fontWeight: 700,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "0.4rem",
-                }}
-              >
-                {githubPushing ? (
-                  <><span style={{ display: "inline-block", width: "14px", height: "14px", border: "2px solid rgba(255,255,255,0.3)", borderTop: "2px solid #fff", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} /> Pushing…</>
-                ) : (
-                  <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 16 12 12 8 16"/><line x1="12" x2="12" y1="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> Push to GitHub</>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <GitHubPushModal
+        isOpen={githubModalOpen}
+        fileCount={output?.files?.length ?? 0}
+        githubModalOwner={githubModalOwner}
+        setGithubModalOwner={setGithubModalOwner}
+        githubModalRepo={githubModalRepo}
+        setGithubModalRepo={setGithubModalRepo}
+        githubModalBranch={githubModalBranch}
+        setGithubModalBranch={setGithubModalBranch}
+        githubModalToken={githubModalToken}
+        setGithubModalToken={setGithubModalToken}
+        githubPushing={githubPushing}
+        onClose={() => setGithubModalOpen(false)}
+        onPush={handleGithubModalPush}
+      />
     </>
   );
 }
