@@ -2470,7 +2470,7 @@ function AIPageInner() {
                 handleShare={handleShare}
                 sharing={sharing}
                 shareUrl={shareUrl}
-              />
+              />}
 
               {/* ── Security Mode ── */}
               {mode === "security" && (
@@ -4288,4 +4288,5 @@ export default function AIPage() {
     </Suspense>
   );
 }
+
 
