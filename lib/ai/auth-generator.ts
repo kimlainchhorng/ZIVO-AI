@@ -1,6 +1,7 @@
 // lib/ai/auth-generator.ts — AI Authentication Generator
 
 import OpenAI from "openai";
+import { safeParseJSON } from "./json-repair";
 
 export type AuthProvider = "supabase" | "clerk" | "auth0" | "firebase";
 export type AuthFeature =
@@ -114,4 +115,91 @@ export async function generateAuth(
     setup_instructions: parsed.setup_instructions ?? "",
     env_vars_needed: parsed.env_vars_needed,
   };
+}
+
+/**
+ * Generate Next.js middleware for route protection.
+ */
+export async function generateAuthMiddleware(
+  blueprint: import('./blueprint-generator').Blueprint
+): Promise<import('./schema').GeneratedFile> {
+  const client = getClient();
+  const protectedRoutes = blueprint.pages
+    .filter((p) => p.requiresAuth)
+    .map((p) => p.route);
+
+  const response = await client.chat.completions.create({
+    model: 'gpt-4o',
+    temperature: 0.2,
+    max_tokens: 2048,
+    messages: [
+      {
+        role: 'system',
+        content: `You are a Next.js security expert. Generate a complete middleware.ts for route protection.
+Return ONLY valid JSON (no markdown fences):
+{ "path": "middleware.ts", "content": "full file content", "action": "create", "language": "typescript" }
+
+Rules:
+- Protect these routes: ${protectedRoutes.join(', ') || '/dashboard'}
+- Allow public routes: /, /login, /signup, /api/health, /_next, /favicon.ico
+- Redirect unauthenticated users to /login
+- Use Supabase auth by default`,
+      },
+      {
+        role: 'user',
+        content: `Generate middleware for app: ${blueprint.goal}. Auth required: ${blueprint.authRequired}`,
+      },
+    ],
+  });
+
+  const raw = response.choices?.[0]?.message?.content ?? '';
+  const fallback: import('./schema').GeneratedFile = {
+    path: 'middleware.ts',
+    content: `import { NextResponse } from 'next/server';\nimport type { NextRequest } from 'next/server';\n\nexport function middleware(request: NextRequest) {\n  return NextResponse.next();\n}\n\nexport const config = { matcher: ['/((?!_next|favicon.ico).*)'] };\n`,
+    action: 'create',
+    language: 'typescript',
+  };
+
+  const parsed = safeParseJSON<import('./schema').GeneratedFile>(raw, fallback);
+  return { ...parsed, action: 'create' };
+}
+
+/**
+ * Generate role-based access control configuration.
+ */
+export async function generateRBACConfig(
+  blueprint: import('./blueprint-generator').Blueprint
+): Promise<import('./schema').GeneratedFile> {
+  const client = getClient();
+
+  const response = await client.chat.completions.create({
+    model: 'gpt-4o',
+    temperature: 0.2,
+    max_tokens: 2048,
+    messages: [
+      {
+        role: 'system',
+        content: `You are a security architect. Generate a TypeScript RBAC config file.
+Return ONLY valid JSON (no markdown fences):
+{ "path": "lib/rbac.ts", "content": "full file content", "action": "create", "language": "typescript" }
+
+The config should define roles (admin, user, guest), permissions per role, and a helper to check access.`,
+      },
+      {
+        role: 'user',
+        content: `Generate RBAC config for: ${blueprint.goal}. Pages: ${blueprint.pages.map((p) => p.route).join(', ')}`,
+      },
+    ],
+  });
+
+  const raw = response.choices?.[0]?.message?.content ?? '';
+  const fallback: import('./schema').GeneratedFile = {
+    path: 'lib/rbac.ts',
+    content: `export type Role = 'admin' | 'user' | 'guest';\nexport type Permission = 'read' | 'write' | 'delete' | 'admin';\n\nexport const ROLE_PERMISSIONS: Record<Role, Permission[]> = {\n  admin: ['read', 'write', 'delete', 'admin'],\n  user: ['read', 'write'],\n  guest: ['read'],\n};\n\nexport function hasPermission(role: Role, permission: Permission): boolean {\n  return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;\n}\n`,
+    action: 'create',
+    language: 'typescript',
+  };
+
+  const parsed = safeParseJSON<import('./schema').GeneratedFile>(raw, fallback);
+  return { ...parsed, action: 'create' };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 
 export interface DiffFile {
   path: string;
@@ -91,6 +91,7 @@ interface FileDiffPanelProps {
 
 function FileDiffPanel({ file, onApply, onUndo }: FileDiffPanelProps): React.JSX.Element {
   const [collapsed, setCollapsed] = useState(false);
+  const [copyLabel, setCopyLabel] = useState<"📋 Copy" | "✓ Copied">("📋 Copy");
 
   const { diffLines, additions, deletions } = useMemo(() => {
     if (!file.oldContent && !file.newContent) {
@@ -105,6 +106,28 @@ function FileDiffPanel({ file, onApply, onUndo }: FileDiffPanelProps): React.JSX
   }, [file.oldContent, file.newContent]);
 
   const isEmpty = !file.oldContent && !file.newContent;
+
+  // Derive file status from content presence
+  const isNew = !file.oldContent && !!file.newContent;
+  const isDeleted = !!file.oldContent && !file.newContent;
+
+  const handleCopy = useCallback(() => {
+    const content = file.newContent || file.oldContent || "";
+    const onCopied = () => {
+      setCopyLabel("✓ Copied");
+      setTimeout(() => setCopyLabel("📋 Copy"), 2000);
+    };
+    navigator.clipboard.writeText(content).then(onCopied).catch(() => {
+      // Fallback for environments without clipboard API
+      const el = document.createElement("textarea");
+      el.value = content;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      onCopied();
+    });
+  }, [file.newContent, file.oldContent]);
 
   return (
     <div
@@ -158,21 +181,65 @@ function FileDiffPanel({ file, onApply, onUndo }: FileDiffPanelProps): React.JSX
           >
             {file.path || "(untitled)"}
           </span>
+
+          {/* Status badge */}
+          <span
+            style={{
+              padding: "1px 6px",
+              borderRadius: 4,
+              fontSize: 10,
+              fontWeight: 700,
+              background: isNew
+                ? "rgba(16,185,129,0.2)"
+                : isDeleted
+                  ? "rgba(239,68,68,0.2)"
+                  : "rgba(99,102,241,0.2)",
+              color: isNew ? "#10b981" : isDeleted ? "#ef4444" : "#a5b4fc",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {isNew ? "NEW" : isDeleted ? "DELETED" : "MODIFIED"}
+          </span>
+
           {!isEmpty && (
             <span style={{ fontSize: 12, color: "#94a3b8", whiteSpace: "nowrap" }}>
               <span style={{ color: "#10b981" }}>+{additions}</span>
-              {" / "}
+              {" "}
               <span style={{ color: "#ef4444" }}>-{deletions}</span>
             </span>
           )}
         </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {/* Keyboard shortcut hints */}
+          <span style={{ fontSize: 10, color: "#475569", whiteSpace: "nowrap" }}>
+            A to apply, U to undo
+          </span>
+
+          <button
+            onClick={handleCopy}
+            title="Copy file content"
+            style={{
+              padding: "5px 10px",
+              borderRadius: 6,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.05)",
+              color: "#94a3b8",
+              fontSize: 11,
+              cursor: "pointer",
+              fontWeight: 500,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {copyLabel}
+          </button>
+
           {onUndo && (
             <button
               onClick={() => onUndo(file.path)}
+              title="Undo (U)"
               style={{
-                padding: "5px 14px",
+                padding: "5px 12px",
                 borderRadius: 6,
                 border: "1px solid rgba(239,68,68,0.4)",
                 background: "rgba(239,68,68,0.1)",
@@ -180,16 +247,18 @@ function FileDiffPanel({ file, onApply, onUndo }: FileDiffPanelProps): React.JSX
                 fontSize: 12,
                 cursor: "pointer",
                 fontWeight: 500,
+                whiteSpace: "nowrap",
               }}
             >
-              Undo
+              ↩ Undo
             </button>
           )}
           {onApply && (
             <button
               onClick={() => onApply(file.path)}
+              title="Apply (A)"
               style={{
-                padding: "5px 14px",
+                padding: "5px 12px",
                 borderRadius: 6,
                 border: "1px solid rgba(16,185,129,0.4)",
                 background: "rgba(16,185,129,0.1)",
@@ -197,9 +266,10 @@ function FileDiffPanel({ file, onApply, onUndo }: FileDiffPanelProps): React.JSX
                 fontSize: 12,
                 cursor: "pointer",
                 fontWeight: 500,
+                whiteSpace: "nowrap",
               }}
             >
-              Apply
+              ✓ Apply
             </button>
           )}
         </div>

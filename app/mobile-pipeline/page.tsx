@@ -2,9 +2,12 @@
 import { useState } from 'react';
 
 type Platform = 'iOS' | 'Android' | 'Both';
+type CIProvider = 'github-actions' | 'bitrise' | 'fastlane' | 'circleci';
+type Environment = 'staging' | 'production' | 'both';
+type DistributionMethod = 'testflight' | 'firebase-app-distribution' | 'diawi' | 'app-store' | 'play-store';
 
-interface GeneratePipelineResponse {
-  yaml: string;
+interface MobilePipelineResponse {
+  result: string;
 }
 
 const FEATURES = [
@@ -14,13 +17,40 @@ const FEATURES = [
   { id: 'testflight', label: 'TestFlight / Internal Track', description: 'Upload to TestFlight or Play internal testing' },
 ];
 
+const CI_PROVIDERS: { value: CIProvider; label: string }[] = [
+  { value: 'github-actions', label: 'GitHub Actions' },
+  { value: 'bitrise', label: 'Bitrise' },
+  { value: 'fastlane', label: 'Fastlane' },
+  { value: 'circleci', label: 'CircleCI' },
+];
+
+const ENVIRONMENTS: { value: Environment; label: string }[] = [
+  { value: 'production', label: 'Production' },
+  { value: 'staging', label: 'Staging' },
+  { value: 'both', label: 'Both' },
+];
+
+const DISTRIBUTION_METHODS: { value: DistributionMethod; label: string }[] = [
+  { value: 'app-store', label: 'App Store Connect' },
+  { value: 'testflight', label: 'TestFlight' },
+  { value: 'play-store', label: 'Google Play Store' },
+  { value: 'firebase-app-distribution', label: 'Firebase App Distribution' },
+  { value: 'diawi', label: 'Diawi' },
+];
+
 const PLACEHOLDER_YAML = `# Generated pipeline will appear here
 # Configure platform, app name, and features then click Generate`;
+
+const selectStyle = "w-full bg-[#111827] border border-[rgba(255,255,255,0.08)] rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-[#6366f1] appearance-none cursor-pointer";
 
 export default function MobilePipelinePage() {
   const [platform, setPlatform] = useState<Platform>('iOS');
   const [appName, setAppName] = useState('');
   const [selectedFeatures, setSelectedFeatures] = useState<Set<string>>(new Set(['code_signing']));
+  const [ciProvider, setCiProvider] = useState<CIProvider>('github-actions');
+  const [environment, setEnvironment] = useState<Environment>('production');
+  const [runTests, setRunTests] = useState(true);
+  const [distributionMethod, setDistributionMethod] = useState<DistributionMethod>('app-store');
   const [generatedYaml, setGeneratedYaml] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -44,11 +74,19 @@ export default function MobilePipelinePage() {
       const res = await fetch('/api/mobile-pipeline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ platform, appName, features: Array.from(selectedFeatures) }),
+        body: JSON.stringify({
+          platform,
+          appName,
+          features: Array.from(selectedFeatures),
+          ciProvider,
+          environment,
+          runTests,
+          distributionMethod,
+        }),
       });
       if (!res.ok) throw new Error('API error');
-      const data = await res.json() as GeneratePipelineResponse;
-      setGeneratedYaml(data.yaml);
+      const data = await res.json() as MobilePipelineResponse;
+      setGeneratedYaml(data.result ?? '');
     } catch {
       setError('Failed to generate pipeline. Check the API endpoint or try again.');
     } finally {
@@ -75,7 +113,7 @@ export default function MobilePipelinePage() {
   const platforms: Platform[] = ['iOS', 'Android', 'Both'];
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white p-6">
+    <main className="min-h-screen bg-[#0a0b14] text-white p-6">
       <h1 className="text-2xl font-bold mb-2">Mobile Pipeline</h1>
       <p className="text-gray-400 text-sm mb-8">Generate CI/CD pipeline configurations for iOS and Android apps.</p>
 
@@ -89,7 +127,7 @@ export default function MobilePipelinePage() {
                 <button
                   key={p}
                   onClick={() => setPlatform(p)}
-                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${platform === p ? 'bg-[#6366f1] text-white' : 'bg-[#111111] text-gray-400 hover:text-white border border-white/10'}`}
+                  className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-colors ${platform === p ? 'bg-[#6366f1] text-white' : 'bg-[#111111] text-gray-400 hover:text-white border border-[rgba(255,255,255,0.08)]'}`}
                 >
                   {p === 'iOS' ? '🍎 iOS' : p === 'Android' ? '🤖 Android' : '📱 Both'}
                 </button>
@@ -103,8 +141,60 @@ export default function MobilePipelinePage() {
               value={appName}
               onChange={e => setAppName(e.target.value)}
               placeholder="e.g. MyAwesomeApp"
-              className="w-full bg-[#111111] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#6366f1]"
+              className="w-full bg-[#111827] border border-[rgba(255,255,255,0.08)] rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-[#6366f1]"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">CI Provider</label>
+            <select
+              value={ciProvider}
+              onChange={e => setCiProvider(e.target.value as CIProvider)}
+              className={selectStyle}
+            >
+              {CI_PROVIDERS.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Environment</label>
+            <select
+              value={environment}
+              onChange={e => setEnvironment(e.target.value as Environment)}
+              className={selectStyle}
+            >
+              {ENVIRONMENTS.map(e => (
+                <option key={e.value} value={e.value}>{e.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">Distribution Method</label>
+            <select
+              value={distributionMethod}
+              onChange={e => setDistributionMethod(e.target.value as DistributionMethod)}
+              className={selectStyle}
+            >
+              {DISTRIBUTION_METHODS.map(d => (
+                <option key={d.value} value={d.value}>{d.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <div
+                onClick={() => setRunTests(v => !v)}
+                className={`relative w-10 h-6 rounded-full transition-colors ${runTests ? 'bg-[#6366f1]' : 'bg-gray-700'}`}
+              >
+                <span className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${runTests ? 'translate-x-4' : ''}`} />
+              </div>
+              <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">Run Tests</span>
+              <span className="text-xs text-gray-500">(unit + UI test stages)</span>
+            </label>
           </div>
 
           <div>
@@ -113,7 +203,7 @@ export default function MobilePipelinePage() {
               {FEATURES.map(feature => {
                 const isChecked = selectedFeatures.has(feature.id);
                 return (
-                  <label key={feature.id} className="flex items-start gap-3 bg-[#111111] border border-white/10 rounded-lg p-4 cursor-pointer hover:border-[#6366f1]/40 transition-colors">
+                  <label key={feature.id} className="flex items-start gap-3 bg-[#111111] border border-[rgba(255,255,255,0.08)] rounded-lg p-4 cursor-pointer hover:border-[#6366f1]/40 transition-colors">
                     <div className="flex-shrink-0 mt-0.5">
                       <div
                         onClick={() => toggleFeature(feature.id)}
@@ -155,14 +245,14 @@ export default function MobilePipelinePage() {
         <section>
           <div className="flex items-center justify-between mb-3">
             <label className="text-sm font-medium text-gray-300">
-              Generated YAML
-              {generatedYaml && <span className="text-xs text-gray-500 ml-2">({platform} • {selectedFeatures.size} features)</span>}
+              Generated Pipeline
+              {generatedYaml && <span className="text-xs text-gray-500 ml-2">({platform} • {ciProvider} • {selectedFeatures.size} features)</span>}
             </label>
             {generatedYaml && (
               <div className="flex gap-2">
                 <button
                   onClick={handleCopy}
-                  className="bg-[#1a1a1a] hover:bg-[#252525] border border-white/10 text-xs text-gray-300 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
+                  className="bg-[#1a1a1a] hover:bg-[#252525] border border-[rgba(255,255,255,0.08)] text-xs text-gray-300 hover:text-white px-3 py-1.5 rounded-lg transition-colors"
                 >
                   {copied ? '✓ Copied' : 'Copy'}
                 </button>
@@ -177,7 +267,7 @@ export default function MobilePipelinePage() {
           </div>
 
           <div className="relative">
-            <pre className="bg-[#1a1a1a] border border-white/10 rounded-xl p-4 text-xs text-gray-300 font-mono overflow-auto min-h-[500px] max-h-[700px] leading-relaxed whitespace-pre-wrap">
+            <pre className="bg-[#1a1a1a] border border-[rgba(255,255,255,0.08)] rounded-xl p-4 text-xs text-gray-300 font-mono overflow-auto min-h-[500px] max-h-[700px] leading-relaxed whitespace-pre-wrap">
               <code>{generatedYaml || <span className="text-gray-600">{PLACEHOLDER_YAML}</span>}</code>
             </pre>
             {loading && (

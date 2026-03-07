@@ -5,6 +5,14 @@ import { fixBrokenImages } from "../../../lib/html-processor";
 import { generateFullProject } from "../../../lib/ai/master-project-generator";
 import { runMultiPassGeneration } from "../../../lib/ai/multi-pass-generator";
 import type { ProjectBlueprint } from "../../../lib/ai/passes/pass1-plan";
+import {
+  getProject,
+  createProject,
+  addFiles as addProjectFiles,
+  updateProject,
+  addConversationTurn,
+} from "../../../lib/project-memory";
+import { buildContextSnapshot } from "../../../lib/ai/context-snapshot";
 
 export const runtime = "nodejs";
 
@@ -36,6 +44,8 @@ export interface GenerateSiteResponse {
   next_steps?: string[];
   blueprint?: ProjectBlueprint;
   passLog?: string[];
+  projectId?: string;
+  iterationCount?: number;
 }
 
 export interface ChatMessage {
@@ -69,8 +79,11 @@ Rules:
   "files": [
     { "path": "app/page.tsx", "content": "..." }
   ],
-  "description": "..."
-}`;
+  "preview_html": "<!DOCTYPE html>...(single self-contained HTML file for live preview)...",
+  "summary": "Brief description of what was built",
+  "notes": "Any additional notes"
+}
+`;
 
 const SYSTEM_PROMPT_STANDARD = `You are ZIVO AI — the world's most advanced AI builder, generating code that rivals Lovable, v0.dev, and Bolt.new.
 
@@ -221,12 +234,38 @@ function getSystemPrompt(mode: GenerateMode): string {
   return SYSTEM_PROMPT_STANDARD;
 }
 
+// ─── Smart model routing ──────────────────────────────────────────────────────
+// Use o1-mini for logic-heavy prompts; gpt-4o for general code generation.
+const LOGIC_HEAVY_PATTERNS = [
+  /\bauth(?:entication|orization|oriz)\b/i,
+  /\bjwt\b/i,
+  /\boauth\b/i,
+  /\bsession\b/i,
+  /\balgorithm\b/i,
+  /\brecursion\b/i,
+  /\bdynamic\s+programming\b/i,
+  /\bsort(?:ing)?\s+algorithm\b/i,
+  /\bdatabase\s+schema\b/i,
+  /\bmigration\b/i,
+  /\bstate\s+machine\b/i,
+  /\bcryptograph/i,
+  /\bhashing\b/i,
+];
+
+function _selectModel(prompt: string, requestedModel?: string): string {
+  // Honour an explicitly requested model from the caller
+  if (requestedModel && requestedModel !== "auto") return requestedModel;
+  const isLogicHeavy = LOGIC_HEAVY_PATTERNS.some((re) => re.test(prompt));
+  return isLogicHeavy ? "o1-mini" : "gpt-4o";
+}
+
 async function generateFiles(
   prompt: string,
   mode: GenerateMode,
   context: ChatMessage[],
   projectMemoryContext?: string,
-  existingFiles?: GeneratedFile[]
+  existingFiles?: GeneratedFile[],
+  requestedModel?: string
 ): Promise<GenerateSiteResponse> {
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
     { role: "system", content: getSystemPrompt(mode) },
@@ -251,10 +290,12 @@ async function generateFiles(
 
   messages.push({ role: "user", content: userContent });
 
+  const chosenModel = _selectModel(prompt, requestedModel);
+  const isO1 = chosenModel.startsWith("o1");
+
   const response = await getClient().chat.completions.create({
-    model: "gpt-4o",
-    temperature: 0.3,
-    max_tokens: 32000,
+    model: chosenModel,
+    ...(isO1 ? { max_completion_tokens: 32000 } : { temperature: 0.3, max_tokens: 32000 }),
     messages,
   });
 
@@ -316,6 +357,11 @@ async function selfCorrect(
   return current;
 }
 
+function getIterationCount(pid: string | undefined): number | undefined {
+  if (!pid) return undefined;
+  return getProject(pid)?.iterationCount;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
@@ -323,43 +369,79 @@ export async function POST(req: Request) {
     const mode: GenerateMode = ["standard", "advanced", "minimal"].includes(body?.mode)
       ? (body.mode as GenerateMode)
       : "standard";
+    // Accept an explicit model override from the caller ("auto" defers to smart routing)
+    const requestedModel: string | undefined = typeof body?.model === "string" ? body.model : undefined;
     const context: ChatMessage[] = Array.isArray(body?.context)
       ? (body.context as Array<{ role: string; content: string }>)
           .filter((m) => m.role === "user" || m.role === "assistant")
           .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
       : [];
 
-    // Accept existing files for iterative builds
-    const existingFiles: GeneratedFile[] = Array.isArray(body?.existingFiles)
+    // Accept projectId for project memory integration
+    const projectId: string | undefined = typeof body?.projectId === "string" ? body.projectId : undefined;
+
+    // Load project memory and build context snapshot when projectId provided
+    let memoryProject = projectId ? getProject(projectId) : undefined;
+    if (projectId && !memoryProject) {
+      // Auto-create project if not found
+      memoryProject = createProject(projectId, prompt);
+    }
+    const contextSnapshot = buildContextSnapshot(memoryProject);
+
+    // Accept existing files for iterative builds; prefer memory files if available
+    let existingFiles: GeneratedFile[] = Array.isArray(body?.existingFiles)
       ? (body.existingFiles as GeneratedFile[]).filter(
           (f) => typeof f.path === "string" && typeof f.content === "string"
         )
       : [];
+
+    // If memory has files and no explicit existingFiles were sent, use memory files
+    if (contextSnapshot.isFollowUp && existingFiles.length === 0) {
+      existingFiles = (memoryProject?.files ?? []).map((f) => ({
+        path: f.path,
+        content: f.content,
+        action: "update" as const,
+      }));
+    }
 
     // Multi-pass mode: default true for SaaS/complex, false for simple landing pages
     const multiPass: boolean = typeof body?.multiPass === "boolean"
       ? body.multiPass
       : mode !== "minimal";
 
-    // Build project memory context string if provided
-    const projectMemory = body?.projectMemory as ProjectMemoryInput | undefined;
+    // Build project memory context string if provided (legacy) or from snapshot
     let projectMemoryContext: string | undefined;
-    if (projectMemory && typeof projectMemory === "object") {
+    const legacyProjectMemory = body?.projectMemory as ProjectMemoryInput | undefined;
+    if (legacyProjectMemory && typeof legacyProjectMemory === "object") {
       const parts: string[] = [];
-      if (projectMemory.name) parts.push(`App name: ${projectMemory.name}`);
-      if (projectMemory.framework) parts.push(`Framework: ${projectMemory.framework}`);
-      if (projectMemory.designSystem) {
-        const ds = projectMemory.designSystem;
+      if (legacyProjectMemory.name) parts.push(`App name: ${legacyProjectMemory.name}`);
+      if (legacyProjectMemory.framework) parts.push(`Framework: ${legacyProjectMemory.framework}`);
+      if (legacyProjectMemory.designSystem) {
+        const ds = legacyProjectMemory.designSystem;
         parts.push(`Design system: primaryColor=${ds.primaryColor ?? ""}, fontFamily=${ds.fontFamily ?? ""}, borderRadius=${ds.borderRadius ?? ""}`);
       }
-      if (Array.isArray(projectMemory.pages) && projectMemory.pages.length) {
-        const pagesStr = projectMemory.pages.map((p) => `${p.route}: ${p.description}`).join(", ");
+      if (Array.isArray(legacyProjectMemory.pages) && legacyProjectMemory.pages.length) {
+        const pagesStr = legacyProjectMemory.pages.map((p) => `${p.route}: ${p.description}`).join(", ");
         parts.push(`Existing pages: ${pagesStr}`);
       }
-      if (Array.isArray(projectMemory.components) && projectMemory.components.length) {
-        parts.push(`Existing components: ${projectMemory.components.join(", ")}`);
+      if (Array.isArray(legacyProjectMemory.components) && legacyProjectMemory.components.length) {
+        parts.push(`Existing components: ${legacyProjectMemory.components.join(", ")}`);
       }
       if (parts.length) projectMemoryContext = parts.join("\n");
+    }
+
+    // Augment context with snapshot data when this is a follow-up
+    if (contextSnapshot.isFollowUp) {
+      const snapshotParts: string[] = [];
+      if (contextSnapshot.techStackContext) snapshotParts.push(contextSnapshot.techStackContext);
+      if (contextSnapshot.blueprintSummary) snapshotParts.push(`Previous blueprint:\n${contextSnapshot.blueprintSummary}`);
+      if (contextSnapshot.conversationContext) snapshotParts.push(`Recent conversation:\n${contextSnapshot.conversationContext}`);
+      snapshotParts.push(`Existing files (${contextSnapshot.existingFileCount}): ${contextSnapshot.existingFilePaths.slice(0, 20).join(", ")}`);
+      if (snapshotParts.length) {
+        projectMemoryContext = projectMemoryContext
+          ? `${projectMemoryContext}\n${snapshotParts.join("\n")}`
+          : snapshotParts.join("\n");
+      }
     }
 
     if (!process.env.OPENAI_API_KEY) {
@@ -371,6 +453,11 @@ export async function POST(req: Request) {
 
     if (!prompt.trim()) {
       return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
+    }
+
+    // Store the user's prompt turn in memory before generation
+    if (projectId) {
+      addConversationTurn(projectId, "user", prompt);
     }
 
     // Use multi-pass generator when requested (plan → generate → validate+fix)
@@ -401,6 +488,13 @@ export async function POST(req: Request) {
         ...pass3Result.remainingIssues,
       ];
 
+      // Save blueprint + files to project memory
+      if (projectId && output.files?.length) {
+        updateProject(projectId, { blueprint: blueprint ?? null, techStack: blueprint?.techStack ?? [] });
+        addProjectFiles(projectId, output.files.map((f) => ({ path: f.path, content: f.content })));
+        addConversationTurn(projectId, "assistant", output.summary ?? `Generated ${output.files.length} files.`);
+      }
+
       const response: GenerateSiteResponse = {
         thinking: output.thinking,
         files: output.files as GeneratedFile[],
@@ -414,6 +508,8 @@ export async function POST(req: Request) {
         next_steps: output.next_steps,
         blueprint,
         passLog,
+        projectId: projectId ?? undefined,
+        iterationCount: getIterationCount(projectId),
       };
 
       return NextResponse.json(response);
@@ -446,6 +542,12 @@ export async function POST(req: Request) {
       // Merge validation warnings into output warnings
       const allWarnings = [...(output.warnings ?? []), ...validationResult.warnings];
 
+      // Save files to project memory
+      if (projectId && output.files?.length) {
+        addProjectFiles(projectId, output.files.map((f) => ({ path: f.path, content: f.content })));
+        addConversationTurn(projectId, "assistant", output.summary ?? `Generated ${output.files.length} files.`);
+      }
+
       const response: GenerateSiteResponse = {
         thinking: output.thinking,
         files: output.files as GeneratedFile[],
@@ -457,6 +559,8 @@ export async function POST(req: Request) {
         warnings: allWarnings,
         missing_env: output.missing_env,
         next_steps: output.next_steps,
+        projectId: projectId ?? undefined,
+        iterationCount: getIterationCount(projectId),
       };
 
       return NextResponse.json(response);
@@ -465,7 +569,7 @@ export async function POST(req: Request) {
     // Minimal mode: use the legacy generator
     let parsed: GenerateSiteResponse;
     try {
-      parsed = await generateFiles(prompt, mode, context, projectMemoryContext, existingFiles.length > 0 ? existingFiles : undefined);
+      parsed = await generateFiles(prompt, mode, context, projectMemoryContext, existingFiles.length > 0 ? existingFiles : undefined, requestedModel);
     } catch {
       return NextResponse.json({ error: "Invalid JSON from AI" }, { status: 500 });
     }
@@ -482,7 +586,17 @@ export async function POST(req: Request) {
       corrected.preview_html = fixBrokenImages(corrected.preview_html);
     }
 
-    return NextResponse.json(corrected);
+    // Save files to project memory for minimal mode
+    if (projectId && corrected.files?.length) {
+      addProjectFiles(projectId, corrected.files.map((f) => ({ path: f.path, content: f.content })));
+      addConversationTurn(projectId, "assistant", corrected.summary ?? `Generated ${corrected.files.length} files.`);
+    }
+
+    return NextResponse.json({
+      ...corrected,
+      projectId: projectId ?? undefined,
+      iterationCount: getIterationCount(projectId),
+    });
   } catch (err: unknown) {
     return NextResponse.json(
       { error: (err as Error)?.message || "Server error" },

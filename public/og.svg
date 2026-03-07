@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" aria-label="Open Graph image for ZIVO-AI">
+  <defs>
+    <linearGradient id="og-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e1b4b"/>
+    </linearGradient>
+    <linearGradient id="og-accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#og-bg)"/>
+  <!-- Decorative circles -->
+  <circle cx="1050" cy="100" r="200" fill="#6366f1" fill-opacity="0.08"/>
+  <circle cx="150" cy="530" r="150" fill="#8b5cf6" fill-opacity="0.06"/>
+  <!-- Accent bar -->
+  <rect x="80" y="200" width="6" height="120" rx="3" fill="url(#og-accent)"/>
+  <!-- Brand name -->
+  <text x="110" y="280" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="white">ZIVO-AI</text>
+  <!-- Tagline -->
+  <text x="110" y="340" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="400" fill="white" fill-opacity="0.6">Build amazing AI-powered websites</text>
+  <!-- Bottom note (replace me hint) -->
+  <text x="110" y="570" font-family="system-ui, -apple-system, sans-serif" font-size="18" fill="white" fill-opacity="0.25">Replace this placeholder via the Assets panel</text>
+  <!-- Decorative grid dots -->
+  <g fill="#6366f1" fill-opacity="0.12">
+    <circle cx="900" cy="300" r="3"/><circle cx="940" cy="300" r="3"/><circle cx="980" cy="300" r="3"/>
+    <circle cx="900" cy="340" r="3"/><circle cx="940" cy="340" r="3"/><circle cx="980" cy="340" r="3"/>
+    <circle cx="900" cy="380" r="3"/><circle cx="940" cy="380" r="3"/><circle cx="980" cy="380" r="3"/>
+    <circle cx="1020" cy="300" r="3"/><circle cx="1020" cy="340" r="3"/><circle cx="1020" cy="380" r="3"/>
+    <circle cx="1060" cy="300" r="3"/><circle cx="1060" cy="340" r="3"/><circle cx="1060" cy="380" r="3"/>
+  </g>
+</svg>

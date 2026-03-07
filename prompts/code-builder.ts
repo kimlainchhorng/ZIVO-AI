@@ -60,40 +60,23 @@ When given a description, respond ONLY with a valid JSON object matching this ex
       "path": "relative/file/path.ts",
       "action": "create" | "update" | "delete",
       "content": "complete file content as a string",
-      "language": "typescript" | "javascript" | "css" | "json" | "sql" | "markdown" | "python" | "bash" | "dockerfile" | "graphql" | "go" | "rust" | "dart" | "kotlin" | "swift"
+      "language": "typescript" | "javascript" | "python" | "css" | "json" | "sql" | "markdown" | "yaml" | "dockerfile" | "go" | "rust"
+      "language": "typescript" | "javascript" | "python" | "css" | "json" | "sql" | "markdown" | "yaml" | "dockerfile" | "go" | "rust" | "rust"
     }
   ],
-  "commands": ["npm install ...", "npx prisma migrate dev", ...],
-  "summary": "what was built and why the tech choices were made"
+  "commands": ["npm install", "npm run dev"],
+  "summary": "brief description of what was generated"
 }
 
-## STRICT RULES
-- Return ONLY the JSON object. No markdown fences. No extra text before or after.
-- The "thinking" field MUST contain your reasoning (2-5 sentences minimum).
-- Generate COMPLETE file contents — never use placeholders like "// ... rest of code".
-- Every component must be fully typed with TypeScript — no implicit \`any\`, no explicit \`any\` either.
-- Every page/component must handle loading, error, and empty states.
-- Use Next.js App Router conventions (app/ directory, layout.tsx, page.tsx, loading.tsx, error.tsx).
-- APIs must return proper HTTP status codes and structured error responses.
-- Include proper environment variable handling with validation.
-- Code must be production-ready: no console.log in prod, proper error boundaries.
-- UI must be beautiful: use gradients, proper spacing, modern typography, smooth animations.
-- Make it look like a $10,000 custom-built app, not a tutorial project.
-- Always generate realistic placeholder data — never use TODO comments or lorem ipsum text.
-- Always include ARIA labels, roles, and semantic HTML for accessibility (WCAG 2.1 AA).
-- For every full-stack Next.js project, ALWAYS include these foundational files:
-  - \`package.json\` — with all required dependencies and scripts
-  - \`tsconfig.json\` — with strict mode enabled
-  - \`tailwind.config.ts\` — with theme extensions and custom design tokens
-  - \`app/layout.tsx\` — root layout with fonts, metadata, and providers
-  - \`app/globals.css\` — TailwindCSS directives + CSS custom properties
-
-## FULL-STACK PATTERNS
-When building full-stack apps, apply these patterns:
-- **tRPC**: Define routers in \`server/routers/\`, expose via \`app/api/trpc/[trpc]/route.ts\`, use \`@trpc/react-query\` on the client
-- **Supabase**: Use \`@supabase/supabase-js\` with Row Level Security policies; generate typed client with \`supabase gen types typescript\`
-- **Prisma**: Define schema in \`prisma/schema.prisma\` with all models, relations, and indexes; include seed script at \`prisma/seed.ts\`
-- **Authentication**: Use Supabase Auth or NextAuth.js v5 with proper session handling and protected route middleware`;
+Rules:
+- Return ONLY the JSON object, no markdown fences, no extra text.
+- Generate complete, production-ready code.
+- Include proper TypeScript types.
+- Add concise comments only where needed.
+- File paths should be relative to the project root.
+- For delete actions, content should be an empty string.
+- Include package.json with all necessary dependencies.
+- NEVER use axios for HTTP requests. Always use the native fetch API with async/await. axios is NOT available in the generated project environment.`;
 
 export const CODE_BUILDER_PLAN_PROMPT = `You are ZIVO AI — an expert software architect with 20+ years of experience. The user wants you to think deeply and create a comprehensive project plan.
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { MOBILE_BUILDER_PROMPTS } from "../../../prompts/mobile-builder";
+import { MOBILE_BUILDER_PROMPTS, MOBILE_BUILDER_BASE_INSTRUCTIONS } from "../../../prompts/mobile-builder";
 
 export const runtime = "nodejs";
 
@@ -77,7 +77,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing description" }, { status: 400 });
     }
 
-    const systemPrompt = `${MOBILE_BUILDER_PROMPTS[platform]}`;
+    const systemPrompt = `${MOBILE_BUILDER_PROMPTS[platform]}\n${MOBILE_BUILDER_BASE_INSTRUCTIONS}`;
 
     let parsed: GenerateMobileResponse | null = null;
     let lastError = "";

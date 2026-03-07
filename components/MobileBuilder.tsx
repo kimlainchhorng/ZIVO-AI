@@ -20,6 +20,7 @@ interface GenerateMobileResponse {
   setup_instructions: string;
 }
 
+
 export default function MobileBuilder() {
   const [platform, setPlatform] = useState<MobilePlatform>("flutter");
   const [description, setDescription] = useState<string>("");
@@ -42,22 +43,31 @@ export default function MobileBuilder() {
       const res = await fetch("/api/generate-mobile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ platform, description: description.trim() }),
+        body: JSON.stringify({ platform, description }),
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error || `Request failed (${res.status})`);
+      const data: unknown = await res.json();
+
+      if (!res.ok || (data && typeof data === "object" && "error" in data)) {
+        setError(
+          (data as { error?: string })?.error ||
+            `Server error (${res.status})`
+        );
+        return;
       }
 
-      const data = (await res.json()) as GenerateMobileResponse;
-      setResult(data);
+      const typed = data as GenerateMobileResponse;
+      setResult(typed);
     } catch (err: unknown) {
-      setError((err as Error).message || "An unexpected error occurred.");
+      setError((err as Error)?.message || "Failed to generate mobile app. Please try again.");
     } finally {
       setLoading(false);
     }
   }
+
+
+
+
 
   async function handleDownloadZip() {
     if (!result) return;

@@ -234,7 +234,32 @@ export default function DashboardPage() {
               </table>
             </div>
 
-            {/* Quick Actions */}
+            {/* Quick Actions Cards */}
+            <div style={{ marginBottom: '1.5rem', animation: 'fadeIn 0.6s ease' }}>
+              <h2 style={{ margin: '0 0 1rem', fontSize: '0.9375rem', fontWeight: 600, color: COLORS.textPrimary }}>Quick Actions</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '0.75rem' }}>
+                {[
+                  { href: '/ai', title: 'Build with AI', desc: 'Generate full apps instantly', icon: '🤖' },
+                  { href: '/schema-designer', title: 'Design Schema', desc: 'Visual database schema editor', icon: '🗄️' },
+                  { href: '/api-generator', title: 'Generate API', desc: 'Scaffold REST & GraphQL APIs', icon: '⚡' },
+                  { href: '/workflow', title: 'Automate Workflow', desc: 'Build event-driven pipelines', icon: '🔄' },
+                  { href: '/component-library', title: 'Browse Components', desc: 'Reusable UI building blocks', icon: '🧩' },
+                  { href: '/design-tokens', title: 'Design Tokens', desc: 'Manage colors, fonts & spacing', icon: '🎨' },
+                ].map((card) => (
+                  <a
+                    key={card.href}
+                    href={card.href}
+                    className="zivo-quick-card"
+                  >
+                    <div className="zivo-quick-card-icon" aria-hidden="true">{card.icon}</div>
+                    <div className="zivo-quick-card-title">{card.title}</div>
+                    <div className="zivo-quick-card-desc">{card.desc}</div>
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick Actions (legacy buttons) */}
             <div style={{ display: "flex", gap: "1rem", animation: "fadeIn 0.6s ease", flexWrap: "wrap" }}>
               <a href="/ai" style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.75rem 1.25rem", background: COLORS.accentGradient, borderRadius: "10px", color: "#fff", textDecoration: "none", fontWeight: 600, fontSize: "0.9rem" }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>

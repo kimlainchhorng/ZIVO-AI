@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, AsyncIterator, Optional
+from typing import AsyncIterator, Optional
 
 from dotenv import load_dotenv
 
@@ -52,6 +52,10 @@ class ZivoBrain:
             mcp_servers=mcp.get_servers(),
         )
 
+    @property
+    def agent_mode(self) -> bool:
+        return self._agent_mode
+
     @staticmethod
     def _build_agent_mode_prompt(base_prompt: str) -> str:
         """Extend the base system prompt with agentic behaviour instructions."""
@@ -66,13 +70,13 @@ class ZivoBrain:
         )
         return base_prompt + agent_extension
 
-    def _build_conversation(self, messages: List[Dict[str, str]]) -> str:
+    def _build_conversation(self, messages: list[dict[str, str]]) -> str:
         """Format full chat history into a single prompt string."""
         return "\n".join(
             f"{m['role'].upper()}: {m['content']}" for m in messages
         )
 
-    def run(self, messages: List[Dict[str, str]]):
+    def run(self, messages: list[dict[str, str]]):
         """
         Run the agent synchronously with full conversation history.
         Returns a Runner result object with .final_output.
@@ -82,11 +86,16 @@ class ZivoBrain:
         conversation = self._build_conversation(messages)
         return Runner.run_sync(self.agent, conversation)
 
-    async def run_streamed(self, messages: List[Dict[str, str]]) -> AsyncIterator[str]:
+    async def run_streamed(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
         """
         Run the agent and yield streamed text delta chunks.
-        Use this for real-time output in Streamlit via st.write_stream.
+        In swarm mode, falls back to a blocking run and yields the full output as one chunk.
         """
+        if self._use_swarm and self._swarm is not None:
+            result = self._swarm.run(messages)
+            yield result.final_output or ""
+            return
+
         conversation = self._build_conversation(messages)
         result = Runner.run_streamed(self.agent, conversation)
         async for event in result.stream_events():

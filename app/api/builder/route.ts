@@ -39,6 +39,8 @@ function parseBuilderJSON(text: string): BuilderResponse {
   }
 }
 
+
+
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {

@@ -167,6 +167,99 @@ GitHub Actions workflows run automatically on push/PR to `main`:
 
 ---
 
+## Build Pipeline (SSE Streaming)
+
+ZIVO-AI uses a Lovable-style step-by-step build pipeline that streams progress
+to the browser via **Server-Sent Events (SSE)**.
+
+### Endpoint
+
+```
+POST /api/build
+Content-Type: application/json
+
+{
+  "prompt": "Build a SaaS dashboard with analytics",
+  "model": "gpt-4o",               // optional, default gpt-4o
+  "projectId": "proj-abc",          // optional
+  "existingFiles": [],              // optional — for iterative builds
+  "projectMemory": null,            // optional
+  "context": []                     // optional conversation history
+}
+```
+
+### SSE Event Types
+
+The response is `text/event-stream`. Each line has the format `data: <JSON>\n\n`.
+
+| Event type | Shape | Description |
+|------------|-------|-------------|
+| `stage` | `{ type, stage, message, progress? }` | Pipeline stage update |
+| `files` | `{ type, files: GeneratedFile[] }` | Batch of generated files |
+| `error` | `{ type, message, details? }` | Build error |
+
+#### Stage values
+
+| Stage | Meaning |
+|-------|---------|
+| `BLUEPRINT` | Generating app blueprint and architecture plan |
+| `MANIFEST` | Building file manifest (list of all files to create) |
+| `GENERATE` | Batch-generating file contents |
+| `VALIDATE` | Validating generated code |
+| `FIX` | Running fix loop for detected errors |
+| `DONE` | Build complete |
+
+### Pipeline stages (orchestrator-v4)
+
+```
+Prompt → Blueprint → Architecture → Manifest → Batch Generate → Validate → Fix Loop → Done
+```
+
+1. **Blueprint** (`generateBlueprint`) — parses the prompt into a structured app spec.
+2. **Architecture** (`planArchitecture`) — maps out technical decisions.
+3. **Manifest** (`generateFileList` → `createManifest`) — lists every file the project needs.
+   Legal pages are always included for full-app builds (see below).
+4. **Batch Generate** (`generateFromManifest`) — generates files 5 at a time.
+5. **Validate** (`validateFiles`) — checks for missing imports, broken routes, etc.
+6. **Fix Loop** (`fixFiles`) — AI-powered repair for any detected errors (up to 5 passes).
+7. **Done** — emits final file list and saves project memory.
+
+### Legal pages
+
+Every full-app build includes these pages automatically:
+
+| Path | Purpose |
+|------|---------|
+| `app/(legal)/terms/page.tsx` | Terms of Service |
+| `app/(legal)/privacy/page.tsx` | Privacy Policy |
+| `app/(legal)/cookies/page.tsx` | Cookie Policy |
+| `app/(legal)/acceptable-use/page.tsx` | Acceptable Use Policy |
+| `app/(legal)/disclaimer/page.tsx` | Disclaimer |
+
+`components/Footer.tsx` is also generated with links to all legal pages.
+
+> **Note:** Legal pages use generic template language with placeholders for company name,
+> contact email, and effective date. They are not jurisdiction-specific legal advice.
+
+### Abort / cancel
+
+The client can abort an in-progress build by calling `AbortController.abort()` on the
+fetch signal passed to `/api/build`. The server detects the disconnected stream and
+stops enqueuing events.
+
+---
+
+## Running tests
+
+```bash
+npm test
+```
+
+Unit tests cover:
+
+- SSE event format validation (`__tests__/build-sse-event-format.test.ts`)
+- Manifest includes all required legal pages
+
 ## Contributing
 
 1. Fork the repository

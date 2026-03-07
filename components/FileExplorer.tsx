@@ -12,6 +12,8 @@ interface FileExplorerProps {
   files: ExplorerFile[];
   activeFilePath: string | null;
   onFileSelect: (file: ExplorerFile) => void;
+  changedPaths?: Set<string>;
+  onAddFile?: () => void;
 }
 
 const COLORS = {
@@ -142,9 +144,10 @@ interface TreeNodeProps {
   depth: number;
   activeFilePath: string | null;
   onFileSelect: (file: ExplorerFile) => void;
+  changedPaths?: Set<string>;
 }
 
-function TreeNode({ node, depth, activeFilePath, onFileSelect }: TreeNodeProps): React.ReactElement {
+function TreeNode({ node, depth, activeFilePath, onFileSelect, changedPaths }: TreeNodeProps): React.ReactElement {
   const [open, setOpen] = useState(true);
   const indent = depth * 12;
 
@@ -186,6 +189,7 @@ function TreeNode({ node, depth, activeFilePath, onFileSelect }: TreeNodeProps):
           {node.files.map((file) => {
             const filename = file.path.split("/").pop() ?? file.path;
             const isActive = file.path === activeFilePath;
+            const isChanged = changedPaths?.has(file.path) ?? false;
             return (
               <button
                 key={file.path}
@@ -213,6 +217,14 @@ function TreeNode({ node, depth, activeFilePath, onFileSelect }: TreeNodeProps):
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {filename}
                 </span>
+                {isChanged && (
+                  <span
+                    title="Recently changed"
+                    style={{ fontSize: "0.6rem", color: COLORS.success, flexShrink: 0, lineHeight: 1 }}
+                  >
+                    ●
+                  </span>
+                )}
                 <span style={{ fontSize: "0.6rem", color: COLORS.textMuted, flexShrink: 0, fontFamily: "monospace" }}>
                   {file.content.length < 1024
                     ? `${file.content.length}B`
@@ -230,6 +242,7 @@ function TreeNode({ node, depth, activeFilePath, onFileSelect }: TreeNodeProps):
               depth={depth + 1}
               activeFilePath={activeFilePath}
               onFileSelect={onFileSelect}
+              changedPaths={changedPaths}
             />
           ))}
         </>
@@ -242,8 +255,17 @@ export default function FileExplorer({
   files,
   activeFilePath,
   onFileSelect,
+  changedPaths,
+  onAddFile,
 }: FileExplorerProps): React.JSX.Element {
-  const tree = useMemo(() => buildTree(files), [files]);
+  const [search, setSearch] = useState("");
+  const lowerSearch = search.trim().toLowerCase();
+  const tree = useMemo(() => {
+    const filtered = lowerSearch
+      ? files.filter((f) => f.path.toLowerCase().includes(lowerSearch))
+      : files;
+    return buildTree(filtered);
+  }, [files, lowerSearch]);
 
   const totalSize = files.reduce((acc, f) => acc + f.content.length, 0);
   const creates = files.filter((f) => f.action === "create").length;
@@ -268,6 +290,23 @@ export default function FileExplorer({
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
         </svg>
         <span style={{ fontSize: "0.8125rem" }}>Build a project to see files here.</span>
+        {onAddFile && (
+          <button
+            onClick={onAddFile}
+            style={{
+              padding: "0.4rem 1rem",
+              background: "rgba(99,102,241,0.1)",
+              border: "1px solid rgba(99,102,241,0.3)",
+              borderRadius: 6,
+              color: COLORS.accent,
+              fontSize: "0.8rem",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+          >
+            + Add File
+          </button>
+        )}
       </div>
     );
   }
@@ -299,6 +338,47 @@ export default function FileExplorer({
         {deletes > 0 && (
           <span style={{ fontSize: "0.65rem", color: COLORS.error, fontWeight: 700 }}>-{deletes}</span>
         )}
+        {onAddFile && (
+          <button
+            onClick={onAddFile}
+            title="Add new file"
+            style={{
+              padding: "0.15rem 0.5rem",
+              background: "rgba(99,102,241,0.1)",
+              border: "1px solid rgba(99,102,241,0.25)",
+              borderRadius: 5,
+              color: COLORS.accent,
+              fontSize: "0.7rem",
+              cursor: "pointer",
+              fontWeight: 700,
+              lineHeight: 1.4,
+            }}
+          >
+            + Add
+          </button>
+        )}
+      </div>
+
+      {/* Search */}
+      <div style={{ padding: "0.4rem 0.75rem", borderBottom: `1px solid ${COLORS.border}`, flexShrink: 0 }}>
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Filter files…"
+          style={{
+            width: "100%",
+            background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: 5,
+            padding: "0.25rem 0.5rem",
+            color: COLORS.textSecondary,
+            fontSize: "0.75rem",
+            fontFamily: "monospace",
+            outline: "none",
+            boxSizing: "border-box",
+          }}
+        />
       </div>
 
       {/* Tree */}
@@ -308,7 +388,13 @@ export default function FileExplorer({
           depth={0}
           activeFilePath={activeFilePath}
           onFileSelect={onFileSelect}
+          changedPaths={changedPaths}
         />
+        {search.trim() && tree.files.length === 0 && tree.children.length === 0 && (
+          <div style={{ padding: "1rem", textAlign: "center", color: COLORS.textMuted, fontSize: "0.75rem" }}>
+            No files match &ldquo;{search}&rdquo;
+          </div>
+        )}
       </div>
     </div>
   );

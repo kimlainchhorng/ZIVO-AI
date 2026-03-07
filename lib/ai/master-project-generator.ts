@@ -71,7 +71,7 @@ export async function generateFullProject(
   try {
     const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
     parsed = AIOutputSchema.parse(JSON.parse(cleaned));
-  } catch (parseError) {
+  } catch (_parseError) {
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) throw new Error(`AI did not return valid JSON. Received: ${raw.substring(0, 100)}...`);
     try {
